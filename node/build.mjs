@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 import { readFile, readdir, writeFile, mkdir, rm, rename, mkdtemp } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 export async function createBuilder(root) {

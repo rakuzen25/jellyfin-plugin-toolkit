@@ -8,7 +8,8 @@
     },
     "scripts": {
         "test": "python3 toolkit test",
-        "check": "ruff check . && ruff format --check ."
+        "check": "python3 scripts/quality.py check",
+        "format": "python3 scripts/quality.py format"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",

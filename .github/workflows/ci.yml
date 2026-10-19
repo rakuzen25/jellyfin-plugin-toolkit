@@ -22,10 +22,9 @@ jobs:
           node-version-file: .node-version
       - run: python -m pip install --uploaded-prior-to=P1D -r requirements-check.txt
       - run: pnpm install --frozen-lockfile
-      - run: ruff check . && ruff format --check .
-      - run: pnpm exec prettier --check '**/*.{md,json,mjs,ts,yml,yaml}'
+      - run: pnpm check
       - run: python3 toolkit test
-      - run: node --test ui/lifecycle.test.ts
+      - run: node --test ui/lifecycle.test.ts tests/*.test.mjs
       - name: Validate Renovate release attachment updates
         run: >-
           docker run --rm --network none --entrypoint node -v "$PWD:/toolkit:ro"

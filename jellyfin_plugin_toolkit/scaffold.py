@@ -323,7 +323,7 @@ def generate(
         "README.md",
         "# "
         + name
-        + "\n\nRun `./plugin bootstrap`, then `./plugin dev`.\n\nUse `./plugin check`, `./plugin test`, and `./plugin build` for validation and distribution. Configuration is in `plugin.toml`; toolkit updates are pinned in `toolkit.lock.json`.\n",
+        + "\n\nRun `./plugin bootstrap`, then `./plugin dev`.\n\nUse `./plugin check`, `./plugin test`, and `./plugin build` for validation and distribution. `./plugin check` includes linting and formatting verification; `./plugin format` applies formatting. Both commands accept a target. Checks never restore dependencies; run bootstrap explicitly first. Configuration is in `plugin.toml`; toolkit updates are pinned in `toolkit.lock.json`.\n",
     )
     package = defaults["package"]
     package["name"] = identifier
@@ -332,6 +332,13 @@ def generate(
         for key in ["bootstrap", "dev", "build", "check", "format", "test"]
     }
     put("package.json", json.dumps(package, indent=4) + "\n")
+    for filename in ["eslint.config.mjs", "requirements-check.txt"]:
+        put(filename, (TOOLKIT_ROOT / filename).read_text())
+    put(
+        "pyproject.toml",
+        '[tool.ruff]\ntarget-version = "py315"\ninclude = ["scripts/**/*.py", "tests/**/*.py"]\n',
+    )
+
     lock_template = (
         TOOLKIT_ROOT
         / "templates"
@@ -384,7 +391,7 @@ def generate(
         )
         put(
             "frontend/build.mjs",
-            "import {createBuilder} from '../.build/toolkit/current/node/build.mjs';\nimport {fileURLToPath} from 'node:url';\nawait (await createBuilder(fileURLToPath(new URL('../',import.meta.url)))).main();\n",
+            'import { fileURLToPath } from "node:url";\nimport path from "node:path";\nimport { createBuilder } from "../.build/toolkit/current/node/build.mjs";\nconst builder = await createBuilder(fileURLToPath(new URL("../", import.meta.url)));\nexport const { root, bundleEntries, rendererAssets, compileWeb, writeGeneration, buildWeb } = builder;\nif (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await builder.main();\n',
         )
         put(
             "frontend/admin/config.html",

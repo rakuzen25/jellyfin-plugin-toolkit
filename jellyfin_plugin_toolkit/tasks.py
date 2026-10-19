@@ -186,7 +186,8 @@ def format_target(target, fix):
             if target == "frontend"
             else [
                 "scripts/**/*.{mjs,json}",
-                "*.{json,mjs,yaml}",
+                "*.{json,mjs,yml,yaml}",
+                "tests/tooling/**/*.{mjs,cjs,json}",
                 ".github/**/*.{yml,yaml}",
             ]
         )
@@ -199,13 +200,23 @@ def format_target(target, fix):
             *patterns,
         )
         if target == "tooling":
+            roots = [name for name in ["scripts", "tests"] if (ROOT / name).is_dir()]
+            if roots:
+                run(
+                    python_checks(),
+                    "-m",
+                    "ruff",
+                    "format",
+                    *([] if fix else ["--check"]),
+                    *roots,
+                )
             run(
                 executable("pnpm"),
                 "exec",
                 "taplo",
                 "format",
                 *([] if fix else ["--check"]),
-                "plugin.toml",
+                *[str(p.name) for p in sorted(ROOT.glob("*.toml"))],
             )
 
 
@@ -223,6 +234,8 @@ def check(target):
 
         main()
     elif target == "frontend":
+        format_target("frontend", False)
+        run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0")
         run(
             executable("pnpm"),
             "--dir",
@@ -232,18 +245,9 @@ def check(target):
             "--noEmit",
         )
     elif target == "tooling":
-        from jellyfin_plugin_toolkit.checks.pins import check_pins
+        from jellyfin_plugin_toolkit.checks.tooling import main
 
-        check_pins(ROOT)
-        from jellyfin_plugin_toolkit.common.source_inventory import source_files
-
-        for path in source_files(ROOT):
-            if path.suffix == ".py":
-                compile((ROOT / path).read_bytes(), str(path), "exec")
-        run(executable("pnpm"), "exec", "taplo", "format", "--check", "plugin.toml")
-        from jellyfin_plugin_toolkit.checks.workflows import check_workflows
-
-        check_workflows(ROOT)
+        main()
     else:
         raise ValueError("Unknown check target: " + target)
 
@@ -345,6 +349,8 @@ def test(target, extra):
     if target == "backend":
         backend_tests(extra)
     elif target == "frontend":
+        format_target("frontend", False)
+        run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0")
         run(
             "node",
             "--experimental-strip-types",

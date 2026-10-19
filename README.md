@@ -11,3 +11,5 @@ Plugins own their behavior, Jellyfin registration, APIs, persistence, and applic
 - [Licensing and dependency provenance](docs/reference/licensing.md)
 
 Original source is Apache-2.0. See [NOTICE](NOTICE) for inherited attribution and file-level exceptions, including the MPL-2.0 resource lifecycle module.
+
+Run `pnpm check` to verify formatting and linting, and `pnpm format` to apply formatting. Install the pinned Python check requirements and run `pnpm install --frozen-lockfile` first. Checks do not restore dependencies. CI runs the same check command.

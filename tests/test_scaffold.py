@@ -79,3 +79,18 @@ class StarterTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(1, maintained.returncode)
+
+    def test_starter_inherits_quality_tools_and_development_adapter_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "plugin"
+            generate(None, root, "example", "Example", "example/plugin", True)
+            for filename in [
+                "eslint.config.mjs",
+                "requirements-check.txt",
+                "pyproject.toml",
+            ]:
+                self.assertTrue((root / filename).is_file(), filename)
+            adapter = (root / "frontend/build.mjs").read_text()
+            self.assertIn("export const", adapter)
+            self.assertIn("compileWeb", adapter)
+            self.assertIn("writeGeneration", adapter)

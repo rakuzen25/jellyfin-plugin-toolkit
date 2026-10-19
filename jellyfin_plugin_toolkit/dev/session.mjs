@@ -1,5 +1,5 @@
 import http from "node:http";
-import { watch } from "node:fs";
+import { watch, existsSync } from "node:fs";
 import { readFile, mkdir, rm, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -8,6 +8,8 @@ const root = process.env.JELLYFIN_PLUGIN_ROOT;
 if (!root) throw new Error("JELLYFIN_PLUGIN_ROOT is required");
 const config = JSON.parse(await readFile(path.join(root, ".build/generated/plugin.json"), "utf8"));
 const adapter = config.frontend?.enabled ? await import(pathToFileURL(path.join(root, config.frontend.build || "frontend/build.mjs")).href) : null;
+if (adapter && (typeof adapter.compileWeb !== "function" || typeof adapter.writeGeneration !== "function"))
+    throw new Error("The configured frontend build adapter must export compileWeb and writeGeneration");
 const compileWeb = adapter?.compileWeb || (async () => new Map());
 const writeGeneration = adapter?.writeGeneration || (async () => {});
 const rendererAssets = config.frontend?.reload_assets || [];
@@ -86,21 +88,44 @@ export function rebuildQueue(build, report = console.error, delay = 150, { pause
     };
 }
 
-export function classifyChange(filename) {
+/** Derive watched inputs from declared projects and assets, including path overrides. */
+export function sourcePolicy(configuration = config) {
+    const backend = configuration.backend || {};
+    const projects = new Set(Object.values(backend.projects || {}));
+    const visit = (project) => {
+        for (const dependency of configuration.architecture?.edges?.[project] || []) {
+            if (!projects.has(dependency)) {
+                projects.add(dependency);
+                visit(dependency);
+            }
+        }
+    };
+    for (const project of [...projects]) visit(project);
+    const backendRoots = [...projects].map((project) => path.posix.dirname(project));
+    const frontend = configuration.frontend || {};
+    const frontendRoots = frontend.enabled
+        ? [frontend.directory || "frontend", frontend.assets || (frontend.directory || "frontend") + "/assets"]
+        : [];
+    const frontendFiles = frontend.enabled
+        ? [frontend.admin_template, frontend.admin_styles, ...(frontend.extra_assets || []).map((asset) => asset.source)].filter(Boolean)
+        : [];
+    const directories = [...new Set([...backendRoots, ...frontendRoots, ...frontendFiles.map((name) => path.posix.dirname(name))])].filter(
+        (name) => name !== ".",
+    );
+    return {
+        backendRoots,
+        frontendRoots,
+        frontendFiles,
+        directories: directories.filter((name) => !directories.some((parent) => parent !== name && name.startsWith(parent + "/"))),
+    };
+}
+
+export function classifyChange(filename, configuration = config) {
     const name = filename.replaceAll("\\", "/");
     if (/(^|\/)(node_modules|bin|obj|\.git|\.build|dist)(\/|$)/.test(name) || /\.test\.ts$/.test(name)) return null;
-    if (
-        name === "NOTICE" ||
-        name === "vendor/LUCIDE-LICENSE" ||
-        name.startsWith("frontend/assets/") ||
-        (name.startsWith("frontend/") && /\.(ts|html|css)$/.test(name))
-    )
-        return "frontend";
-    if (
-        name.startsWith("src/") ||
-        (name.startsWith("vendor/") && /\.(cs|csproj|props|targets|json)$/.test(name)) ||
-        /^(Directory\.Build\.(props|targets)|global\.json)$/.test(name)
-    )
+    const policy = sourcePolicy(configuration);
+    if (policy.frontendFiles.includes(name) || policy.frontendRoots.some((directory) => name.startsWith(directory + "/"))) return "frontend";
+    if (policy.backendRoots.some((directory) => name.startsWith(directory + "/")) || /^(Directory\.Build\.(props|targets)|global\.json)$/.test(name))
         return "backend";
     return null;
 }
@@ -386,7 +411,7 @@ export async function session(argv = process.argv.slice(2)) {
     process.once("SIGINT", () => void shutdown());
     process.once("SIGTERM", () => void shutdown());
     try {
-        for (const name of ["frontend", "src", "vendor"]) {
+        for (const name of sourcePolicy().directories.filter((name) => existsSync(path.join(root, name)))) {
             watchers.push(
                 watch(path.join(root, name), { recursive: true }, (_, filename) => {
                     if (filename) {

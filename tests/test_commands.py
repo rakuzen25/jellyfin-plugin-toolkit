@@ -131,3 +131,23 @@ class CommandTests(unittest.TestCase):
                 build.reset_mock()
                 tasks.backend_tests([])
                 build.assert_not_called()
+
+    def test_common_tooling_checks_never_restore_dependencies(self):
+        from jellyfin_plugin_toolkit.checks import tooling
+
+        with (
+            patch.object(tooling, "check_pins") as pins,
+            patch.object(tooling, "check_workflows") as workflows,
+            patch.object(tasks, "format_target") as formatting,
+            patch.object(tooling, "run") as run,
+        ):
+            tooling.main()
+        pins.assert_called_once_with(tooling.ROOT)
+        workflows.assert_called_once_with(tooling.ROOT)
+        formatting.assert_called_once_with("tooling", False)
+        self.assertTrue(
+            any("eslint" in invocation.args for invocation in run.call_args_list)
+        )
+        self.assertTrue(
+            all("install" not in invocation.args for invocation in run.call_args_list)
+        )
