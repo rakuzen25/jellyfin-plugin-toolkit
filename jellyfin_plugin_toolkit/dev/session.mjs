@@ -7,11 +7,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = process.env.JELLYFIN_PLUGIN_ROOT;
 if (!root) throw new Error("JELLYFIN_PLUGIN_ROOT is required");
 const config = JSON.parse(await readFile(path.join(root, ".build/generated/plugin.json"), "utf8"));
-const adapter = config.frontend?.enabled ? await import(pathToFileURL(path.join(root, config.frontend.build || "frontend/build.mjs")).href) : null;
-if (adapter && (typeof adapter.compileWeb !== "function" || typeof adapter.writeGeneration !== "function"))
-    throw new Error("The configured frontend build adapter must export compileWeb and writeGeneration");
-const compileWeb = adapter?.compileWeb || (async () => new Map());
-const writeGeneration = adapter?.writeGeneration || (async () => {});
+let adapterPromise;
+async function frontendAdapter() {
+    adapterPromise ||= import(pathToFileURL(path.join(root, config.frontend.build || "frontend/build.mjs")).href).then((adapter) => {
+        if (typeof adapter.compileWeb !== "function" || typeof adapter.writeGeneration !== "function")
+            throw new Error("The configured frontend build adapter must export compileWeb and writeGeneration");
+        return adapter;
+    });
+    return adapterPromise;
+}
+async function compileWeb() {
+    return config.frontend?.enabled ? (await frontendAdapter()).compileWeb() : new Map();
+}
+async function writeGeneration(files, directory) {
+    if (config.frontend?.enabled) await (await frontendAdapter()).writeGeneration(files, directory);
+    else await mkdir(directory, { recursive: true });
+}
 const rendererAssets = config.frontend?.reload_assets || [];
 const assetPrefix = config.sandbox?.asset_prefix || "/__no_plugin_assets__/";
 const settingsPage = config.sandbox?.settings_page || "";
