@@ -4,14 +4,47 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Immutable toolkit source revision to validate
+        type: string
+        default: ""
+    outputs:
+      artifact_id:
+        description: Candidate archive and checksums tested by every consumer variant
+        value: ${{ jobs.candidate.outputs.artifact_id }}
 permissions:
   contents: read
 jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    outputs:
+      artifact_id: ${{ steps.archive.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 toolkit pack --release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        id: archive
+        with:
+          name: toolkit-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/jellyfin-plugin-toolkit-*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
   toolkit:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -35,6 +68,7 @@ jobs:
           docker run --rm --network none -v "$PWD:/work:ro" -w /work
           rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
   starter:
+    needs: candidate
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -43,6 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -54,13 +89,27 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           global-json-file: global.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
+          path: dist
+          merge-multiple: true
+      - name: Verify candidate archive
+        run: cd dist && sha256sum --strict -c SHA256SUMS
       - name: Generate an independent consumer
         env:
           VARIANT: ${{ matrix.variant }}
         run: |
-          args=()
-          if [ "$VARIANT" = administrator-override ]; then args+=(--admin --host-project server/Entry.csproj); fi
-          python3 toolkit new "$RUNNER_TEMP/starter" --id fixture-third --name 'Fixture Third' --repository fixture/third "${args[@]}"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from jellyfin_plugin_toolkit.scaffold import generate
+          admin = os.environ['VARIANT'] == 'administrator-override'
+          generate(None, Path(os.environ['RUNNER_TEMP']) / 'starter', 'fixture-third',
+                   'Fixture Third', 'fixture/third', admin,
+                   'server/Entry.csproj' if admin else 'src/Host/Plugin.csproj',
+                   toolkit_archive=next(Path('dist').glob('jellyfin-plugin-toolkit-*.tar.gz')))
+          PY
           mkdir -p "$RUNNER_TEMP/starter/build-support"
           cp dist/jellyfin-plugin-toolkit-*.tar.gz "$RUNNER_TEMP/starter/build-support/toolkit.tar.gz"
       - name: Bootstrap and exercise the generated consumer

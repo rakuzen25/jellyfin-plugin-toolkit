@@ -1,0 +1,98 @@
+name: Prepare toolkit release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing toolkit draft tag to validate and retry (blank runs release-please)
+        type: string
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: toolkit-release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      tag: ${{ steps.draft.outputs.tag }}
+      sha: ${{ steps.draft.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - name: Require GitHub App credentials
+        if: inputs.tag == ''
+        env:
+          APP_CLIENT_ID: ${{ vars.PLUGIN_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+        run: test -n "$APP_CLIENT_ID" && test -n "$APP_PRIVATE_KEY"
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        if: inputs.tag == ''
+        with:
+          client-id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        id: release
+        if: inputs.tag == ''
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Resolve the matching unpublished draft
+        id: draft
+        if: inputs.tag != '' || steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || steps.release.outputs.tag_name }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: >-
+          python3 -m jellyfin_plugin_toolkit.toolkit_release resolve
+          --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --output "$GITHUB_OUTPUT"
+  validate:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+  attach:
+    needs: [prepare, validate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.validate.outputs.artifact_id }}
+          path: dist
+          merge-multiple: true
+      - name: Attach the validated archive to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: >-
+          python3 -m jellyfin_plugin_toolkit.toolkit_release upload
+          --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory dist
+      - name: Record the publication handoff
+        run: echo 'Toolkit draft artifacts validated. Review both pilot consumers before manually publishing the draft.' >> "$GITHUB_STEP_SUMMARY"
