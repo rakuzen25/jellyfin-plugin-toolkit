@@ -73,6 +73,7 @@ jobs:
           ./plugin check
           ./plugin test
           ./plugin build
+          python3 "$GITHUB_WORKSPACE/tests/dev_smoke.py" "$PWD"
           ./plugin test installation
           ./plugin test reproducibility
           if [ "$VARIANT" = administrator-override ]; then ./plugin test browser --project workflow-chromium; fi
