@@ -48,3 +48,34 @@ class StarterTests(unittest.TestCase):
                     False,
                     "../Outside.csproj",
                 )
+
+    def test_generated_repository_ignores_execution_reports(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "plugin"
+            generate(None, root, "example", "Example", "example/plugin", True)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            for name in [
+                "tests/browser/results-run.fixture/.last-run.json",
+                "tests/backend/Host/TestResults/results.trx",
+            ]:
+                result = subprocess.run(
+                    ["git", "-C", str(root), "check-ignore", "--no-index", name],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(0, result.returncode, name)
+            maintained = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(root),
+                    "check-ignore",
+                    "--no-index",
+                    "tests/browser/admin.spec.cjs",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(1, maintained.returncode)

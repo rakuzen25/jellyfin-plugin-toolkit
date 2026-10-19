@@ -238,7 +238,7 @@ def generate(
     )
     put(
         ".gitignore",
-        ".build/\ndist/\n.venv/\nnode_modules/\n**/bin/\n**/obj/\n**/__pycache__/\n",
+        ".build/\ndist/\n.venv/\nnode_modules/\n**/bin/\n**/obj/\n**/__pycache__/\n**/results-run.*/\n**/TestResults/\n.ruff_cache/\n.mypy_cache/\n",
     )
     put(
         "Directory.Build.props",
