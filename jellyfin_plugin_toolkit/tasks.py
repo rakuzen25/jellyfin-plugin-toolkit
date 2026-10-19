@@ -251,6 +251,12 @@ def check(target):
 def backend_tests(extra):
     ctx = Context.load()
     ctx.generated()
+    frontend = ctx.config.get("frontend", {})
+    if frontend.get("enabled") and any(
+        not (ctx.root / "dist/web" / asset).is_file()
+        for asset in frontend.get("required_assets", ["config.html"])
+    ):
+        frontend_build()
     for project in ctx.config["backend"].get("tests", []):
         run(
             executable("dotnet"),

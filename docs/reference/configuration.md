@@ -48,4 +48,6 @@ Unknown maintained inputs fail CI classification until a rule covers them. A too
 | `validate --full`                  | Run configured checks, unit groups, complete packaging and acceptance groups |
 | `new`                              | Generate a consumer using the installed toolkit lock                         |
 
+Backend tests compile missing embedded frontend resources using already restored dependencies. Verified prebuilt browser assets can be supplied by CI without requiring a second frontend build.
+
 The launcher accepts verified archives from the source bundle, cache, or explicit `JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE` path. Only bootstrap installs a missing toolkit automatically; other commands diagnose a missing installation. Corrupt, incomplete, linked, or escaping archives are rejected before replacing the active installation.

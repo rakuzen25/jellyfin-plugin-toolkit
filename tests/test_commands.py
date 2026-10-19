@@ -101,3 +101,33 @@ class CommandTests(unittest.TestCase):
             str(tasks.TOOLKIT_ROOT),
             pip.kwargs["env"]["PYTHONPATH"].split(__import__("os").pathsep),
         )
+
+    def test_backend_tests_prepare_missing_embedded_resources_without_installing(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = SimpleNamespace(
+                root=root,
+                config={
+                    "frontend": {"enabled": True, "required_assets": ["config.html"]},
+                    "backend": {"tests": []},
+                },
+                generated=Mock(),
+            )
+            with (
+                patch.object(Context, "load", return_value=context),
+                patch.object(tasks, "frontend_build") as build,
+                patch.object(tasks, "run") as run,
+            ):
+                tasks.backend_tests([])
+                build.assert_called_once()
+                run.assert_not_called()
+                (root / "dist/web").mkdir(parents=True)
+                (root / "dist/web/config.html").write_text("verified prebuilt resource")
+                build.reset_mock()
+                tasks.backend_tests([])
+                build.assert_not_called()
