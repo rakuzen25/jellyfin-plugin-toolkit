@@ -241,18 +241,9 @@ def check(target):
             if path.suffix == ".py":
                 compile((ROOT / path).read_bytes(), str(path), "exec")
         run(executable("pnpm"), "exec", "taplo", "format", "--check", "plugin.toml")
-        run(
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "-v",
-            str(ROOT) + ":/work:ro",
-            "-w",
-            "/work",
-            IMAGES["actionlint"],
-        )
+        from jellyfin_plugin_toolkit.checks.workflows import check_workflows
+
+        check_workflows(ROOT)
     else:
         raise ValueError("Unknown check target: " + target)
 

@@ -138,7 +138,7 @@ def metadata_check(root):
         if metadata_path(name) and name.endswith(".json") and (root / name).exists():
             json.loads((root / name).read_text())
     from jellyfin_plugin_toolkit.checks.pins import check_pins
-    from jellyfin_plugin_toolkit.common.process import IMAGES, executable, run
+    from jellyfin_plugin_toolkit.common.process import executable, run
 
     check_pins(root)
     run(
@@ -150,16 +150,7 @@ def metadata_check(root):
         "plugin.toml",
         cwd=root,
     )
-    run(
-        "docker",
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "-v",
-        str(root) + ":/work:ro",
-        "-w",
-        "/work",
-        IMAGES["actionlint"],
-    )
+    from jellyfin_plugin_toolkit.checks.workflows import check_workflows
+
+    check_workflows(root)
     print("PASS: configured automation metadata syntax and workflow/toolkit pins")

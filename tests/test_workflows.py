@@ -60,3 +60,26 @@ class WorkflowTests(unittest.TestCase):
             render("example/toolkit", "main")
         with self.assertRaises(ValueError):
             render("example/toolkit", "a" * 40, "owner/repo/extra")
+
+    def test_source_distribution_workflows_do_not_require_git_metadata(self):
+        from types import SimpleNamespace
+
+        from jellyfin_plugin_toolkit.checks import workflows as checker
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            directory = root / ".github/workflows"
+            directory.mkdir(parents=True)
+            (directory / "validate.yml").write_text("name: Fixture\n")
+            context = SimpleNamespace(
+                config={"images": {"actionlint": "fixture@sha256:" + "a" * 64}}
+            )
+            with (
+                patch.object(checker.Context, "load", return_value=context),
+                patch.object(checker, "run") as run,
+            ):
+                checker.check_workflows(root)
+            self.assertFalse((root / ".git").exists())
+            self.assertEqual(".github/workflows/validate.yml", run.call_args.args[-1])
+            self.assertIn(str(root) + ":/work:ro", run.call_args.args)
+            self.assertNotIn("install", run.call_args.args)
