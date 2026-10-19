@@ -43,7 +43,8 @@ def assemble(staging, release_mode=False):
         "https://github.com/" + ctx.identity["repository"],
     )
     download = os.environ.get(
-        "JELLYFIN_PLUGIN_DOWNLOAD_BASE_URL", "http://127.0.0.1:18098"
+        "JELLYFIN_PLUGIN_DOWNLOAD_BASE_URL",
+        repository.rstrip("/") + "/releases/download/v" + version,
     )
     if release_mode:
         for value in (repository, download):

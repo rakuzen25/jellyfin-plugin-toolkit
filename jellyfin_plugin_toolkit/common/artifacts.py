@@ -66,8 +66,10 @@ def web_inputs(root):
             ],
         ),
         "files": {
-            p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted((root / "dist/web").glob("*"))
+            p.relative_to(root / "dist/web").as_posix(): hashlib.sha256(
+                p.read_bytes()
+            ).hexdigest()
+            for p in sorted((root / "dist/web").rglob("*"))
             if p.is_file()
         },
     }
