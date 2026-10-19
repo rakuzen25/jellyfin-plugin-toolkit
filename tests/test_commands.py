@@ -82,3 +82,22 @@ class CommandTests(unittest.TestCase):
             run.call_args.args[1:],
         )
         self.assertEqual(ROOT, run.call_args.kwargs["cwd"])
+
+    def test_bootstrap_venv_can_resolve_the_verified_toolkit(self):
+        with (
+            patch.object(tasks, "verify_tools"),
+            patch.object(Context, "generated"),
+            patch.object(tasks, "prepare"),
+            patch("pathlib.Path.exists", return_value=True),
+            patch.object(tasks, "run") as run,
+        ):
+            tasks.bootstrap()
+        pip = next(
+            invocation
+            for invocation in run.call_args_list
+            if "jellyfin_plugin_toolkit.checks.check_pip" in invocation.args
+        )
+        self.assertIn(
+            str(tasks.TOOLKIT_ROOT),
+            pip.kwargs["env"]["PYTHONPATH"].split(__import__("os").pathsep),
+        )

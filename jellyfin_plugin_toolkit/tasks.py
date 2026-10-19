@@ -127,7 +127,15 @@ def bootstrap():
         local = ROOT / ".venv/bin/python"
         if not local.exists():
             run(sys.executable, "-m", "venv", str(ROOT / ".venv"))
-        run(str(local), "-m", "jellyfin_plugin_toolkit.checks.check_pip")
+        run(
+            str(local),
+            "-m",
+            "jellyfin_plugin_toolkit.checks.check_pip",
+            env={
+                **os.environ,
+                "PYTHONPATH": str(TOOLKIT_ROOT) + os.pathsep + str(ROOT),
+            },
+        )
         run(
             str(local),
             "-m",
