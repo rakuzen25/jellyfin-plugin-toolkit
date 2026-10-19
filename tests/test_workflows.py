@@ -22,7 +22,9 @@ class WorkflowTests(unittest.TestCase):
             (root / "toolkit.lock.json").write_text(json.dumps(lock))
             workflows = root / ".github/workflows"
             workflows.mkdir(parents=True)
-            for name, text in render("example/toolkit", "a" * 40).items():
+            for name, text in render(
+                "example/toolkit", "a" * 40, version="v1.0.0"
+            ).items():
                 (workflows / name).write_text(text)
             preset = root / "renovate.json"
             preset.write_text(
@@ -54,16 +56,16 @@ class WorkflowTests(unittest.TestCase):
                     pins.check_pins(root)
 
     def test_validation_has_no_publication_credentials(self):
-        workflow = render("example/toolkit", "a" * 40)["validate.yml"]
+        workflow = render("example/toolkit", "a" * 40, version="v1.0.0")["validate.yml"]
         self.assertNotIn("secrets:", workflow)
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
     def test_mutable_revision_and_invalid_catalog_rejected(self):
         with self.assertRaises(ValueError):
-            render("example/toolkit", "main")
+            render("example/toolkit", "main", version="v1.0.0")
         with self.assertRaises(ValueError):
-            render("example/toolkit", "a" * 40, "owner/repo/extra")
+            render("example/toolkit", "a" * 40, "owner/repo/extra", version="v1.0.0")
 
     def test_source_distribution_workflows_do_not_require_git_metadata(self):
         from types import SimpleNamespace

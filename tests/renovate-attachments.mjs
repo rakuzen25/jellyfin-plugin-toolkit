@@ -7,10 +7,10 @@ import { extractPackageFile } from "/usr/local/renovate/dist/modules/manager/cus
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const preset = JSON.parse(fs.readFileSync(root + "/default.json", "utf8"));
 const { extractPackageFile: extractConfig } = await import("/usr/local/renovate/dist/modules/manager/renovate-config/index.js");
-const configured = await extractConfig(JSON.stringify({ extends: ["github>rakuzen25/jellyfin-plugin-toolkit#v1.0.0"] }), "renovate.json", {});
-assert.ok(configured.deps.some((dependency) => dependency.currentValue === "v1.0.0" && dependency.depName === "rakuzen25/jellyfin-plugin-toolkit"));
-const before = JSON.parse(fs.readFileSync(root + "/tests/fixtures/releases/1.0.0.json", "utf8"));
-const after = JSON.parse(fs.readFileSync(root + "/tests/fixtures/releases/1.0.1.json", "utf8"));
+const configured = await extractConfig(JSON.stringify({ extends: ["github>rakuzen25/jellyfin-plugin-toolkit#v0.1.0"] }), "renovate.json", {});
+assert.ok(configured.deps.some((dependency) => dependency.currentValue === "v0.1.0" && dependency.depName === "rakuzen25/jellyfin-plugin-toolkit"));
+const before = JSON.parse(fs.readFileSync(root + "/tests/fixtures/releases/0.1.0.json", "utf8"));
+const after = JSON.parse(fs.readFileSync(root + "/tests/fixtures/releases/0.1.1.json", "utf8"));
 const releases = [before, after];
 for (const release of releases)
     for (const asset of release.assets) {

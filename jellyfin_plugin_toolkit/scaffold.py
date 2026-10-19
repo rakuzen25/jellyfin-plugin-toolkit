@@ -460,6 +460,8 @@ def generate(
                 "include-component-in-tag": False,
                 "force-tag-creation": True,
                 "draft": True,
+                "bump-minor-pre-major": True,
+                "bump-patch-for-minor-pre-major": True,
                 "packages": {
                     ".": {
                         "package-name": identifier,

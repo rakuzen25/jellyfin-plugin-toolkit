@@ -3,7 +3,7 @@
 import re
 
 
-def render(repository, revision, catalog=None, version="v1.0.0"):
+def render(repository, revision, catalog=None, *, version):
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Workflow generation requires an immutable toolkit revision")
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", version):
