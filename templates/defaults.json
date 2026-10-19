@@ -1,0 +1,46 @@
+{
+    "host": {
+        "abi": "12.2.0.0",
+        "framework": "net10.0",
+        "platform": "linux/amd64",
+        "image": "jellyfin/jellyfin@sha256:357724bf0ae27a672c7cbaa899db2d9abeb13dbd8657ccce750258a4c059d037"
+    },
+    "images": {
+        "playwright": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf",
+        "actionlint": "rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667"
+    },
+    "pins": {
+        "global.json": "{\n    \"sdk\": {\n        \"version\": \"10.0.402\",\n        \"rollForward\": \"disable\"\n    },\n    \"test\": {\n        \"runner\": \"Microsoft.Testing.Platform\"\n    }\n}\n",
+        ".node-version": "26.12.0\n",
+        ".python-version": "3.15.0\n"
+    },
+    "package": {
+        "name": "jellyfin-plugin-starter",
+        "private": true,
+        "packageManager": "pnpm@12.14.0",
+        "engines": {
+            "node": "26.12.0",
+            "pnpm": "12.14.0"
+        },
+        "scripts": {
+            "bootstrap": "python3 plugin bootstrap",
+            "dev": "python3 plugin dev",
+            "build": "python3 plugin build",
+            "check": "python3 plugin check",
+            "format": "python3 plugin format",
+            "test": "python3 plugin test"
+        },
+        "devDependencies": {
+            "@eslint/js": "10.0.1",
+            "@taplo/cli": "0.7.0",
+            "@typescript/native": "npm:typescript@7.0.2",
+            "eslint": "10.13.0",
+            "eslint-config-prettier": "10.1.8",
+            "globals": "17.13.0",
+            "knip": "6.41.0",
+            "prettier": "3.9.10",
+            "typescript": "npm:@typescript/typescript6@6.0.2",
+            "typescript-eslint": "8.71.2"
+        }
+    }
+}

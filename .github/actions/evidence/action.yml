@@ -1,0 +1,20 @@
+name: Upload validation evidence
+description: Retain validation logs and browser failures, including failed jobs
+inputs:
+  name:
+    description: Unique artifact name for this job or matrix entry
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      if: always()
+      with:
+        name: ${{ inputs.name }}
+        path: |
+          dist/evidence/
+          dist/reproducibility-*.log
+          tests/browser/results/
+          tests/browser/results-report/
+          tests/browser/results-run.*/
+        if-no-files-found: warn

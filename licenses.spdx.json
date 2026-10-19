@@ -1,0 +1,14 @@
+{
+    "schema": 1,
+    "default": "Apache-2.0",
+    "exceptions": [
+        {
+            "paths": ["ui/lifecycle.ts", "ui/lifecycle.test.ts"],
+            "license": "MPL-2.0",
+            "origin": "LyricBridge renderer resource lifecycle, retaining MPL-2.0 from the LyricMotion-derived renderer",
+            "upstream": "https://github.com/ThisIsTeddyBear/Jellyfin-LyricMotion",
+            "notice": "NOTICE",
+            "licenseText": "MPL-2.0.txt"
+        }
+    ]
+}

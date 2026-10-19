@@ -1,0 +1,98 @@
+name: Build draft release artifacts
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      sha:
+        type: string
+        default: ""
+      validated_run_id:
+        type: string
+        default: ""
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: release-artifacts-${{ github.repository }}-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: inputs.validated_run_id == ''
+    uses: ./.github/workflows/validate.yml
+    with:
+      ref: ${{ inputs.sha || inputs.tag }}
+      release_tag: ${{ inputs.tag }}
+      release_mode: true
+  attach:
+    needs: validate
+    if: always() && (needs.validate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.validated_run_id != ''))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      VALIDATED_RUN_ID: ${{ inputs.validated_run_id || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.sha || inputs.tag }}
+          persist-credentials: false
+      - name: Resolve the authenticated reusable workflow revision
+        id: signer
+        env:
+          EXPECTED_REPOSITORY: rakuzen25/jellyfin-plugin-toolkit
+        run: |
+          python3 - <<'PY'
+          import base64,json,os,re,urllib.request
+          url=os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience=jellyfin-plugin-toolkit'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+          with urllib.request.urlopen(req,timeout=30) as response:
+              token=json.load(response)['value']
+          part=token.split('.')[1]
+          claims=json.loads(base64.urlsafe_b64decode(part+'='*(-len(part)%4)))
+          repo=os.environ['EXPECTED_REPOSITORY']
+          revision=claims.get('job_workflow_sha','')
+          expected=repo+'/.github/workflows/release.yml@'+revision
+          if not re.fullmatch('[0-9a-f]{40}',revision) or claims.get('job_workflow_ref')!=expected:
+              raise SystemExit('Release requires an immutable, authenticated toolkit workflow')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('revision='+revision+'\n')
+          PY
+      - name: Check out protected toolkit upload code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: rakuzen25/jellyfin-plugin-toolkit
+          ref: ${{ steps.signer.outputs.revision }}
+          path: .release-tools
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .release-tools/.python-version
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: plugin-candidate
+          path: dist
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.validated_run_id || github.run_id }}
+      - name: Verify complete release receipt from the authenticated source run
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: PYTHONPATH="$PWD/.release-tools" python3 -P -m jellyfin_plugin_toolkit.ci verify --root "$PWD" --run-id "${VALIDATED_RUN_ID:-${{ github.run_id }}}"
+      - name: Attest the verified validation receipt
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/validation.json
+      - name: Verify and attach the tested artifacts
+        run: |
+          PYTHONPATH="$PWD/.release-tools" python3 -P -m jellyfin_plugin_toolkit.release --root "$PWD" upload --repository "$REPOSITORY" --tag "$RELEASE_TAG"
+      - name: Write handoff
+        run: |
+          echo "Draft artifacts verified. Review the green validation jobs, then publish the draft in GitHub Releases." >> "$GITHUB_STEP_SUMMARY"
+          echo "Publishing triggers a verified catalog update; see docs/how-to/release.md." >> "$GITHUB_STEP_SUMMARY"

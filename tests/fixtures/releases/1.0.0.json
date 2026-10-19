@@ -1,0 +1,10 @@
+{
+    "tag_name": "v1.0.0",
+    "target_commitish": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "assets": [
+        {
+            "name": "SHA256SUMS",
+            "body": "1111111111111111111111111111111111111111111111111111111111111111  jellyfin-plugin-toolkit-1.0.0.tar.gz\n"
+        }
+    ]
+}

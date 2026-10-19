@@ -1,0 +1,60 @@
+name: Notify configured plugin catalog
+on:
+  workflow_call:
+    inputs:
+      catalog_repository:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+      app_client_id:
+        required: true
+        type: string
+    secrets:
+      PLUGIN_APP_PRIVATE_KEY:
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: catalog-notify-${{ github.repository }}-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  notify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate catalog destination
+        id: destination
+        env:
+          DESTINATION: ${{ inputs.catalog_repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import os,re
+          destination=os.environ['DESTINATION']
+          if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',destination):
+              raise SystemExit('Invalid catalog repository')
+          if not re.fullmatch(r'v\d+\.\d+\.\d+',os.environ['RELEASE_TAG']):
+              raise SystemExit('Catalog notification requires a stable release tag')
+          owner,repository=destination.split('/')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('owner='+owner+'\nrepository='+repository+'\n')
+          PY
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+          owner: ${{ steps.destination.outputs.owner }}
+          repositories: ${{ steps.destination.outputs.repository }}
+          permission-contents: write
+      - name: Notify catalog; receiver authenticates the release independently
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          DESTINATION: ${{ inputs.catalog_repository }}
+        run: |
+          jq -n --arg repository "$SOURCE_REPOSITORY" --arg tag "$RELEASE_TAG" \
+            '{event_type:"plugin-published",client_payload:{repository:$repository,tag:$tag}}' \
+            | gh api --method POST "repos/$DESTINATION/dispatches" --input -

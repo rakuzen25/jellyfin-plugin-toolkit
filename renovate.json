@@ -1,0 +1,12 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": ["config:recommended"],
+    "automerge": false,
+    "minimumReleaseAge": "1 day",
+    "packageRules": [
+        {
+            "matchManagers": ["github-actions"],
+            "pinDigests": true
+        }
+    ]
+}

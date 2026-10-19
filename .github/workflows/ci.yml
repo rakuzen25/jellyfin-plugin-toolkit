@@ -1,0 +1,79 @@
+name: Toolkit validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  toolkit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version-file: .python-version
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+        with:
+          install: false
+          node-version-file: .node-version
+      - run: python -m pip install --uploaded-prior-to=P1D -r requirements-check.txt
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: python3 toolkit test
+      - run: node --test ui/lifecycle.test.ts tests/*.test.mjs
+      - name: Validate Renovate release attachment updates
+        run: >-
+          docker run --rm --network none --entrypoint node -v "$PWD:/toolkit:ro"
+          ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21
+          /toolkit/tests/renovate-attachments.mjs
+      - name: Validate workflows
+        run: >-
+          docker run --rm --network none -v "$PWD:/work:ro" -w /work
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+  starter:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [backend, administrator-override]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version-file: .python-version
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+        with:
+          install: false
+          node-version-file: .node-version
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          global-json-file: global.json
+      - name: Generate an independent consumer
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          args=()
+          if [ "$VARIANT" = administrator-override ]; then args+=(--admin --host-project server/Entry.csproj); fi
+          python3 toolkit new "$RUNNER_TEMP/starter" --id fixture-third --name 'Fixture Third' --repository fixture/third "${args[@]}"
+          mkdir -p "$RUNNER_TEMP/starter/build-support"
+          cp dist/jellyfin-plugin-toolkit-*.tar.gz "$RUNNER_TEMP/starter/build-support/toolkit.tar.gz"
+      - name: Bootstrap and exercise the generated consumer
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          cd "$RUNNER_TEMP/starter"
+          ./plugin bootstrap
+          ./plugin format
+          ./plugin check
+          ./plugin test
+          ./plugin build
+          python3 "$GITHUB_WORKSPACE/tests/dev_smoke.py" "$PWD"
+          ./plugin test installation
+          ./plugin test reproducibility
+          if [ "$VARIANT" = administrator-override ]; then ./plugin test browser --project workflow-chromium; fi

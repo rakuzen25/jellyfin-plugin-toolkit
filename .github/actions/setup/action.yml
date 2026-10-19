@@ -1,0 +1,55 @@
+name: Jellyfin plugin pinned tooling
+description: Frozen dependency restoration and verified official references
+inputs:
+  node:
+    default: "false"
+    description: Restore the pnpm workspace
+  python:
+    default: "false"
+    description: Install Python check dependencies
+  dotnet:
+    default: "false"
+    description: Install the pinned SDK and cache NuGet packages
+  references:
+    default: "false"
+    description: Bootstrap or verify official Linux x64 references
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version-file: .python-version
+        cache: ${{ inputs.python == 'true' && 'pip' || '' }}
+        cache-dependency-path: requirements-check.txt
+    - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3
+      if: inputs.node == 'true'
+      with:
+        install: false
+        node-version-file: .node-version
+        cache: true
+        cache-dependency-path: pnpm-lock.yaml
+    - run: node "$JELLYFIN_PLUGIN_TOOLKIT_ROOT/node/check-toolchain.mjs" && pnpm install --frozen-lockfile
+      shell: bash
+      if: inputs.node == 'true'
+    - run: python -m jellyfin_plugin_toolkit.checks.check_pip && python -m pip install --uploaded-prior-to=P1D -r requirements-check.txt
+      shell: bash
+      if: inputs.python == 'true'
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+      if: inputs.dotnet == 'true'
+      with:
+        global-json-file: global.json
+        cache: true
+        cache-dependency-path: "**/packages.lock.json"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      if: inputs.references == 'true'
+      with:
+        path: .build/jellyfin
+        key: official-jellyfin-linux-amd64-${{ hashFiles('plugin.toml', 'toolkit.lock.json') }}
+    - name: Verify official reference cache or bootstrap
+      if: inputs.references == 'true'
+      shell: bash
+      run: python3 -m jellyfin_plugin_toolkit.dev.references
+    - name: Restore locked backend dependencies
+      if: inputs.dotnet == 'true' && inputs.references == 'true'
+      shell: bash
+      run: python3 -m jellyfin_plugin_toolkit.build.backend
