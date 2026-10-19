@@ -1,16 +1,16 @@
 """Synthetic consumer context for generic tooling tests; no pilot repository imports."""
 
-import atexit
+import copy
 import json
 import os
 import tempfile
+import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.scaffold import toml
 
-temporary = tempfile.TemporaryDirectory(prefix="toolkit-tests-")
-atexit.register(temporary.cleanup)
-ROOT = Path(temporary.name)
 defaults = json.loads(
     (Path(__file__).resolve().parents[1] / "templates/defaults.json").read_text()
 )
@@ -81,16 +81,34 @@ config["validation"]["rules"] = [
     },
     {"patterns": ["renovate.json"], "groups": ["metadata"]},
 ]
-(ROOT / "plugin.toml").write_text(toml(config))
-(ROOT / "version.txt").write_text("0.1.0\n")
-(ROOT / "toolkit.lock.json").write_text(
-    json.dumps(
-        {
-            "schema": 1,
-            "repository": "example/toolkit",
-            "version": "v1.0.0",
-            "sha256": "a" * 64,
-        }
+
+
+def create_consumer(root, selected=None):
+    selected = copy.deepcopy(config if selected is None else selected)
+    (root / "plugin.toml").write_text(toml(selected))
+    (root / "version.txt").write_text("0.1.0\n")
+    (root / "toolkit.lock.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "repository": "example/toolkit",
+                "version": "v1.0.0",
+                "sha256": "a" * 64,
+            }
+        )
     )
-)
-os.environ["JELLYFIN_PLUGIN_ROOT"] = str(ROOT)
+    (root / "frontend/admin").mkdir(parents=True, exist_ok=True)
+    (root / "frontend/admin/config.ts").write_text("export {};\n")
+    (root / "frontend/build.mjs").write_text("export {};\n")
+    return Context.load(root)
+
+
+class ConsumerTestCase(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="toolkit-tests-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.ctx = create_consumer(self.root)
+        environment = patch.dict(os.environ, {"JELLYFIN_PLUGIN_ROOT": str(self.root)})
+        environment.start()
+        self.addCleanup(environment.stop)

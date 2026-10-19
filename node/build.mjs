@@ -7,7 +7,7 @@ export async function createBuilder(root) {
     const configuration = JSON.parse(await readFile(path.join(root, ".build/generated/plugin.json"), "utf8"));
     const frontend = configuration.frontend;
     const directory = frontend.directory || "frontend";
-    const { build } = createRequire(path.join(root, directory, "package.json"))("esbuild");
+    const bundle = (options) => createRequire(path.join(root, directory, "package.json"))("esbuild").build(options);
     const bundleEntries = frontend.entries || {};
     const rendererAssets = frontend.reload_assets || [];
     async function compileWeb(sourceRoot = root) {
@@ -22,28 +22,42 @@ export async function createBuilder(root) {
             logLevel: "silent",
         };
         const files = new Map();
+        function add(name, contents) {
+            if (
+                typeof name !== "string" ||
+                !name ||
+                name.includes("\\") ||
+                path.posix.isAbsolute(name) ||
+                name === "." ||
+                path.posix.normalize(name) !== name ||
+                name.split("/").includes("..")
+            )
+                throw new Error("Invalid asset output path: " + name);
+            if (files.has(name)) throw new Error("Duplicate asset output: " + name);
+            files.set(name, contents);
+        }
         const assets = path.join(sourceRoot, frontend.assets || directory + "/assets");
         try {
             for (const entry of await readdir(assets, { recursive: true, withFileTypes: true })) {
                 if (entry.isFile()) {
                     const absolute = path.join(entry.parentPath, entry.name);
-                    files.set(path.relative(assets, absolute), await readFile(absolute));
+                    add(path.relative(assets, absolute), await readFile(absolute));
                 }
             }
         } catch (error) {
             if (error.code !== "ENOENT") throw error;
         }
-        for (const entry of frontend.extra_assets || []) files.set(entry.name, await readFile(path.join(sourceRoot, entry.source)));
+        for (const entry of frontend.extra_assets || []) add(entry.name, await readFile(path.join(sourceRoot, entry.source)));
         for (const [entry, output] of Object.entries(bundleEntries)) {
-            const result = await build({
+            const result = await bundle({
                 ...options,
                 entryPoints: [entry],
                 banner: { js: frontend.banners?.[entry] || "/* Generated from maintained TypeScript sources. */" },
             });
-            files.set(output, result.outputFiles[0].contents);
+            add(output, result.outputFiles[0].contents);
         }
         if (frontend.admin_entry) {
-            const result = await build({ ...options, supported: { "template-literal": false }, entryPoints: [frontend.admin_entry] });
+            const result = await bundle({ ...options, supported: { "template-literal": false }, entryPoints: [frontend.admin_entry] });
             const script = result.outputFiles[0].text;
             if (script.includes("${")) throw new Error("Inline administrator script contains Jellyfin localization tokens");
             let template = await readFile(path.join(sourceRoot, frontend.admin_template), "utf8");
@@ -54,10 +68,7 @@ export async function createBuilder(root) {
                     frontend.style_marker || "/* PLUGIN_STYLES */",
                     await readFile(path.join(sourceRoot, frontend.admin_styles), "utf8"),
                 );
-            files.set(
-                "config.html",
-                Buffer.from(template.replace(marker, "<script>\n" + script.replaceAll("</script", "<\\/script") + "\n</script>")),
-            );
+            add("config.html", Buffer.from(template.replace(marker, "<script>\n" + script.replaceAll("</script", "<\\/script") + "\n</script>")));
         }
         return files;
     }

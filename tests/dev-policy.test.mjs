@@ -1,15 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
-const root = await mkdtemp(path.join(os.tmpdir(), "toolkit-watch-policy-"));
-await mkdir(path.join(root, ".build/generated"), { recursive: true });
-await writeFile(path.join(root, ".build/generated/plugin.json"), JSON.stringify({ frontend: { enabled: false } }));
-process.env.JELLYFIN_PLUGIN_ROOT = root;
-const { sourcePolicy, classifyChange } = await import("../jellyfin_plugin_toolkit/dev/session.mjs");
-await rm(root, { recursive: true, force: true });
+import { sourcePolicy, classifyChange } from "../jellyfin_plugin_toolkit/dev/session.mjs";
 
 test("backend-only plugins watch declared project directories without requiring optional layers", () => {
     const config = { backend: { projects: { Host: "server/Entry.csproj" } }, frontend: { enabled: false } };

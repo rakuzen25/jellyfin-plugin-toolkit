@@ -1,22 +1,22 @@
 """Public command defaults, argument forwarding and failure propagation."""
 
 import subprocess
-import unittest
 from unittest.mock import call, patch
 
-from consumer_fixture import ROOT
+from consumer_fixture import ConsumerTestCase
 
 from jellyfin_plugin_toolkit import tasks
 from jellyfin_plugin_toolkit.cli import main
 from jellyfin_plugin_toolkit.context import Context
 
 
-class CommandTests(unittest.TestCase):
+class CommandTests(ConsumerTestCase):
     def test_default_tests_do_not_run_acceptance(self):
         with patch.object(tasks, "test") as test:
             main(["test"])
         self.assertEqual(
-            [call("backend", []), call("tooling", [])], test.call_args_list
+            [call(self.ctx, "backend", []), call(self.ctx, "tooling", [])],
+            test.call_args_list,
         )
 
     def test_browser_arguments_are_forwarded_literally(self):
@@ -32,7 +32,9 @@ class CommandTests(unittest.TestCase):
                 ]
             )
         test.assert_called_once_with(
-            "browser", ["--project", "workflow-chromium", "--grep", "literal $(value)"]
+            self.ctx,
+            "browser",
+            ["--project", "workflow-chromium", "--grep", "literal $(value)"],
         )
 
     def test_check_stops_after_first_failure(self):
@@ -47,25 +49,26 @@ class CommandTests(unittest.TestCase):
 
     def test_docs_checks_format_before_links_without_installing(self):
         with (
-            patch.object(tasks, "run") as run,
+            patch("jellyfin_plugin_toolkit.checks.formatting.run") as run,
             patch("jellyfin_plugin_toolkit.checks.docs.main") as links,
         ):
-            tasks.check("docs")
-        links.assert_called_once()
+            tasks.check(self.ctx, "docs")
+        links.assert_called_once_with(self.ctx)
         self.assertIn("--check", run.call_args.args)
         self.assertNotIn("install", run.call_args.args)
         with (
-            patch.object(
-                tasks, "run", side_effect=subprocess.CalledProcessError(1, "prettier")
+            patch(
+                "jellyfin_plugin_toolkit.checks.formatting.run",
+                side_effect=subprocess.CalledProcessError(1, "prettier"),
             ),
             patch("jellyfin_plugin_toolkit.checks.docs.main") as links,
             self.assertRaises(subprocess.CalledProcessError),
         ):
-            tasks.check("docs")
+            tasks.check(self.ctx, "docs")
         links.assert_not_called()
 
     def test_operations_use_argv_and_preserve_globs(self):
-        context = Context.load(ROOT)
+        context = Context.load(self.root)
         selected = dict(context.config)
         selected["operations"] = {
             "test-example": {
@@ -73,15 +76,18 @@ class CommandTests(unittest.TestCase):
             }
         }
         with (
-            patch.object(Context, "load", return_value=Context(ROOT, selected)),
             patch.object(tasks, "run") as run,
         ):
-            self.assertTrue(tasks.operation("test-example", ["--workers=2"]))
+            self.assertTrue(
+                tasks.operation(
+                    Context(self.root, selected), "test-example", ["--workers=2"]
+                )
+            )
         self.assertEqual(
             ("fixture.py", "**/*.{ts,mjs}", "$(literal)", "--workers=2"),
             run.call_args.args[1:],
         )
-        self.assertEqual(ROOT, run.call_args.kwargs["cwd"])
+        self.assertEqual(self.root, run.call_args.kwargs["cwd"])
 
     def test_bootstrap_venv_can_resolve_the_verified_toolkit(self):
         with (
@@ -91,7 +97,7 @@ class CommandTests(unittest.TestCase):
             patch("pathlib.Path.exists", return_value=True),
             patch.object(tasks, "run") as run,
         ):
-            tasks.bootstrap()
+            tasks.bootstrap(self.ctx)
         pip = next(
             invocation
             for invocation in run.call_args_list
@@ -119,17 +125,16 @@ class CommandTests(unittest.TestCase):
                 generated=Mock(),
             )
             with (
-                patch.object(Context, "load", return_value=context),
                 patch.object(tasks, "frontend_build") as build,
                 patch.object(tasks, "run") as run,
             ):
-                tasks.backend_tests([])
-                build.assert_called_once()
+                tasks.backend_tests(context, [])
+                build.assert_called_once_with(context)
                 run.assert_not_called()
                 (root / "dist/web").mkdir(parents=True)
                 (root / "dist/web/config.html").write_text("verified prebuilt resource")
                 build.reset_mock()
-                tasks.backend_tests([])
+                tasks.backend_tests(context, [])
                 build.assert_not_called()
 
     def test_common_tooling_checks_never_restore_dependencies(self):
@@ -138,16 +143,35 @@ class CommandTests(unittest.TestCase):
         with (
             patch.object(tooling, "check_pins") as pins,
             patch.object(tooling, "check_workflows") as workflows,
-            patch.object(tasks, "format_target") as formatting,
+            patch(
+                "jellyfin_plugin_toolkit.checks.formatting.format_target"
+            ) as formatting,
             patch.object(tooling, "run") as run,
         ):
-            tooling.main()
-        pins.assert_called_once_with(tooling.ROOT)
-        workflows.assert_called_once_with(tooling.ROOT)
-        formatting.assert_called_once_with("tooling", False)
+            tasks.check(self.ctx, "tooling")
+        pins.assert_called_once_with(self.root)
+        workflows.assert_called_once_with(self.root)
+        formatting.assert_called_once_with(self.ctx, "tooling", False)
         self.assertTrue(
             any("eslint" in invocation.args for invocation in run.call_args_list)
         )
         self.assertTrue(
             all("install" not in invocation.args for invocation in run.call_args_list)
         )
+
+    def test_tooling_check_preserves_consumer_formatting_override(self):
+        self.ctx.config["operations"] = {
+            "format-check-tooling": {"commands": [["formatter", "--verify"]]}
+        }
+        with (
+            patch.object(tasks, "run") as run,
+            patch(
+                "jellyfin_plugin_toolkit.checks.formatting.format_target"
+            ) as default_format,
+            patch("jellyfin_plugin_toolkit.checks.tooling.main") as lint,
+        ):
+            tasks.check(self.ctx, "tooling")
+        self.assertEqual(("formatter", "--verify"), run.call_args.args)
+        self.assertEqual(self.root, run.call_args.kwargs["cwd"])
+        default_format.assert_not_called()
+        lint.assert_called_once_with(self.ctx)

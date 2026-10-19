@@ -4,22 +4,12 @@ import os
 import subprocess
 import sys
 
-from jellyfin_plugin_toolkit.context import Context
-
-CONTEXT = Context.load()
-ROOT = CONTEXT.root
-IMAGES = {
-    **CONTEXT.config.get("images", {}),
-    "jellyfin": CONTEXT.config["host"]["image"],
-    "platform": CONTEXT.config["host"]["platform"],
-}
-
 
 def executable(name):
     return os.environ.get("JELLYFIN_PLUGIN_" + name.upper(), name)
 
 
-def run(*args, cwd=ROOT, env=None):
+def run(*args, cwd, env=None):
     display = args
     if "--include" in args:
         boundary = args.index("--include") + 1
@@ -28,11 +18,11 @@ def run(*args, cwd=ROOT, env=None):
     subprocess.run([str(a) for a in args], cwd=cwd, env=env, check=True)
 
 
-def python_checks():
+def python_checks(ctx):
     selected = os.environ.get("JELLYFIN_PLUGIN_PYTHON")
-    local = ROOT / ".venv/bin/python"
+    local = ctx.root / ".venv/bin/python"
     selected = selected or (str(local) if local.exists() else sys.executable)
-    pin = ROOT / ".python-version"
+    pin = ctx.root / ".python-version"
     if pin.exists():
         actual = subprocess.check_output([selected, "--version"], text=True).strip()
         if actual != "Python " + pin.read_text().strip():

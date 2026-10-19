@@ -10,11 +10,9 @@ from pathlib import Path
 
 from jellyfin_plugin_toolkit.common.artifacts import artifact_hashes, digest, verify_web
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.context import Context
 
 
-def clean_package(release=False, prepared_web=False):
-    ctx = Context.load()
+def clean_package(ctx, release=False, prepared_web=False):
     repository = ctx.root
     files = source_files(repository)
     captured = digest(repository, files)

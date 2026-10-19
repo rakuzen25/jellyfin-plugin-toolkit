@@ -255,9 +255,9 @@ def upload(root: Path, directory: Path, repository: str, tag: str) -> None:
     )
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Context.load().root)
+    parser.add_argument("--root", type=Path, default=None)
     subparsers = parser.add_subparsers(dest="command", required=True)
     check = subparsers.add_parser("check")
     check.add_argument("--tag", default="")
@@ -272,8 +272,9 @@ def main() -> None:
     attach.add_argument("--repository", required=True)
     attach.add_argument("--tag", required=True)
     attach.add_argument("--directory", type=Path, default=Path("dist"))
-    args = parser.parse_args()
-    root = args.root.resolve()
+    args = parser.parse_args(argv)
+    ctx = Context.load(args.root)
+    root = ctx.root
     try:
         if args.command == "check":
             print("Validated release identity: " + check_identity(root, args.tag))

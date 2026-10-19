@@ -7,11 +7,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from jellyfin_plugin_toolkit.common.process import IMAGES, ROOT, run
+from jellyfin_plugin_toolkit.common.process import run
 from jellyfin_plugin_toolkit.common.release_metadata import load_identity
 
 
-def inventory(directory: Path) -> dict:
+def inventory(ctx, directory: Path) -> dict:
     files = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted(directory.iterdir())
@@ -26,27 +26,28 @@ def inventory(directory: Path) -> dict:
         <= files.keys()
     ):
         raise ValueError("Incomplete official references")
-    if (directory / "image.txt").read_text().strip() != IMAGES["jellyfin"]:
+    if (directory / "image.txt").read_text().strip() != ctx.images["jellyfin"]:
         raise ValueError("Reference image changed")
     return {
-        "image": IMAGES["jellyfin"],
-        "platform": IMAGES["platform"],
-        "abi": load_identity().abi,
+        "image": ctx.images["jellyfin"],
+        "platform": ctx.images["platform"],
+        "abi": load_identity(ctx.root).abi,
         "files": files,
     }
 
 
-def verify(directory: Path) -> bool:
+def verify(ctx, directory: Path) -> bool:
     try:
         return json.loads(
             (directory / "cache-integrity.json").read_text()
-        ) == inventory(directory)
+        ) == inventory(ctx, directory)
     except OSError, ValueError:
         return False
 
 
-def ensure(directory: Path = ROOT / ".build/jellyfin") -> Path:
-    if verify(directory):
+def ensure(ctx, directory: Path | None = None) -> Path:
+    directory = directory or ctx.root / ".build/jellyfin"
+    if verify(ctx, directory):
         return directory
     directory.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -55,15 +56,21 @@ def ensure(directory: Path = ROOT / ".build/jellyfin") -> Path:
         staged = Path(temporary) / "assemblies"
         staged.mkdir()
         container = subprocess.check_output(
-            ["docker", "create", "--platform", IMAGES["platform"], IMAGES["jellyfin"]],
+            [
+                "docker",
+                "create",
+                "--platform",
+                ctx.images["platform"],
+                ctx.images["jellyfin"],
+            ],
             text=True,
         ).strip()
         try:
-            run("docker", "cp", container + ":/jellyfin/.", str(staged))
+            run("docker", "cp", container + ":/jellyfin/.", str(staged), cwd=ctx.root)
         finally:
-            run("docker", "rm", container)
+            run("docker", "rm", container, cwd=ctx.root)
         deps = json.loads((staged / "jellyfin.deps.json").read_text())
-        abi = load_identity().abi
+        abi = load_identity(ctx.root).abi
         expected = ".".join(str(abi).split(".")[:3])
         if not all(
             key + "/" + expected in deps["libraries"]
@@ -80,9 +87,9 @@ def ensure(directory: Path = ROOT / ".build/jellyfin") -> Path:
         for file in staged.iterdir():
             if file.suffix in {".dll", ".so"}:
                 shutil.copy2(file, cache / file.name)
-        (cache / "image.txt").write_text(IMAGES["jellyfin"] + "\n")
+        (cache / "image.txt").write_text(ctx.images["jellyfin"] + "\n")
         (cache / "cache-integrity.json").write_text(
-            json.dumps(inventory(cache), indent=2) + "\n"
+            json.dumps(inventory(ctx, cache), indent=2) + "\n"
         )
         if directory.exists():
             shutil.rmtree(directory)
@@ -91,4 +98,6 @@ def ensure(directory: Path = ROOT / ".build/jellyfin") -> Path:
 
 
 if __name__ == "__main__":
-    ensure()
+    from jellyfin_plugin_toolkit.context import Context
+
+    ensure(Context.load())

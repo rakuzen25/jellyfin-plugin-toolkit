@@ -1,5 +1,6 @@
 """Enforce the consumer's declared project graph and source boundaries."""
 
+import ast
 import xml.etree.ElementTree as ET
 
 from jellyfin_plugin_toolkit.context import Context
@@ -22,6 +23,35 @@ def check_graph(graph):
 
     for node in graph:
         visit(node)
+
+
+def toolkit_graph(root):
+    """Include deferred imports: hiding an import inside a function does not remove its dependency."""
+    modules = {
+        ".".join(path.relative_to(root).with_suffix("").parts).removesuffix(
+            ".__init__"
+        ): path
+        for path in (root / "jellyfin_plugin_toolkit").rglob("*.py")
+    }
+    graph = {}
+    for name, path in modules.items():
+        dependencies = set()
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Import):
+                dependencies.update(
+                    alias.name for alias in node.names if alias.name in modules
+                )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                if node.module in modules:
+                    dependencies.add(node.module)
+                dependencies.update(
+                    node.module + "." + alias.name
+                    for alias in node.names
+                    if node.module + "." + alias.name in modules
+                )
+        graph[name] = dependencies - {name}
+    check_graph(graph)
+    return graph
 
 
 def check_projects(root):

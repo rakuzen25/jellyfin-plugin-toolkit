@@ -6,17 +6,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from consumer_fixture import config
+from consumer_fixture import config, create_consumer
 
 from jellyfin_plugin_toolkit.common.artifacts import digest, web_inputs
-from jellyfin_plugin_toolkit.scaffold import toml
 
 
 class DistributionInputTests(unittest.TestCase):
     def fixture(self, root):
         selected = copy.deepcopy(config)
         selected["backend"]["project_assemblies"] = ["Example.Core"]
-        (root / "plugin.toml").write_text(toml(selected))
+        create_consumer(root, selected)
         (root / "version.txt").write_text("0.1.0\n")
         (root / "toolkit.lock.json").write_text("{}")
 

@@ -22,8 +22,8 @@ OWNER_LABEL = "jellyfin-plugin-toolkit.acceptance-owner"
 
 
 class Session:
-    def __init__(self, archive: Path | None = None):
-        self.context = Context.load()
+    def __init__(self, ctx, archive: Path | None = None):
+        self.context = ctx
         self.name = "plugin-acceptance-" + uuid.uuid4().hex
         self.temporary = tempfile.TemporaryDirectory(prefix=self.name + "-")
         self.root = Path(self.temporary.name)
@@ -294,9 +294,9 @@ class Session:
             self.temporary.cleanup()
 
 
-def main():
-    inventory()
-    with Session() as session:
+def main(ctx):
+    inventory(ctx)
+    with Session(ctx) as session:
         session.restart()
         session.assert_loaded()
     print(
@@ -305,4 +305,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(Context.load())

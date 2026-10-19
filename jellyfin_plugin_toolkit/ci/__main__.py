@@ -13,7 +13,7 @@ from jellyfin_plugin_toolkit.common.artifacts import verify_web
 from jellyfin_plugin_toolkit.context import Context
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument(
         "command",
@@ -26,21 +26,26 @@ def main() -> None:
             "metadata-check",
         ),
     )
-    parser.add_argument("--root", type=Path, default=Context.load().root)
+    parser.add_argument("--root", type=Path, default=None)
     parser.add_argument("--base", default="")
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--scheduled", action="store_true")
     parser.add_argument("--reuse", action="store_true")
     parser.add_argument("--run-id", default="")
-    args = parser.parse_args()
-    root = args.root.resolve()
+    args = parser.parse_args(argv)
+    ctx = Context.load(args.root)
+    root = ctx.root
+    from jellyfin_plugin_toolkit.checks.pins import check_pins
+
+    check_pins(root)
+    ctx.generated()
     if args.command == "metadata-check":
-        ci_policy.metadata_check(root)
+        ci_policy.metadata_check(ctx)
     elif args.command == "plan":
         try:
             result = ci_planning.plan(
-                root, args.base, args.full, args.release, args.reuse, args.scheduled
+                ctx, args.base, args.full, args.release, args.reuse, args.scheduled
             )
         except ValueError as error:
             if output := os.environ.get("GITHUB_STEP_SUMMARY"):
@@ -57,14 +62,12 @@ def main() -> None:
             with open(output, "a") as stream:
                 stream.writelines(
                     f"{group}={str(group in result['execute']).lower()}\n"
-                    for group in ci_policy.GROUPS
+                    for group in ctx.groups
                 )
                 stream.write(
                     "web="
                     + str(
-                        Context.load(root)
-                        .config.get("frontend", {})
-                        .get("enabled", False)
+                        ctx.config.get("frontend", {}).get("enabled", False)
                         and bool(
                             set(result["execute"])
                             & {
@@ -93,7 +96,7 @@ def main() -> None:
             + "\nReused: "
             + ", ".join(result["reused"])
             + "\nNot required: "
-            + ", ".join(set(ci_policy.GROUPS) - set(result["required"]))
+            + ", ".join(set(ctx.groups) - set(result["required"]))
             + "\n"
         )
         summary += "\nFile classifications:\n" + "\n".join(
@@ -108,7 +111,7 @@ def main() -> None:
                 )
     elif args.command == "finish":
         result = ci_planning.finish(
-            root,
+            ctx,
             json.loads((root / "dist/plan.json").read_text()),
             json.loads(os.environ["CI_JOB_RESULTS"]),
         )
@@ -118,16 +121,16 @@ def main() -> None:
     elif args.command == "verify":
         receipt = json.loads((root / "dist/validation.json").read_text())
         ci_evidence.verify_run(os.environ["GITHUB_REPOSITORY"], args.run_id, receipt)
-        ci_evidence.verify(root, receipt, os.environ["GITHUB_REPOSITORY"], args.run_id)
+        ci_evidence.verify(ctx, receipt, os.environ["GITHUB_REPOSITORY"], args.run_id)
     else:
         path = root / "dist/web-build.json"
         current = artifacts.web_inputs(root)
         if args.command == "web-record":
             if not all(
                 name in current["files"]
-                for name in Context.load(root)
-                .config["frontend"]
-                .get("required_assets", ["config.html"])
+                for name in ctx.config["frontend"].get(
+                    "required_assets", ["config.html"]
+                )
             ):
                 raise ValueError("Prepared web assets are incomplete")
             path.write_text(json.dumps(current, indent=2) + "\n")

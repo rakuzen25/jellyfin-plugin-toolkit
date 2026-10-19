@@ -8,17 +8,17 @@ import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-from jellyfin_plugin_toolkit.build.backend import HOST_LIBRARIES
+from jellyfin_plugin_toolkit.common.binaries import HOST_LIBRARIES
 from jellyfin_plugin_toolkit.common.release_metadata import load_release
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.context import Context
+from jellyfin_plugin_toolkit.context import output_name
 
 
 def archive(target, files):
     seen = set()
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as output:
         for source, name in sorted(files, key=lambda pair: str(pair[1])):
-            name = str(name)
+            name = output_name(str(name))
             if name in seen:
                 raise ValueError("Duplicate distribution path: " + name)
             seen.add(name)
@@ -32,8 +32,7 @@ def archive(target, files):
     return target
 
 
-def assemble(staging, release_mode=False):
-    ctx = Context.load()
+def assemble(ctx, staging, release_mode=False):
     root = ctx.root
     release = load_release(root)
     version = release.version
@@ -130,7 +129,7 @@ def assemble(staging, release_mode=False):
     from jellyfin_plugin_toolkit.build.backend import reference_directory
     from jellyfin_plugin_toolkit.dev.references import inventory as reference_inventory
 
-    host = reference_inventory(reference_directory())
+    host = reference_inventory(ctx, reference_directory(ctx))
     (plugin / "build-info.json").write_text(
         json.dumps(
             {

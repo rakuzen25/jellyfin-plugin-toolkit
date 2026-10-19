@@ -27,9 +27,9 @@ Native `.python-version`, `.node-version`, `global.json`, `package.json`, and de
 | `operations`   | Named command overrides with optional working directory                                                                                                      |
 | `distribution` | Web ZIP capability, shipped notices, DLL license inventory, payload notices, licensed paths and web exclusions                                               |
 
-Paths are repository-relative and cannot escape the checkout. Frontend entries are relative to the configured frontend directory; admin templates and source inventory paths are relative to the repository. Optional layers are omitted rather than generated empty.
+Paths are repository-relative and cannot escape the checkout. Entrypoint keys are relative to the frontend directory; asset and distribution output names must be canonical relative paths without `..` components. Duplicate asset outputs fail the build. Frontend entries are relative to the configured frontend directory; admin templates and source inventory paths are relative to the repository. Optional layers are omitted rather than generated empty.
 
-An operation is a table containing `commands`, a list of argv arrays, and optional `cwd`. Supported placeholders are `{python}`, `{root}`, `{toolkit}`, `{pnpm}`, and `{dotnet}`. Arguments are passed directly without a shell. Overrides use `check-frontend`, `test-tooling`, `test-installation`, and the corresponding command/target names. Extra test arguments are forwarded to the configured command.
+An operation is a table containing `commands`, a nonempty list of nonempty argv arrays, and optional repository-relative `cwd`. Supported placeholders are `{python}`, `{root}`, `{toolkit}`, `{pnpm}`, and `{dotnet}`. Arguments are passed directly without a shell. Overrides use `check-frontend`, `test-tooling`, `test-installation`, and the corresponding command/target names. Extra test arguments are forwarded to the configured command.
 
 Unknown maintained inputs fail CI classification until a rule covers them. A toolkit update changes evidence fingerprints. Archive metadata, immutable reusable-workflow revisions and their release-version comments, and the versioned Renovate preset must agree; partial updates fail validation.
 
@@ -51,3 +51,9 @@ Unknown maintained inputs fail CI classification until a rule covers them. A too
 Backend tests compile missing embedded frontend resources using already restored dependencies. Verified prebuilt browser assets can be supplied by CI without requiring a second frontend build.
 
 The launcher accepts verified archives from the source bundle, cache, or explicit `JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE` path. Only bootstrap installs a missing toolkit automatically; other commands diagnose a missing installation. Corrupt, incomplete, linked, or escaping archives are rejected before replacing the active installation.
+
+## Source and evidence boundaries
+
+Maintained source inputs cannot be symlinks, including links to files inside the checkout. Every explicit `source.files` entry must exist. Optional source directories may be absent. Frontend sources, build adapters, templates, styles, assets, and extra assets must belong to the maintained source inventory. Add external input directories to `source.roots`, or individual inputs to `source.files`; their bytes participate in frontend evidence fingerprints.
+
+Optional `validation.job_names` and `validation.aggregate_jobs` map enabled groups to nonempty, unique job-name lists. `validation.artifact_jobs` is also a nonempty, unique list. Empty lists cannot disable a validation gate. Release evidence must identify the latest authenticated run attempt and a successful aggregate job from that attempt.

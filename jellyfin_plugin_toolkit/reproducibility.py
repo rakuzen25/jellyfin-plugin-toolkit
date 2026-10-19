@@ -11,8 +11,7 @@ from jellyfin_plugin_toolkit.common.artifacts import artifact_hashes
 from jellyfin_plugin_toolkit.context import Context
 
 
-def main():
-    ctx = Context.load()
+def main(ctx):
     candidate = artifact_hashes(ctx.root)
     archive = ctx.root / "dist" / f"{ctx.prefix}-source-{ctx.version}.zip"
     with tempfile.TemporaryDirectory(prefix="plugin-reproducibility-") as temporary:
@@ -55,4 +54,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(Context.load())

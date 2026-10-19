@@ -57,6 +57,8 @@ export class Lifecycle {
     }
     listen(target: EventTarget, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): () => void {
         if (this.disposed) return () => {};
+        const signal = typeof options === "object" ? options.signal : undefined;
+        if (signal?.aborted) return () => {};
         const capture = typeof options === "boolean" ? options : !!options?.capture;
         let registrations = this.listeners.get(target);
         const existing =
@@ -75,12 +77,14 @@ export class Lifecycle {
         };
         const entry = { type, listener, capture, release: () => {} };
         entry.release = this.own(() => {
+            signal?.removeEventListener("abort", entry.release);
             target.removeEventListener(type, installed, capture);
             entries.delete(entry);
             if (entries.size === 0) this.listeners.delete(target);
         });
         entries.add(entry);
         target.addEventListener(type, installed, options);
+        signal?.addEventListener("abort", entry.release, { once: true });
         return entry.release;
     }
     unlisten(target: EventTarget, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void {
@@ -149,12 +153,21 @@ export class Lifecycle {
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
-        for (const cleanup of [...this.cleanups]) cleanup();
-        for (const id of this.frames) cancelAnimationFrame(id);
-        for (const id of this.timers) window.clearTimeout(id);
-        for (const id of this.intervals) window.clearInterval(id);
+        const errors: unknown[] = [];
+        const attempt = (cleanup: () => void) => {
+            try {
+                cleanup();
+            } catch (error) {
+                errors.push(error);
+            }
+        };
+        for (const cleanup of [...this.cleanups]) attempt(cleanup);
+        for (const id of this.frames) attempt(() => cancelAnimationFrame(id));
+        for (const id of this.timers) attempt(() => window.clearTimeout(id));
+        for (const id of this.intervals) attempt(() => window.clearInterval(id));
         this.frames.clear();
         this.timers.clear();
         this.intervals.clear();
+        if (errors.length) throw new AggregateError(errors, "Lifecycle cleanup failed");
     }
 }

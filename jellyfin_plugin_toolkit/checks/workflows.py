@@ -28,4 +28,5 @@ def check_workflows(root: Path):
         "/work",
         context.config["images"]["actionlint"],
         *paths,
+        cwd=root,
     )

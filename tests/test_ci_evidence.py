@@ -5,22 +5,24 @@ import json
 import os
 import subprocess
 import tempfile
-import unittest
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from consumer_fixture import ROOT
+from consumer_fixture import ConsumerTestCase
 
 import jellyfin_plugin_toolkit.ci.evidence as ci_evidence
 import jellyfin_plugin_toolkit.ci.planning as ci_planning
 import jellyfin_plugin_toolkit.ci.policy as ci_policy
+from jellyfin_plugin_toolkit.context import Context
 
 
-class IsolatedCiTestCase(unittest.TestCase):
+class IsolatedCiTestCase(ConsumerTestCase):
     def setUp(self):
+        super().setUp()
+        self.validation = ci_policy.ValidationPolicy.from_context(self.ctx)
         # Runner context must never select a different policy path or enable real
         # GitHub calls. Individual scenarios opt into push/release context below.
         environment = {
@@ -60,7 +62,7 @@ class PolicyTests(IsolatedCiTestCase):
                 "conclusion": "success",
             },
         ]
-        inputs = {g: g for g in ci_policy.GROUPS}
+        inputs = {g: g for g in self.validation.groups}
 
         def receipt(repo, run):
             return {
@@ -68,7 +70,7 @@ class PolicyTests(IsolatedCiTestCase):
                 "inputs": inputs,
                 "groups": {
                     g: "failure" if run["id"] == 2 else "success"
-                    for g in ci_policy.CODE
+                    for g in self.validation.code
                 },
             }
 
@@ -76,7 +78,9 @@ class PolicyTests(IsolatedCiTestCase):
             patch.object(ci_evidence, "api", return_value={"workflow_runs": runs}),
             patch.object(ci_evidence, "read_receipt", side_effect=receipt),
         ):
-            self.assertEqual(ci_evidence.evidence("owner/repo", inputs, "policy"), {})
+            self.assertEqual(
+                ci_evidence.evidence(self.ctx, "owner/repo", inputs, "policy"), {}
+            )
 
     def trusted_run(self) -> dict:
         return {
@@ -209,8 +213,8 @@ class GroupReuseTests(IsolatedCiTestCase):
         )
         receipt = {
             "policy": "policy",
-            "inputs": {g: g for g in ci_policy.CODE},
-            "groups": {g: "success" for g in ci_policy.CODE},
+            "inputs": {g: g for g in self.validation.code},
+            "groups": {g: "success" for g in self.validation.code},
         }
         jobs = [
             {
@@ -219,7 +223,7 @@ class GroupReuseTests(IsolatedCiTestCase):
                 "conclusion": "success",
                 "run_attempt": 1,
             }
-            for names in ci_policy.GROUP_JOB_NAMES.values()
+            for names in self.validation.job_names.values()
             for name in names
         ]
         return run, receipt, jobs
@@ -240,8 +244,10 @@ class GroupReuseTests(IsolatedCiTestCase):
                 patch.object(ci_evidence, "read_receipt", return_value=receipt),
                 patch.object(ci_evidence, "api", return_value={"jobs": jobs}),
             ):
-                proofs = ci_evidence.evidence("owner/repo", receipt["inputs"], "policy")
-                self.assertEqual(set(proofs), set(ci_policy.CODE))
+                proofs = ci_evidence.evidence(
+                    self.ctx, "owner/repo", receipt["inputs"], "policy"
+                )
+                self.assertEqual(set(proofs), set(self.validation.code))
 
     def test_unfinished_failed_and_wrong_attempt_jobs_are_not_reused(self):
         for state, conclusion, attempt in (
@@ -260,7 +266,9 @@ class GroupReuseTests(IsolatedCiTestCase):
                 patch.object(ci_evidence, "read_receipt", return_value=receipt),
                 patch.object(ci_evidence, "api", return_value={"jobs": jobs}),
             ):
-                proofs = ci_evidence.evidence("owner/repo", receipt["inputs"], "policy")
+                proofs = ci_evidence.evidence(
+                    self.ctx, "owner/repo", receipt["inputs"], "policy"
+                )
                 self.assertNotIn("backend", proofs)
                 self.assertIn("frontend", proofs)
 
@@ -270,7 +278,14 @@ class GroupReuseTests(IsolatedCiTestCase):
         with patch.object(ci_evidence, "api", return_value={"jobs": jobs}):
             self.assertIsNone(
                 ci_evidence.completed_group_origin(
-                    "owner/repo", run, receipt, "rendering", "policy", "rendering", {}
+                    self.ctx,
+                    "owner/repo",
+                    run,
+                    receipt,
+                    "rendering",
+                    "policy",
+                    "rendering",
+                    {},
                 )
             )
 
@@ -291,14 +306,28 @@ class GroupReuseTests(IsolatedCiTestCase):
         ):
             self.assertEqual(
                 ci_evidence.completed_group_origin(
-                    "owner/repo", run, receipt, "backend", "policy", "backend", {}
+                    self.ctx,
+                    "owner/repo",
+                    run,
+                    receipt,
+                    "backend",
+                    "policy",
+                    "backend",
+                    {},
                 ),
                 "99",
             )
             original["reused"] = {"backend": {"run_id": "99"}}
             self.assertIsNone(
                 ci_evidence.completed_group_origin(
-                    "owner/repo", run, receipt, "backend", "policy", "backend", {}
+                    self.ctx,
+                    "owner/repo",
+                    run,
+                    receipt,
+                    "backend",
+                    "policy",
+                    "backend",
+                    {},
                 )
             )
 
@@ -318,7 +347,14 @@ class GroupReuseTests(IsolatedCiTestCase):
             ):
                 self.assertIsNone(
                     ci_evidence.completed_group_origin(
-                        "owner/repo", run, receipt, "backend", "policy", "backend", {}
+                        self.ctx,
+                        "owner/repo",
+                        run,
+                        receipt,
+                        "backend",
+                        "policy",
+                        "backend",
+                        {},
                     )
                 )
 
@@ -333,7 +369,7 @@ class GroupReuseTests(IsolatedCiTestCase):
             run_id="100",
             repository="owner/repo",
             run_head_sha="workflow",
-            required=list(ci_policy.CODE),
+            required=list(self.validation.code),
             run_attempt=1,
         )
         data = io.BytesIO()
@@ -367,7 +403,7 @@ class GroupReuseTests(IsolatedCiTestCase):
             run_id="100",
             repository="owner/repo",
             run_head_sha="workflow",
-            required=list(ci_policy.CODE),
+            required=list(self.validation.code),
             run_attempt=1,
         )
         data = io.BytesIO()
@@ -444,14 +480,14 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
             ):
                 self.assertEqual(
                     ci_evidence.validated_ancestor(
-                        root, "owner/repo", "main", "policy"
+                        Context(root, self.ctx.config), "owner/repo", "main", "policy"
                     ),
                     {},
                 )
                 receipt["commit"] = ancestor
                 self.assertEqual(
                     ci_evidence.validated_ancestor(
-                        root, "owner/repo", "main", "policy"
+                        Context(root, self.ctx.config), "owner/repo", "main", "policy"
                     )["commit"],
                     ancestor,
                 )
@@ -477,7 +513,10 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
         ):
             self.assertEqual(
                 ci_evidence.evidence(
-                    "owner/repo", {g: g for g in ci_policy.GROUPS}, "policy"
+                    self.ctx,
+                    "owner/repo",
+                    {g: g for g in self.validation.groups},
+                    "policy",
                 ),
                 {},
             )
@@ -496,10 +535,10 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
             "commit": "a" * 40,
             "tree": "tree",
             "policy": "policy",
-            "inputs": {g: g for g in ci_policy.GROUPS},
+            "inputs": {g: g for g in self.validation.groups},
             "full": full,
-            "required": list(ci_policy.GROUPS) if full else [],
-            "groups": {g: "success" for g in ci_policy.GROUPS} if full else {},
+            "required": list(self.validation.groups) if full else [],
+            "groups": {g: "success" for g in self.validation.groups} if full else {},
         }
         return receipt
 
@@ -529,9 +568,9 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
             patch.object(ci_policy, "git", side_effect=ancestry),
         ):
             self.assertEqual(
-                ci_evidence.validated_ancestor(ROOT, "owner/repo", "main", "policy")[
-                    "run_id"
-                ],
+                ci_evidence.validated_ancestor(
+                    self.ctx, "owner/repo", "main", "policy"
+                )["run_id"],
                 "100",
             )
             self.assertEqual(read.call_count, 2)
@@ -553,7 +592,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
                 self.assertEqual(
                     bool(
                         ci_evidence.validated_ancestor(
-                            ROOT, "owner/repo", "main", "policy"
+                            self.ctx, "owner/repo", "main", "policy"
                         )
                     ),
                     False,
@@ -585,7 +624,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
                 self.assertEqual(
                     bool(
                         ci_evidence.validated_ancestor(
-                            ROOT, "owner/repo", "main", "policy"
+                            self.ctx, "owner/repo", "main", "policy"
                         )
                     ),
                     invalid is None,
@@ -597,7 +636,10 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
             patch.object(ci_evidence, "read_receipt", return_value=None),
         ):
             self.assertEqual(
-                ci_evidence.validated_ancestor(ROOT, "owner/repo", "main", "policy"), {}
+                ci_evidence.validated_ancestor(
+                    self.ctx, "owner/repo", "main", "policy"
+                ),
+                {},
             )
 
     def test_lookup_is_bounded_to_three_pages(self):
@@ -612,7 +654,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
     def selected(
         self, changes, baseline=True, proofs=None, unavailable=False, event="push"
     ):
-        inputs = {g: g for g in ci_policy.GROUPS}
+        inputs = {g: g for g in self.validation.groups}
         ancestor = (
             {
                 "commit": "a" * 40,
@@ -652,7 +694,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
             patch.object(ci_evidence, "evidence", return_value=proofs or {}),
             patch.object(ci_policy, "git", side_effect=git),
         ):
-            return ci_planning.plan(ROOT, "previous", False, False, True, False)
+            return ci_planning.plan(self.ctx, "previous", False, False, True, False)
 
     def test_cancelled_renderer_changes_survive_later_config_or_docs_pushes(self):
         for last in (
@@ -691,9 +733,9 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
                 [],
                 baseline=False,
                 unavailable=unavailable,
-                proofs={g: {"run_id": "100", "input": g} for g in ci_policy.CODE},
+                proofs={g: {"run_id": "100", "input": g} for g in self.validation.code},
             )
-            self.assertEqual(set(result["required"]), set(ci_policy.GROUPS))
+            self.assertEqual(set(result["required"]), set(self.validation.groups))
             self.assertEqual(result["execute"], ["artifacts"])
             self.assertTrue(result["comparison"]["fallback_reason"])
 
@@ -705,7 +747,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
         self.assertIn("performance", result["execute"])
 
     def test_shared_fingerprint_change_requires_group_even_without_path_selection(self):
-        original = ci_policy.fingerprints(ROOT)
+        original = ci_policy.fingerprints(self.ctx)
         baseline = {"commit": "a" * 40, "inputs": dict(original, backend="older")}
         with (
             patch.dict(
@@ -729,13 +771,13 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
         ):
             self.assertIn(
                 "backend",
-                ci_planning.plan(ROOT, "previous", False, False, True, False)[
+                ci_planning.plan(self.ctx, "previous", False, False, True, False)[
                     "execute"
                 ],
             )
 
     def test_failed_run_passed_groups_reused_but_matching_failures_block(self):
-        inputs = {g: g for g in ci_policy.GROUPS}
+        inputs = {g: g for g in self.validation.groups}
         runs = [self.run_fixture(101, "failure"), self.run_fixture()]
 
         def receipt(repo, run):
@@ -744,7 +786,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
                 "inputs": inputs,
                 "groups": {
                     g: "failure" if run["id"] == 101 and g == "backend" else "success"
-                    for g in ci_policy.CODE
+                    for g in self.validation.code
                 },
             }
 
@@ -757,20 +799,22 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
                 return_value={
                     "jobs": [
                         {"name": name, "status": "completed", "conclusion": "success"}
-                        for names in ci_policy.GROUP_JOB_NAMES.values()
+                        for names in self.validation.job_names.values()
                         for name in names
                     ]
                 },
             ),
         ):
-            proofs = ci_evidence.evidence("owner/repo", inputs, "policy")
+            proofs = ci_evidence.evidence(self.ctx, "owner/repo", inputs, "policy")
         self.assertNotIn("backend", proofs)
         self.assertEqual(proofs["frontend"]["run_id"], "101")
 
     def test_success_extends_coverage_failure_does_not(self):
         selection = self.selected(["README.md"])
-        self.assertTrue(ci_planning.finish(ROOT, selection, {})["coverage"]["complete"])
+        self.assertTrue(
+            ci_planning.finish(self.ctx, selection, {})["coverage"]["complete"]
+        )
         selection = self.selected(["src/Core/Lyrics/Models.cs"])
         self.assertFalse(
-            ci_planning.finish(ROOT, selection, {})["coverage"]["complete"]
+            ci_planning.finish(self.ctx, selection, {})["coverage"]["complete"]
         )

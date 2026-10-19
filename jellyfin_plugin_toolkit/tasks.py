@@ -9,35 +9,24 @@ import tempfile
 from pathlib import Path
 
 from jellyfin_plugin_toolkit.build.backend import (
-    maintained_csharp,
     prepare,
     reference_directory,
 )
 from jellyfin_plugin_toolkit.common.process import (
-    IMAGES,
-    ROOT,
     executable,
     python_checks,
     run,
 )
-from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, Context
-from jellyfin_plugin_toolkit.dev.references import verify
-
-FRONTEND_FORMAT = [
-    "frontend/**/*.{ts,mjs,json,css,html}",
-    "tests/browser/**/*.{cjs,mjs,json}",
-]
-DOCS_FORMAT = ["*.md", "docs/**/*.md"]
+from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
 
 
-def operation(name, extra=()):
-    ctx = Context.load()
+def operation(ctx, name, extra=()):
     spec = ctx.config.get("operations", {}).get(name)
     if spec is None:
         return False
     replacements = {
-        "python": python_checks(),
-        "root": str(ROOT),
+        "python": python_checks(ctx),
+        "root": str(ctx.root),
         "toolkit": str(TOOLKIT_ROOT),
         "pnpm": executable("pnpm"),
         "dotnet": executable("dotnet"),
@@ -54,16 +43,15 @@ def operation(name, extra=()):
             cwd=ctx.path(spec.get("cwd", ".")),
             env={
                 **os.environ,
-                "PYTHONPATH": str(TOOLKIT_ROOT) + os.pathsep + str(ROOT),
+                "PYTHONPATH": str(TOOLKIT_ROOT) + os.pathsep + str(ctx.root),
             },
         )
     return True
 
 
-def verify_tools():
-    Context.load()
+def verify_tools(ctx):
     commands = ["docker", executable("dotnet"), "node"]
-    if (ROOT / "package.json").exists():
+    if (ctx.root / "package.json").exists():
         commands += [executable("pnpm")]
     for command in commands:
         if not shutil.which(command):
@@ -77,7 +65,7 @@ def verify_tools():
             ).strip(),
         ),
     ]:
-        path = ROOT / pin
+        path = ctx.root / pin
         if not path.exists():
             continue
         expected = (
@@ -87,8 +75,16 @@ def verify_tools():
         )
         if actual != expected:
             raise ValueError(f"{pin} requires {expected}; found {actual}")
-    if (ROOT / ".node-version").exists():
-        expected = (ROOT / ".node-version").read_text().strip()
+    if (ctx.root / "package.json").exists():
+        run(
+            "node",
+            str(TOOLKIT_ROOT / "node/check-toolchain.mjs"),
+            "--root",
+            str(ctx.root),
+            cwd=ctx.root,
+        )
+    elif (ctx.root / ".node-version").exists():
+        expected = (ctx.root / ".node-version").read_text().strip()
         actual = (
             subprocess.check_output(["node", "--version"], text=True)
             .strip()
@@ -96,45 +92,27 @@ def verify_tools():
         )
         if expected != actual:
             raise ValueError(f"Node {expected} required; found {actual}")
-    if (ROOT / "package.json").exists():
-        for tool, pin in [
-            ("node", ROOT / ".node-version"),
-            ("pnpm", ROOT / "package.json"),
-        ]:
-            if not pin.exists():
-                continue
-            expected = (
-                json.loads(pin.read_text())["engines"]["pnpm"]
-                if tool == "pnpm"
-                else pin.read_text().strip()
-            )
-            actual = (
-                subprocess.check_output([executable(tool), "--version"], text=True)
-                .strip()
-                .removeprefix("v")
-            )
-            if expected != actual:
-                raise ValueError(f"{tool} requires {expected}; found {actual}")
 
 
-def bootstrap():
-    verify_tools()
-    Context.load().generated()
-    if (ROOT / "package.json").exists():
-        run(executable("pnpm"), "install", "--frozen-lockfile")
-    requirements = ROOT / "requirements-check.txt"
+def bootstrap(ctx):
+    verify_tools(ctx)
+    ctx.generated()
+    if (ctx.root / "package.json").exists():
+        run(executable("pnpm"), "install", "--frozen-lockfile", cwd=ctx.root)
+    requirements = ctx.root / "requirements-check.txt"
     if requirements.exists():
-        local = ROOT / ".venv/bin/python"
+        local = ctx.root / ".venv/bin/python"
         if not local.exists():
-            run(sys.executable, "-m", "venv", str(ROOT / ".venv"))
+            run(sys.executable, "-m", "venv", str(ctx.root / ".venv"), cwd=ctx.root)
         run(
             str(local),
             "-m",
             "jellyfin_plugin_toolkit.checks.check_pip",
             env={
                 **os.environ,
-                "PYTHONPATH": str(TOOLKIT_ROOT) + os.pathsep + str(ROOT),
+                "PYTHONPATH": str(TOOLKIT_ROOT) + os.pathsep + str(ctx.root),
             },
+            cwd=ctx.root,
         )
         run(
             str(local),
@@ -144,123 +122,82 @@ def bootstrap():
             "--uploaded-prior-to=P1D",
             "-r",
             str(requirements),
+            cwd=ctx.root,
         )
-    prepare()
+    prepare(ctx)
 
 
-def frontend_build():
-    ctx = Context.load()
+def frontend_build(ctx):
     ctx.generated()
     if ctx.config.get("frontend", {}).get("enabled", False):
-        run("node", ctx.config["frontend"].get("build", "frontend/build.mjs"))
-
-
-def dotnet_format(fix=False):
-    if not verify(reference_directory()):
-        raise ValueError("Verified references are missing; run ./plugin bootstrap")
-    files = [str(p) for p in maintained_csharp("*.cs")]
-    for project in maintained_csharp("*.csproj"):
-        if not (project.parent / "obj/project.assets.json").exists():
-            raise ValueError("Backend dependencies are missing; run ./plugin bootstrap")
         run(
-            executable("dotnet"),
-            "format",
-            str(project),
-            "--no-restore",
-            *([] if fix else ["--verify-no-changes"]),
-            "--include",
-            *files,
+            "node",
+            ctx.config["frontend"].get("build", "frontend/build.mjs"),
+            cwd=ctx.root,
         )
 
 
-def format_target(target, fix):
-    if operation(("format-" if fix else "format-check-") + target):
-        return
-    if target == "backend":
-        dotnet_format(fix)
-    else:
-        patterns = (
-            DOCS_FORMAT
-            if target == "docs"
-            else FRONTEND_FORMAT
-            if target == "frontend"
-            else [
-                "scripts/**/*.{mjs,json}",
-                "*.{json,mjs,yml,yaml}",
-                "tests/tooling/**/*.{mjs,cjs,json}",
-                ".github/**/*.{yml,yaml}",
-            ]
+def format_target(ctx, target, fix):
+    if not operation(ctx, ("format-" if fix else "format-check-") + target):
+        from jellyfin_plugin_toolkit.checks.formatting import (
+            format_target as format_files,
         )
-        run(
-            executable("pnpm"),
-            "exec",
-            "prettier",
-            "--write" if fix else "--check",
-            "--no-error-on-unmatched-pattern",
-            *patterns,
-        )
-        if target == "tooling":
-            roots = [name for name in ["scripts", "tests"] if (ROOT / name).is_dir()]
-            if roots:
-                run(
-                    python_checks(),
-                    "-m",
-                    "ruff",
-                    "format",
-                    *([] if fix else ["--check"]),
-                    *roots,
-                )
-            run(
-                executable("pnpm"),
-                "exec",
-                "taplo",
-                "format",
-                *([] if fix else ["--check"]),
-                *[str(p.name) for p in sorted(ROOT.glob("*.toml"))],
-            )
+
+        format_files(ctx, target, fix)
 
 
-def check(target):
-    if operation("check-" + target):
+def check(ctx, target):
+    if operation(ctx, "check-" + target):
         return
     if target == "backend":
         from jellyfin_plugin_toolkit.checks.architecture import check_projects
 
-        check_projects(ROOT)
-        dotnet_format(False)
+        check_projects(ctx.root)
+        from jellyfin_plugin_toolkit.checks.formatting import dotnet_format
+
+        dotnet_format(ctx, False)
     elif target == "docs":
-        format_target("docs", False)
+        format_target(ctx, "docs", False)
         from jellyfin_plugin_toolkit.checks.docs import main
 
-        main()
+        main(ctx)
     elif target == "frontend":
-        format_target("frontend", False)
-        run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0")
+        format_target(ctx, "frontend", False)
+        run(
+            executable("pnpm"),
+            "exec",
+            "eslint",
+            ".",
+            "--max-warnings",
+            "0",
+            cwd=ctx.root,
+        )
         run(
             executable("pnpm"),
             "--dir",
-            Context.load().config["frontend"].get("directory", "frontend"),
+            ctx.config["frontend"].get("directory", "frontend"),
             "exec",
             "tsc",
             "--noEmit",
+            cwd=ctx.root,
         )
     elif target == "tooling":
         from jellyfin_plugin_toolkit.checks.tooling import main
 
-        main()
+        format_target(ctx, "tooling", False)
+        main(ctx)
     else:
         raise ValueError("Unknown check target: " + target)
 
 
-def backend_tests(extra):
-    ctx = Context.load()
+def backend_tests(ctx, extra):
     ctx.generated()
     frontend = ctx.config.get("frontend", {})
     if frontend.get("enabled") and any(
         not (ctx.root / "dist/web" / asset).is_file()
         for asset in frontend.get("required_assets", ["config.html"])
     ):
-        frontend_build()
+        frontend_build(ctx)
     for project in ctx.config["backend"].get("tests", []):
         run(
             executable("dotnet"),
@@ -269,7 +206,8 @@ def backend_tests(extra):
             "--locked-mode",
             "-m:1",
             "-p:NuGetAudit=false",
-            "-p:JellyfinReferenceDir=" + str(reference_directory()),
+            "-p:JellyfinReferenceDir=" + str(reference_directory(ctx)),
+            cwd=ctx.root,
         )
         run(
             executable("dotnet"),
@@ -279,17 +217,23 @@ def backend_tests(extra):
             "--no-restore",
             "--minimum-expected-tests",
             "1",
-            "-p:JellyfinReferenceDir=" + str(reference_directory()),
+            "-p:JellyfinReferenceDir=" + str(reference_directory(ctx)),
             *extra,
             env={**os.environ, "TESTINGPLATFORM_TELEMETRY_OPTOUT": "1"},
+            cwd=ctx.root,
         )
 
 
-def browser_tests(extra):
-    ctx = Context.load()
+def browser_tests(ctx, extra):
     directory = ctx.config.get("browser", {}).get("directory", "tests/browser")
-    results = Path(tempfile.mkdtemp(prefix="results-run.", dir=ROOT / directory))
-    run("node", str(TOOLKIT_ROOT / "node/check-browser-image.mjs"), "--root", str(ROOT))
+    results = Path(tempfile.mkdtemp(prefix="results-run.", dir=ctx.root / directory))
+    run(
+        "node",
+        str(TOOLKIT_ROOT / "node/check-browser-image.mjs"),
+        "--root",
+        str(ctx.root),
+        cwd=ctx.root,
+    )
     command = ["node", "/work/.build/toolkit/current/node/run-browser.mjs", "/work"]
     run(
         "docker",
@@ -302,27 +246,28 @@ def browser_tests(extra):
         "-e",
         "CI_BROWSER_OUTPUT_DIR=" + results.name,
         "-v",
-        str(ROOT) + ":/work",
+        str(ctx.root) + ":/work",
         "-w",
         "/work/" + directory,
-        IMAGES["playwright"],
+        ctx.images["playwright"],
         *command,
         *extra,
+        cwd=ctx.root,
     )
 
 
-def test(target, extra):
-    if operation("test-" + target, extra):
+def test(ctx, target, extra):
+    if operation(ctx, "test-" + target, extra):
         return
     if target == "reproducibility":
         from jellyfin_plugin_toolkit.reproducibility import main
 
-        main()
+        main(ctx)
         return
     if target == "advisories":
-        if (ROOT / "pnpm-lock.yaml").exists():
-            run(executable("pnpm"), "audit")
-        for project in Context.load().config["backend"].get("tests", []):
+        if (ctx.root / "pnpm-lock.yaml").exists():
+            run(executable("pnpm"), "audit", cwd=ctx.root)
+        for project in ctx.config["backend"].get("tests", []):
             run(
                 executable("dotnet"),
                 "restore",
@@ -332,6 +277,7 @@ def test(target, extra):
                 "--force-evaluate",
                 "-p:NuGetAuditMode=all",
                 "-p:WarningsAsErrors=NU1900%3BNU1901%3BNU1902%3BNU1903%3BNU1904%3BNU1905",
+                cwd=ctx.root,
             )
         return
     if target == "web-installation":
@@ -339,26 +285,34 @@ def test(target, extra):
     if target == "artifact-inventory":
         from jellyfin_plugin_toolkit.acceptance import inventory
 
-        inventory()
+        inventory(ctx)
         return
     if target == "installation":
         from jellyfin_plugin_toolkit.installation import main
 
-        main()
+        main(ctx)
         return
     if target == "backend":
-        backend_tests(extra)
+        backend_tests(ctx, extra)
     elif target == "frontend":
-        format_target("frontend", False)
-        run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0")
+        format_target(ctx, "frontend", False)
+        run(
+            executable("pnpm"),
+            "exec",
+            "eslint",
+            ".",
+            "--max-warnings",
+            "0",
+            cwd=ctx.root,
+        )
         run(
             "node",
             "--experimental-strip-types",
             "--test",
             *extra,
-            cwd=ROOT / Context.load().config["frontend"].get("directory", "frontend"),
+            cwd=ctx.root / ctx.config["frontend"].get("directory", "frontend"),
         )
     elif target == "browser":
-        browser_tests(extra)
+        browser_tests(ctx, extra)
     else:
         raise ValueError("No test operation configured for " + target)

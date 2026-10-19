@@ -9,26 +9,32 @@ from jellyfin_plugin_toolkit.common.process import executable, run
 from jellyfin_plugin_toolkit.context import Context
 
 
-def package(release=False, prepared_web=False):
+def package(ctx, release=False, prepared_web=False):
     if release:
         from jellyfin_plugin_toolkit.checks.pins import check_pins
 
-        check_pins(Context.load().root, release=True)
-    ctx = Context.load()
+        check_pins(ctx.root, release=True)
     ctx.generated()
     if (ctx.root / "pnpm-lock.yaml").is_file():
-        run(executable("pnpm"), "install", "--frozen-lockfile")
+        run(executable("pnpm"), "install", "--frozen-lockfile", cwd=ctx.root)
     if ctx.config.get("frontend", {}).get("enabled", False):
         if prepared_web:
             verify_web(ctx.root)
         else:
-            run("node", ctx.config["frontend"].get("build", "frontend/build.mjs"))
+            run(
+                "node",
+                ctx.config["frontend"].get("build", "frontend/build.mjs"),
+                cwd=ctx.root,
+            )
     with tempfile.TemporaryDirectory(prefix="jellyfin-plugin-publish-") as temporary:
         staging = Path(temporary)
         publish(
-            staging / "plugin", ctx.root / "dist/web", references=reference_directory()
+            ctx,
+            staging / "plugin",
+            ctx.root / "dist/web",
+            references=reference_directory(ctx),
         )
-        assemble(staging, release)
+        assemble(ctx, staging, release)
 
 
 if __name__ == "__main__":
@@ -36,4 +42,4 @@ if __name__ == "__main__":
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--prepared-web", action="store_true")
     args = parser.parse_args()
-    package(args.release, args.prepared_web)
+    package(Context.load(), args.release, args.prepared_web)

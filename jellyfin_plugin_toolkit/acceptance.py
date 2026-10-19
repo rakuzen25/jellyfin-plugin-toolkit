@@ -5,9 +5,8 @@ import json
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from jellyfin_plugin_toolkit.build.backend import HOST_LIBRARIES
+from jellyfin_plugin_toolkit.common.binaries import HOST_LIBRARIES
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.context import Context
 
 
 def members(package):
@@ -21,8 +20,7 @@ def members(package):
     return set(names)
 
 
-def inventory():
-    ctx = Context.load()
+def inventory(ctx):
     dist = ctx.root / "dist"
     binary = f"{ctx.prefix}-{ctx.version}.zip"
     source = f"{ctx.prefix}-source-{ctx.version}.zip"

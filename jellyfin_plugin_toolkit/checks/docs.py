@@ -227,10 +227,8 @@ def check(root: Path) -> list[str]:
     return errors
 
 
-def main() -> None:
-    from jellyfin_plugin_toolkit.context import Context
-
-    root = Context.load().root
+def main(ctx) -> None:
+    root = ctx.root
     errors = check(root)
     if errors:
         raise SystemExit("\n".join(errors))
@@ -240,4 +238,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from jellyfin_plugin_toolkit.context import Context
+
+    main(Context.load())

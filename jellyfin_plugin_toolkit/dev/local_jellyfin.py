@@ -16,20 +16,20 @@ import urllib.request
 from pathlib import Path
 
 from jellyfin_plugin_toolkit.build.backend import publish
-from jellyfin_plugin_toolkit.common.process import IMAGES, ROOT, run
+from jellyfin_plugin_toolkit.common.process import run
 from jellyfin_plugin_toolkit.common.release_metadata import load_identity
 from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, Context
 
-CONTEXT = Context.load()
-
-REPOSITORY = ROOT
-DATA = ROOT / ".build/local-jellyfin"
 OWNER_LABEL = "jellyfin-plugin-toolkit.local-checkout"
-OWNER = str(ROOT)
-CONTAINER = CONTEXT.prefix + "-local-" + hashlib.sha256(OWNER.encode()).hexdigest()[:10]
 
 
-def inspect() -> dict | None:
+def container_name(ctx):
+    return (
+        ctx.prefix + "-local-" + hashlib.sha256(str(ctx.root).encode()).hexdigest()[:10]
+    )
+
+
+def inspect(ctx) -> dict | None:
     # Listing avoids treating daemon/permission errors as an absent container.
     result = subprocess.check_output(
         [
@@ -37,7 +37,7 @@ def inspect() -> dict | None:
             "ps",
             "-a",
             "--filter",
-            "name=^/" + CONTAINER + "$",
+            "name=^/" + container_name(ctx) + "$",
             "--format",
             "{{.ID}}",
         ],
@@ -46,17 +46,17 @@ def inspect() -> dict | None:
     if not result:
         return None
     container = json.loads(
-        subprocess.check_output(["docker", "inspect", CONTAINER], text=True)
+        subprocess.check_output(["docker", "inspect", container_name(ctx)], text=True)
     )[0]
-    if container["Config"].get("Labels", {}).get(OWNER_LABEL) != OWNER:
+    if container["Config"].get("Labels", {}).get(OWNER_LABEL) != str(ctx.root):
         raise SystemExit(
             "Container name belongs to another installation; refusing to change it."
         )
     return container
 
 
-def media_paths(requested: list[str] | None) -> list[str]:
-    settings = DATA / "media-mounts.json"
+def media_paths(ctx, requested: list[str] | None) -> list[str]:
+    settings = (ctx.root / ".build/local-jellyfin") / "media-mounts.json"
     values = (
         requested
         if requested is not None
@@ -99,13 +99,13 @@ def media_paths(requested: list[str] | None) -> list[str]:
     return paths
 
 
-def stop() -> None:
-    if inspect():
-        run("docker", "rm", "-f", CONTAINER)
-    (DATA / "session.json").unlink(missing_ok=True)
+def stop(ctx) -> None:
+    if inspect(ctx):
+        run("docker", "rm", "-f", container_name(ctx), cwd=ctx.root)
+    ((ctx.root / ".build/local-jellyfin") / "session.json").unlink(missing_ok=True)
 
 
-def wait_ready(port: int) -> None:
+def wait_ready(ctx, port: int) -> None:
     for _ in range(60):
         try:
             with urllib.request.urlopen(
@@ -116,53 +116,56 @@ def wait_ready(port: int) -> None:
         except OSError, http.client.HTTPException:
             pass
         time.sleep(1)
-    run("docker", "logs", "--tail", "60", CONTAINER)
+    run("docker", "logs", "--tail", "60", container_name(ctx), cwd=ctx.root)
     raise RuntimeError("Jellyfin startup timed out")
 
 
-def start(mounts: list[str]) -> int:
+def start(ctx, mounts: list[str]) -> int:
     for name in ("config", "cache", "media"):
-        (DATA / name).mkdir(parents=True, exist_ok=True)
+        ((ctx.root / ".build/local-jellyfin") / name).mkdir(parents=True, exist_ok=True)
     run(
         "docker",
         "run",
         "-d",
         "--platform",
-        IMAGES["platform"],
+        ctx.images["platform"],
         "--name",
-        CONTAINER,
+        container_name(ctx),
         "--label",
-        OWNER_LABEL + "=" + OWNER,
+        OWNER_LABEL + "=" + str(ctx.root),
         "-p",
         "127.0.0.1::8096",
         "-v",
-        f"{DATA / 'config'}:/config",
+        f"{(ctx.root / '.build/local-jellyfin') / 'config'}:/config",
         "-v",
-        f"{DATA / 'cache'}:/cache",
+        f"{(ctx.root / '.build/local-jellyfin') / 'cache'}:/cache",
         "-v",
-        f"{DATA / 'media'}:/media:ro",
+        f"{(ctx.root / '.build/local-jellyfin') / 'media'}:/media:ro",
         *(
             argument
             for path in mounts
             for argument in ("--mount", f"type=bind,src={path},dst={path},readonly")
         ),
-        IMAGES["jellyfin"],
+        ctx.images["jellyfin"],
+        cwd=ctx.root,
     )
-    container = inspect()
+    container = inspect(ctx)
     assert container is not None
     port = int(container["NetworkSettings"]["Ports"]["8096/tcp"][0]["HostPort"])
-    wait_ready(port)
-    (DATA / "session.json").write_text(json.dumps({"port": port}) + "\n")
+    wait_ready(ctx, port)
+    ((ctx.root / ".build/local-jellyfin") / "session.json").write_text(
+        json.dumps({"port": port}) + "\n"
+    )
     return port
 
 
-def deploy(web: Path, requested_mounts: list[str] | None = None) -> None:
-    mounts = media_paths(requested_mounts)
-    DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
-    release = load_identity()
-    plugins = DATA / "config/plugins"
+def deploy(ctx, web: Path, requested_mounts: list[str] | None = None) -> None:
+    mounts = media_paths(ctx, requested_mounts)
+    (ctx.root / ".build/local-jellyfin").mkdir(parents=True, exist_ok=True, mode=0o700)
+    release = load_identity(ctx.root)
+    plugins = (ctx.root / ".build/local-jellyfin") / "config/plugins"
     plugins.mkdir(parents=True, exist_ok=True)
-    previous = list(plugins.glob(CONTEXT.identity["name"] + "_*"))
+    previous = list(plugins.glob(ctx.identity["name"] + "_*"))
     for folder in previous:
         meta = folder / "meta.json"
         if (
@@ -171,11 +174,13 @@ def deploy(web: Path, requested_mounts: list[str] | None = None) -> None:
         ):
             raise ValueError("Unexpected plugin folder: " + str(folder))
     # Compile/validate before taking down the currently usable installation.
-    with tempfile.TemporaryDirectory(prefix="plugin-", dir=DATA) as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="plugin-", dir=(ctx.root / ".build/local-jellyfin")
+    ) as temporary:
         staging = Path(temporary)
         candidate = staging / "candidate"
-        publish(candidate, web, configuration="Debug")
-        if not (candidate / (CONTEXT.identity["assembly"] + ".dll")).is_file():
+        publish(ctx, candidate, web, configuration="Debug")
+        if not (candidate / (ctx.identity["assembly"] + ".dll")).is_file():
             raise ValueError("Build did not produce the plugin assembly")
         (candidate / "meta.json").write_text(
             json.dumps(
@@ -197,45 +202,47 @@ def deploy(web: Path, requested_mounts: list[str] | None = None) -> None:
         backup.mkdir()
         for folder in previous:
             shutil.copytree(folder, backup / folder.name)
-        was_running = bool(inspect())
-        stop()
-        target = plugins / (CONTEXT.identity["name"] + "_" + release.jellyfin_version)
+        was_running = bool(inspect(ctx))
+        stop(ctx)
+        target = plugins / (ctx.identity["name"] + "_" + release.jellyfin_version)
         try:
             for folder in previous:
                 shutil.rmtree(folder)
             shutil.copytree(candidate, target)
-            start(mounts)
+            start(ctx, mounts)
         except BaseException:
-            stop()
+            stop(ctx)
             if target.exists():
                 shutil.rmtree(target)
             for folder in backup.iterdir():
                 shutil.copytree(folder, plugins / folder.name)
             if was_running and previous:
                 print("Replacement failed; restoring the previous plugin", flush=True)
-                start(mounts)
+                start(ctx, mounts)
             raise
-    (DATA / "media-mounts.json").write_text(json.dumps(mounts, indent=2) + "\n")
+    ((ctx.root / ".build/local-jellyfin") / "media-mounts.json").write_text(
+        json.dumps(mounts, indent=2) + "\n"
+    )
 
 
-def dev(args: argparse.Namespace) -> None:
+def dev(ctx, args: argparse.Namespace) -> None:
     from jellyfin_plugin_toolkit.tasks import verify_tools
 
-    DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with (DATA / "session.lock").open("w") as lock:
+    (ctx.root / ".build/local-jellyfin").mkdir(parents=True, exist_ok=True, mode=0o700)
+    with ((ctx.root / ".build/local-jellyfin") / "session.lock").open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError(
                 "A development session already owns this checkout"
             ) from None
-        media_paths([] if args.clear_media_mounts else args.media_mount)
-        verify_tools()
+        media_paths(ctx, [] if args.clear_media_mounts else args.media_mount)
+        verify_tools(ctx)
         if (
-            CONTEXT.config.get("frontend", {}).get("enabled", False)
+            ctx.config.get("frontend", {}).get("enabled", False)
             and not (
-                ROOT
-                / CONTEXT.config["frontend"].get("directory", "frontend")
+                ctx.root
+                / ctx.config["frontend"].get("directory", "frontend")
                 / "node_modules/esbuild"
             ).exists()
         ):
@@ -244,7 +251,7 @@ def dev(args: argparse.Namespace) -> None:
             )
         from jellyfin_plugin_toolkit.dev.references import ensure
 
-        ensure()
+        ensure(ctx)
         command = [
             "node",
             str(TOOLKIT_ROOT / "jellyfin_plugin_toolkit/dev/session.mjs"),
@@ -263,8 +270,9 @@ def dev(args: argparse.Namespace) -> None:
             **os.environ,
             "JELLYFIN_PLUGIN_DEV_PYTHON": sys.executable,
             "PYTHONPATH": str(TOOLKIT_ROOT),
+            "JELLYFIN_PLUGIN_ROOT": str(ctx.root),
         }
-        child = subprocess.Popen(command, cwd=ROOT, env=environment)
+        child = subprocess.Popen(command, cwd=ctx.root, env=environment)
         previous_handler = signal.signal(
             signal.SIGTERM, lambda signum, frame: child.send_signal(signal.SIGTERM)
         )
@@ -280,20 +288,23 @@ def dev(args: argparse.Namespace) -> None:
             if child.poll() is None:
                 child.terminate()
                 child.wait()
-            stop()
+            stop(ctx)
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("operation", choices=["deploy", "stop"])
     parser.add_argument("--web", type=Path)
     parser.add_argument("--media-mount", action="append")
     parser.add_argument("--clear-media-mounts", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    ctx = Context.load()
     if args.operation == "stop":
-        stop()
+        stop(ctx)
     elif args.web:
-        deploy(args.web.resolve(), [] if args.clear_media_mounts else args.media_mount)
+        deploy(
+            ctx, args.web.resolve(), [] if args.clear_media_mounts else args.media_mount
+        )
     else:
         parser.error("deploy requires --web")
 

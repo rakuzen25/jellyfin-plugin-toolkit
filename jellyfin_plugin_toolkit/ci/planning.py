@@ -17,11 +17,13 @@ from jellyfin_plugin_toolkit.context import Context
 
 
 def plan(
-    root: Path, base: str, full: bool, release: bool, reuse: bool, scheduled: bool
+    ctx: Context, base: str, full: bool, release: bool, reuse: bool, scheduled: bool
 ) -> dict:
-    ci_policy.browser_inventory(root)
-    ci_policy.check_classification(root, [])
-    inputs = ci_policy.fingerprints(root)
+    root = ctx.root
+    validation = ci_policy.ValidationPolicy.from_context(ctx)
+    ci_policy.browser_inventory(ctx)
+    ci_policy.check_classification(ctx, [])
+    inputs = ci_policy.fingerprints(ctx)
     policy = artifacts.digest(
         root,
         [Path(p) for p in ci_policy.POLICY]
@@ -44,7 +46,7 @@ def plan(
         try:
             if repository and os.environ.get("GH_TOKEN"):
                 baseline = ci_evidence.validated_ancestor(
-                    root, repository, os.environ.get("GITHUB_REF_NAME", ""), policy
+                    ctx, repository, os.environ.get("GITHUB_REF_NAME", ""), policy
                 )
             base = baseline.get("commit", "")
             if not base:
@@ -77,20 +79,20 @@ def plan(
     elif not scheduled and not release:
         require_all = True
         fallback_reason = fallback_reason or "Comparison history unavailable"
-    classified_changes = ci_policy.check_classification(root, changed)
+    classified_changes = ci_policy.check_classification(ctx, changed)
     required = (
-        set(ci_policy.GROUPS)
+        set(validation.groups)
         if full or release or require_all
-        else set().union(*(ci_policy.impacts(p, root) for p in changed))
+        else set().union(*(ci_policy.impacts(ctx, p) for p in changed))
     )
     if baseline:
         required |= {
-            g for g in ci_policy.CODE if baseline.get("inputs", {}).get(g) != inputs[g]
+            g for g in validation.code if baseline.get("inputs", {}).get(g) != inputs[g]
         }
     proofs: dict[str, dict] = {}
     if reuse and (required or scheduled) and repository and os.environ.get("GH_TOKEN"):
         try:
-            proofs = ci_evidence.evidence(repository, inputs, policy, scheduled)
+            proofs = ci_evidence.evidence(ctx, repository, inputs, policy, scheduled)
         except (
             urllib.error.URLError,
             KeyError,
@@ -104,8 +106,8 @@ def plan(
         # All meaningful groups must match a full run, never merely a narrow pass.
         required = (
             set()
-            if all(g in proofs for g in ci_policy.RUNTIME)
-            else set(ci_policy.GROUPS)
+            if all(g in proofs for g in validation.runtime)
+            else set(validation.groups)
         )
         full = bool(required)
         if not full:
@@ -113,8 +115,8 @@ def plan(
             # It is code evidence only: no artifact/advisory gate is renewed.
             full_baseline = {
                 "policy": policy,
-                "inputs": {g: inputs[g] for g in ci_policy.RUNTIME},
-                "origins": {g: proofs[g]["run_id"] for g in ci_policy.RUNTIME},
+                "inputs": {g: inputs[g] for g in validation.runtime},
+                "origins": {g: proofs[g]["run_id"] for g in validation.runtime},
             }
             if "metadata" not in proofs:
                 required.add("metadata")
@@ -144,7 +146,7 @@ def plan(
         "required": sorted(required),
         "execute": sorted(execute),
         "reused": {g: proofs[g] for g in required if g in proofs},
-        "full": full or execute == set(ci_policy.GROUPS),
+        "full": full or execute == set(validation.groups),
         "release": release,
         "full_baseline": full_baseline,
         "comparison": {
@@ -157,17 +159,9 @@ def plan(
     }
 
 
-def finish(root: Path, selection: dict, jobs: dict) -> dict:
-    mapping = {
-        "metadata": ("metadata",),
-        "frontend": ("frontend",),
-        "backend": ("backend",),
-        "tooling": ("tooling",),
-        "workflow": ("workflow",),
-        "rendering": ("rendering",),
-        "performance": ("performance",),
-        "artifacts": ("package", "installation", "reproducibility", "advisories"),
-    }
+def finish(ctx: Context, selection: dict, jobs: dict) -> dict:
+    root = ctx.root
+    validation = ci_policy.ValidationPolicy.from_context(ctx)
     results = {}
     for group in selection["required"]:
         if group in selection["reused"]:
@@ -177,16 +171,7 @@ def finish(root: Path, selection: dict, jobs: dict) -> dict:
                 "success"
                 if all(
                     jobs.get(job, {}).get("result") == "success"
-                    for job in (
-                        Context.load(root)
-                        .config["validation"]
-                        .get("artifact_jobs", mapping["artifacts"])
-                        if group == "artifacts"
-                        else Context.load(root)
-                        .config["validation"]
-                        .get("aggregate_jobs", {})
-                        .get(group, mapping.get(group, (group,)))
-                    )
+                    for job in validation.aggregate_jobs[group]
                 )
                 else "failure"
             )
@@ -201,7 +186,7 @@ def finish(root: Path, selection: dict, jobs: dict) -> dict:
     successful = all(value == "success" for value in results.values())
     cumulative = selection.get("comparison", {}).get("mode") == "push-baseline"
     complete = successful and (
-        set(selection["required"]) == set(ci_policy.GROUPS)
+        set(selection["required"]) == set(validation.groups)
         or cumulative
         and bool(selection.get("comparison", {}).get("baseline"))
     )

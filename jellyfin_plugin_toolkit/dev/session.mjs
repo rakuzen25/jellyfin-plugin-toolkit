@@ -4,29 +4,6 @@ import { readFile, mkdir, rm, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-const root = process.env.JELLYFIN_PLUGIN_ROOT;
-if (!root) throw new Error("JELLYFIN_PLUGIN_ROOT is required");
-const config = JSON.parse(await readFile(path.join(root, ".build/generated/plugin.json"), "utf8"));
-let adapterPromise;
-async function frontendAdapter() {
-    adapterPromise ||= import(pathToFileURL(path.join(root, config.frontend.build || "frontend/build.mjs")).href).then((adapter) => {
-        if (typeof adapter.compileWeb !== "function" || typeof adapter.writeGeneration !== "function")
-            throw new Error("The configured frontend build adapter must export compileWeb and writeGeneration");
-        return adapter;
-    });
-    return adapterPromise;
-}
-async function compileWeb() {
-    return config.frontend?.enabled ? (await frontendAdapter()).compileWeb() : new Map();
-}
-async function writeGeneration(files, directory) {
-    if (config.frontend?.enabled) await (await frontendAdapter()).writeGeneration(files, directory);
-    else await mkdir(directory, { recursive: true });
-}
-const rendererAssets = config.frontend?.reload_assets || [];
-const assetPrefix = config.sandbox?.asset_prefix || "/__no_plugin_assets__/";
-const settingsPage = config.sandbox?.settings_page || "";
-
 /** Coalesce editor bursts, never overlap work, and retain edits received during builds. */
 export function rebuildQueue(build, report = console.error, delay = 150, { paused = false, onState = () => {} } = {}) {
     let timer,
@@ -100,7 +77,7 @@ export function rebuildQueue(build, report = console.error, delay = 150, { pause
 }
 
 /** Derive watched inputs from declared projects and assets, including path overrides. */
-export function sourcePolicy(configuration = config) {
+export function sourcePolicy(configuration) {
     const backend = configuration.backend || {};
     const projects = new Set(Object.values(backend.projects || {}));
     const visit = (project) => {
@@ -131,7 +108,7 @@ export function sourcePolicy(configuration = config) {
     };
 }
 
-export function classifyChange(filename, configuration = config) {
+export function classifyChange(filename, configuration) {
     const name = filename.replaceAll("\\", "/");
     if (/(^|\/)(node_modules|bin|obj|\.git|\.build|dist)(\/|$)/.test(name) || /\.test\.ts$/.test(name)) return null;
     const policy = sourcePolicy(configuration);
@@ -146,7 +123,10 @@ let revision;
 events.onmessage = ({data}) => { if (revision && revision !== data) location.reload(); revision = data; };`;
 
 /** Preserve Jellyfin's authorization decision before replacing a successful asset/page response. */
-export function proxyServer(state) {
+export function proxyServer(state, configuration) {
+    const rendererAssets = configuration.frontend?.reload_assets || [];
+    const assetPrefix = configuration.sandbox?.asset_prefix || "/__no_plugin_assets__/";
+    const settingsPage = configuration.sandbox?.settings_page || "";
     const clients = new Set();
     const sockets = new Set();
     let revision = 0;
@@ -260,9 +240,29 @@ export function proxyServer(state) {
 }
 
 export async function session(argv = process.argv.slice(2)) {
+    const root = process.env.JELLYFIN_PLUGIN_ROOT;
+    if (!root) throw new Error("JELLYFIN_PLUGIN_ROOT is required");
+    const config = JSON.parse(await readFile(path.join(root, ".build/generated/plugin.json"), "utf8"));
+    let adapterPromise;
+    async function frontendAdapter() {
+        adapterPromise ||= import(pathToFileURL(path.join(root, config.frontend.build || "frontend/build.mjs")).href).then((adapter) => {
+            if (typeof adapter.compileWeb !== "function" || typeof adapter.writeGeneration !== "function")
+                throw new Error("The configured frontend build adapter must export compileWeb and writeGeneration");
+            return adapter;
+        });
+        return adapterPromise;
+    }
+    async function compileWeb() {
+        return config.frontend?.enabled ? (await frontendAdapter()).compileWeb() : new Map();
+    }
+    async function writeGeneration(files, directory) {
+        if (config.frontend?.enabled) await (await frontendAdapter()).writeGeneration(files, directory);
+        else await mkdir(directory, { recursive: true });
+    }
+
     const publicPort = Number(argv[argv.indexOf("--port") + 1] || 18096);
     const state = { port: null, files: new Map() };
-    const proxy = proxyServer(state);
+    const proxy = proxyServer(state, config);
     await new Promise((resolve, reject) => {
         proxy.server.once("error", reject);
         proxy.server.listen(publicPort, "127.0.0.1", resolve);
@@ -422,11 +422,11 @@ export async function session(argv = process.argv.slice(2)) {
     process.once("SIGINT", () => void shutdown());
     process.once("SIGTERM", () => void shutdown());
     try {
-        for (const name of sourcePolicy().directories.filter((name) => existsSync(path.join(root, name)))) {
+        for (const name of sourcePolicy(config).directories.filter((name) => existsSync(path.join(root, name)))) {
             watchers.push(
                 watch(path.join(root, name), { recursive: true }, (_, filename) => {
                     if (filename) {
-                        const kind = classifyChange(name + "/" + filename);
+                        const kind = classifyChange(name + "/" + filename, config);
                         if (kind) queue.request(kind);
                     }
                 }),
@@ -435,7 +435,7 @@ export async function session(argv = process.argv.slice(2)) {
         watchers.push(
             watch(root, (_, filename) => {
                 if (filename && !filename.includes("/")) {
-                    const kind = classifyChange(filename);
+                    const kind = classifyChange(filename, config);
                     if (kind) {
                         queue.request(kind);
                         if (filename === "Directory.Build.props") queue.request("frontend");

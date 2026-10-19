@@ -10,7 +10,6 @@ import urllib.error
 import urllib.request
 import zipfile
 from datetime import UTC, datetime
-from pathlib import Path
 from urllib.parse import urlparse
 
 import jellyfin_plugin_toolkit.ci.policy as ci_policy
@@ -88,6 +87,50 @@ def merged_pull_request(run: dict, repository: str) -> bool:
     )
 
 
+def valid_receipt(receipt):
+    """Reject malformed evidence before trust decisions inspect nested fields."""
+    if not isinstance(receipt, dict):
+        return False
+    if any(
+        key in receipt and not isinstance(receipt[key], bool)
+        for key in ("full", "release")
+    ):
+        return False
+    for key in ("inputs", "groups", "artifacts"):
+        value = receipt.get(key, {})
+        if not isinstance(value, dict) or any(
+            not isinstance(k, str) or not isinstance(v, str) for k, v in value.items()
+        ):
+            return False
+    required = receipt.get("required")
+    if (
+        not isinstance(required, list)
+        or any(not isinstance(g, str) for g in required)
+        or len(set(required)) != len(required)
+    ):
+        return False
+    for key in ("coverage", "reused", "full_baseline"):
+        if not isinstance(receipt.get(key, {}), dict):
+            return False
+    for proof in receipt.get("reused", {}).values():
+        if not isinstance(proof, dict) or not isinstance(proof.get("run_id"), str):
+            return False
+    baseline = receipt.get("full_baseline", {})
+    for key in ("inputs", "origins"):
+        value = baseline.get(key, {})
+        if not isinstance(value, dict) or any(
+            not isinstance(v, str) for v in value.values()
+        ):
+            return False
+    attempt = receipt.get("run_attempt", 1)
+    return (
+        isinstance(attempt, int)
+        and not isinstance(attempt, bool)
+        and attempt > 0
+        and isinstance(receipt.get("policy"), str)
+    )
+
+
 def read_receipt(repository: str, run: dict) -> dict | None:
     # No cache, fork or caller-controlled URL is an evidence source.
     if not trusted(run, repository) or not merged_pull_request(run, repository):
@@ -106,9 +149,11 @@ def read_receipt(repository: str, run: dict) -> dict | None:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         if archive.getinfo("validation.json").file_size > 1_000_000:
             raise ValueError("Receipt exceeds size limit")
+        if archive.namelist().count("validation.json") != 1:
+            raise ValueError("Duplicate receipt member")
         receipt = json.loads(archive.read("validation.json"))
-    if not isinstance(receipt, dict):
-        raise TypeError("Receipt must be an object")
+    if not valid_receipt(receipt):
+        return None
     if (
         receipt.get("schema") != ci_policy.SCHEMA
         or receipt.get("run_id") != str(run["id"])
@@ -151,7 +196,9 @@ def coverage_identity(receipt: dict) -> str:
     ).hexdigest()
 
 
-def validated_ancestor(root: Path, repository: str, branch: str, policy: str) -> dict:
+def validated_ancestor(ctx, repository: str, branch: str, policy: str) -> dict:
+    validation = ci_policy.ValidationPolicy.from_context(ctx)
+    root = ctx.root
     for run in recent_runs(repository):
         if (
             run.get("head_branch") != branch
@@ -175,7 +222,7 @@ def validated_ancestor(root: Path, repository: str, branch: str, policy: str) ->
             continue
         groups = receipt.get("groups", {})
         complete_full = receipt.get("full") and all(
-            groups.get(g) == "success" for g in ci_policy.GROUPS
+            groups.get(g) == "success" for g in validation.groups
         )
         coverage = receipt.get("coverage", {})
         complete_cumulative = (
@@ -203,6 +250,7 @@ def validated_ancestor(root: Path, repository: str, branch: str, policy: str) ->
 
 
 def completed_group_origin(
+    ctx,
     repository: str,
     run: dict,
     receipt: dict,
@@ -213,6 +261,7 @@ def completed_group_origin(
     visited: frozenset = frozenset(),
 ) -> str | None:
     """Resolve reuse chains to authenticated successful jobs in the latest attempt."""
+    validation = ci_policy.ValidationPolicy.from_context(ctx)
     identifier = str(run["id"])
     if identifier in visited or len(visited) >= 8:
         return None
@@ -253,6 +302,7 @@ def completed_group_origin(
         if not proof:
             return None
         return completed_group_origin(
+            ctx,
             repository,
             source,
             proof,
@@ -274,7 +324,7 @@ def completed_group_origin(
             if response.get("total_count", len(response["jobs"])) <= 100
             else []
         )
-    expected = ci_policy.GROUP_JOB_NAMES[group]
+    expected = validation.job_names[group]
     matches = [
         job for job in cache[key] if job.get("name", "").split(" / ")[-1] in expected
     ]
@@ -294,8 +344,9 @@ def completed_group_origin(
 
 
 def evidence(
-    repository: str, inputs: dict[str, str], policy: str, full_only: bool = False
+    ctx, repository: str, inputs: dict[str, str], policy: str, full_only: bool = False
 ) -> dict[str, dict]:
+    validation = ci_policy.ValidationPolicy.from_context(ctx)
     result = {}
     seen = set()
     cache: dict = {}
@@ -330,16 +381,16 @@ def evidence(
             and run.get("conclusion") == "success"
             and baseline.get("policy") == policy
             and baseline.get("inputs")
-            == {g: receipt.get("inputs", {}).get(g) for g in ci_policy.RUNTIME}
-            and set(baseline.get("origins", {})) == set(ci_policy.RUNTIME)
+            == {g: receipt.get("inputs", {}).get(g) for g in validation.runtime}
+            and set(baseline.get("origins", {})) == set(validation.runtime)
         )
         if full_only and not receipt.get("full") and not carried_full:
             continue
-        for group in ci_policy.CODE:
+        for group in validation.code:
             if group in seen or receipt.get("inputs", {}).get(group) != inputs[group]:
                 continue
             status = receipt.get("groups", {}).get(group)
-            if status is None and carried_full and group in ci_policy.RUNTIME:
+            if status is None and carried_full and group in validation.runtime:
                 status = "success"
             if status not in {"success", "failure"}:
                 continue
@@ -348,7 +399,7 @@ def evidence(
                 not full_only or run.get("conclusion") == "success"
             ):
                 origin = completed_group_origin(
-                    repository, run, receipt, group, policy, inputs[group], cache
+                    ctx, repository, run, receipt, group, policy, inputs[group], cache
                 )
                 if not origin:
                     continue
@@ -356,12 +407,16 @@ def evidence(
                     "run_id": origin,
                     "input": inputs[group],
                 }
-        if all(group in seen for group in ci_policy.CODE):
+        if all(group in seen for group in validation.code):
             break
     return result
 
 
-def verify(root: Path, receipt: dict, repository: str, run_id: str) -> None:
+def verify(ctx, receipt: dict, repository: str, run_id: str) -> None:
+    validation = ci_policy.ValidationPolicy.from_context(ctx)
+    root = ctx.root
+    if not valid_receipt(receipt):
+        raise ValueError("Malformed validation receipt")
     if (
         receipt.get("schema") != ci_policy.SCHEMA
         or receipt.get("repository") != repository
@@ -373,10 +428,10 @@ def verify(root: Path, receipt: dict, repository: str, run_id: str) -> None:
             "Receipt does not match repository, run and checked release source"
         )
     if not receipt.get("release") or any(
-        receipt.get("groups", {}).get(g) != "success" for g in ci_policy.GROUPS
+        receipt.get("groups", {}).get(g) != "success" for g in validation.groups
     ):
         raise ValueError("Receipt lacks complete successful release gates")
-    if receipt.get("inputs") != ci_policy.fingerprints(root):
+    if receipt.get("inputs") != ci_policy.fingerprints(ctx):
         raise ValueError("Validation input fingerprints changed")
     if not receipt.get("artifacts") or receipt[
         "artifacts"
@@ -408,18 +463,30 @@ def verify_run(repository: str, run_id: str, receipt: dict) -> None:
         )
     ):
         raise ValueError("Validation run is not a trusted completed repository run")
-    jobs = api(repository, f"/actions/runs/{run_id}/jobs?per_page=100")["jobs"]
+    jobs = api(repository, f"/actions/runs/{run_id}/jobs?filter=latest&per_page=100")[
+        "jobs"
+    ]
+    if receipt.get("run_attempt", 1) != run.get("run_attempt", 1):
+        raise ValueError("Receipt does not match the latest run attempt")
     if not any(
         job["name"].split(" / ")[-1] == "validate"
+        and job.get("status", "completed") == "completed"
         and job.get("conclusion") == "success"
+        and job.get("run_attempt", 1) == run.get("run_attempt", 1)
         for job in jobs
     ):
         raise ValueError("Run has not completed the aggregate validation gate")
     if receipt.get("run_head_sha") != run.get("head_sha"):
         raise ValueError("Receipt does not identify the authenticated workflow source")
     # Upload-only retries remain fast, but old advisory observations are not fresh.
-    observed = datetime.fromisoformat(receipt["validated_at"])
-    if (datetime.now(UTC) - observed).total_seconds() > 86400:
+    try:
+        observed = datetime.fromisoformat(receipt["validated_at"])
+        if observed.tzinfo is None:
+            raise ValueError("Evidence timestamp requires a timezone")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("Invalid evidence timestamp") from error
+    age = (datetime.now(UTC) - observed).total_seconds()
+    if age < 0 or age > 86400:
         raise ValueError(
-            "Release evidence is older than 24 hours; rebuild with fresh advisory checks"
+            "Release evidence must be within the past 24 hours; rebuild with fresh advisory checks"
         )

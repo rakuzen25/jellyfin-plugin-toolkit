@@ -12,7 +12,8 @@ export function verifyVersions(manifest, nodePin, nodeVersion, pnpmVersion) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    const root = process.env.JELLYFIN_PLUGIN_ROOT || process.cwd();
+    const index = process.argv.indexOf("--root");
+    const root = index < 0 ? process.env.JELLYFIN_PLUGIN_ROOT || process.cwd() : path.resolve(process.argv[index + 1]);
     const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
     const nodePin = readFileSync(path.join(root, ".node-version"), "utf8").trim();
     const pnpmVersion = execFileSync(process.env.JELLYFIN_PLUGIN_PNPM || "pnpm", ["--version"], { encoding: "utf8" }).trim();

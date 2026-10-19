@@ -14,12 +14,10 @@ def main(argv=None):
     if forwarded and forwarded[0] in {"ci", "release"}:
         import importlib
 
-        Context.load().generated()
         module = importlib.import_module(
             "jellyfin_plugin_toolkit." + forwarded[0] + ".__main__"
         )
-        sys.argv = [sys.argv[0], *forwarded[1:]]
-        module.main()
+        module.main(forwarded[1:])
         return
     parser = argparse.ArgumentParser(prog="./plugin")
     sub = parser.add_subparsers(dest="task", required=True)
@@ -47,15 +45,18 @@ def main(argv=None):
     new.add_argument("--repository", required=True)
     new.add_argument("--admin", action="store_true")
     new.add_argument("--host-project", default="src/Host/Plugin.csproj")
-    args, extra = parser.parse_known_args(argv)
+    args, extra = parser.parse_known_args(forwarded)
     if extra and args.task != "test":
         parser.error("unrecognized arguments: " + " ".join(extra))
     ctx = Context.load()
+    from jellyfin_plugin_toolkit.checks.pins import check_pins
+
+    check_pins(ctx.root)
     ctx.generated()
     if args.task == "bootstrap":
-        tasks.bootstrap()
+        tasks.bootstrap(ctx)
     elif args.task == "doctor":
-        tasks.verify_tools()
+        tasks.verify_tools(ctx)
         print(
             json.dumps(
                 {
@@ -72,40 +73,40 @@ def main(argv=None):
             parser.error("port must be between 1 and 65535")
         from jellyfin_plugin_toolkit.dev.local_jellyfin import dev
 
-        dev(args)
+        dev(ctx, args)
     elif args.task == "build":
         if args.target and (args.release or args.prepared_web):
             parser.error("release options apply only to complete builds")
         if args.target == "frontend":
-            tasks.frontend_build()
+            tasks.frontend_build(ctx)
         elif args.target == "backend":
             from jellyfin_plugin_toolkit.build.backend import publish
 
-            publish(ctx.root / ".build/plugin", ctx.root / "dist/web")
+            publish(ctx, ctx.root / ".build/plugin", ctx.root / "dist/web")
         elif args.target is None:
             from jellyfin_plugin_toolkit.build.clean_package import clean_package
 
-            clean_package(args.release, args.prepared_web)
+            clean_package(ctx, args.release, args.prepared_web)
         else:
             parser.error("unknown build target")
     elif args.task == "_package":
         from jellyfin_plugin_toolkit.build.package import package
 
-        package(args.release, args.prepared_web)
+        package(ctx, args.release, args.prepared_web)
     elif args.task == "validate":
         for target in ctx.config["validation"].get(
             "check_targets", ["backend", "tooling"]
         ):
-            tasks.check(target)
+            tasks.check(ctx, target)
         for target in ctx.config["validation"].get(
             "unit_groups", ["backend", "tooling"]
         ):
-            tasks.test(target, [])
+            tasks.test(ctx, target, [])
         from jellyfin_plugin_toolkit.build.clean_package import clean_package
 
-        clean_package()
+        clean_package(ctx)
         for target in ctx.config["validation"].get("acceptance_groups", []):
-            tasks.test(target, [])
+            tasks.test(ctx, target, [])
     elif args.task == "new":
         from jellyfin_plugin_toolkit.scaffold import generate
 
@@ -128,8 +129,8 @@ def main(argv=None):
         )
         for target in targets:
             if args.task == "check":
-                tasks.check(target)
+                tasks.check(ctx, target)
             elif args.task == "format":
-                tasks.format_target(target, True)
+                tasks.format_target(ctx, target, True)
             else:
-                tasks.test(target, extra)
+                tasks.test(ctx, target, extra)

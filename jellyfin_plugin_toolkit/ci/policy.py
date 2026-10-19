@@ -3,22 +3,55 @@
 import fnmatch
 import json
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
 from jellyfin_plugin_toolkit.common.artifacts import digest
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.context import Context
+from jellyfin_plugin_toolkit.context import validate_jobs
 
-CONTEXT = Context.load()
-GROUPS = CONTEXT.groups
-CODE = tuple(g for g in GROUPS if g != "artifacts")
-RUNTIME = tuple(g for g in CODE if g != "metadata")
 SCHEMA = 4
 POLICY = ("plugin.toml", "toolkit.lock.json", "version.txt")
-GROUP_JOB_NAMES = {
-    g: set(CONTEXT.config.get("validation", {}).get("job_names", {}).get(g, [g]))
-    for g in CODE
-}
+ARTIFACT_JOBS = ("package", "installation", "reproducibility", "advisories")
+
+
+@dataclass(frozen=True)
+class ValidationPolicy:
+    groups: tuple[str, ...]
+    code: tuple[str, ...]
+    runtime: tuple[str, ...]
+    job_names: Mapping[str, frozenset[str]]
+    aggregate_jobs: Mapping[str, tuple[str, ...]]
+
+    @classmethod
+    def from_context(cls, ctx):
+        validation = ctx.config["validation"]
+        groups = ctx.groups
+        validate_jobs(validation, groups)
+        code = tuple(g for g in groups if g != "artifacts")
+        return cls(
+            groups,
+            code,
+            tuple(g for g in code if g != "metadata"),
+            MappingProxyType(
+                {
+                    g: frozenset(validation.get("job_names", {}).get(g, [g]))
+                    for g in code
+                }
+            ),
+            MappingProxyType(
+                {
+                    g: tuple(
+                        validation.get("artifact_jobs", ARTIFACT_JOBS)
+                        if g == "artifacts"
+                        else validation.get("aggregate_jobs", {}).get(g, [g])
+                    )
+                    for g in groups
+                }
+            ),
+        )
 
 
 def git(root, *args):
@@ -35,8 +68,7 @@ def metadata_path(path):
     )
 
 
-def classification(path, root=None):
-    ctx = Context.load(root) if root else CONTEXT
+def classification(ctx, path):
     rules = ctx.config["validation"].get("rules", [])
     selected = set()
     matched = []
@@ -51,8 +83,8 @@ def classification(path, root=None):
     return "+".join(matched), selected
 
 
-def impacts(path, root=None):
-    return classification(path, root)[1]
+def impacts(ctx, path):
+    return classification(ctx, path)[1]
 
 
 def tracked_files(root):
@@ -65,13 +97,14 @@ def tracked_files(root):
     )
 
 
-def check_classification(root, changed):
+def check_classification(ctx, changed):
+    root = ctx.root
     unknown = []
     for path in sorted(set(tracked_files(root)) | set(changed)):
         if not path:
             continue
         try:
-            classification(path, root)
+            classification(ctx, path)
         except ValueError:
             unknown.append(path)
     if unknown:
@@ -79,15 +112,14 @@ def check_classification(root, changed):
     return [
         {
             "path": p,
-            "rule": classification(p, root)[0],
-            "groups": sorted(impacts(p, root)),
+            "rule": classification(ctx, p)[0],
+            "groups": sorted(impacts(ctx, p)),
         }
         for p in changed
     ]
 
 
-def browser_inventory(root):
-    ctx = Context.load(root)
+def browser_inventory(ctx):
     browser = ctx.config.get("browser", {})
     if not browser.get("groups"):
         return
@@ -105,8 +137,8 @@ def browser_inventory(root):
         raise ValueError("Every browser spec must belong to exactly one group")
 
 
-def fingerprints(root):
-    ctx = Context.load(root)
+def fingerprints(ctx):
+    root = ctx.root
     files = source_files(root)
     shared = {Path(p) for p in POLICY} | {
         p
@@ -122,7 +154,7 @@ def fingerprints(root):
             "Directory.Build.props",
         }
     }
-    classified = {p: impacts(str(p), root) for p in files}
+    classified = {p: impacts(ctx, str(p)) for p in files}
     return {
         g: digest(
             root,
@@ -133,7 +165,8 @@ def fingerprints(root):
     }
 
 
-def metadata_check(root):
+def metadata_check(ctx):
+    root = ctx.root
     for name in tracked_files(root):
         if metadata_path(name) and name.endswith(".json") and (root / name).exists():
             json.loads((root / name).read_text())

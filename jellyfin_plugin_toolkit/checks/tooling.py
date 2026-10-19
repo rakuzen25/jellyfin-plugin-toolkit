@@ -2,20 +2,22 @@
 
 from jellyfin_plugin_toolkit.checks.pins import check_pins
 from jellyfin_plugin_toolkit.checks.workflows import check_workflows
-from jellyfin_plugin_toolkit.common.process import ROOT, executable, python_checks, run
+from jellyfin_plugin_toolkit.common.process import executable, python_checks, run
 
 
-def main():
-    from jellyfin_plugin_toolkit.tasks import format_target
-
-    check_pins(ROOT)
-    format_target("tooling", False)
-    roots = [name for name in ["scripts", "tests"] if (ROOT / name).is_dir()]
+def main(ctx):
+    check_pins(ctx.root)
+    roots = [name for name in ["scripts", "tests"] if (ctx.root / name).is_dir()]
     if roots:
-        run(python_checks(), "-m", "ruff", "check", *roots)
-    run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0")
-    check_workflows(ROOT)
+        run(python_checks(ctx), "-m", "ruff", "check", *roots, cwd=ctx.root)
+    run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0", cwd=ctx.root)
+    check_workflows(ctx.root)
 
 
 if __name__ == "__main__":
-    main()
+    from jellyfin_plugin_toolkit.checks.formatting import format_target
+    from jellyfin_plugin_toolkit.context import Context
+
+    ctx = Context.load()
+    format_target(ctx, "tooling", False)
+    main(ctx)

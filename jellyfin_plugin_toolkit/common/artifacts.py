@@ -3,7 +3,10 @@
 import hashlib
 import json
 
-from jellyfin_plugin_toolkit.common.source_inventory import source_files
+from jellyfin_plugin_toolkit.common.source_inventory import (
+    frontend_inputs,
+    source_files,
+)
 from jellyfin_plugin_toolkit.context import Context
 
 
@@ -44,27 +47,8 @@ def artifact_hashes(root):
 
 def web_inputs(root):
     ctx = Context.load(root)
-    directory = ctx.config.get("frontend", {}).get("directory", "frontend") + "/"
     return {
-        "input": digest(
-            root,
-            [
-                p
-                for p in source_files(root)
-                if str(p).startswith(directory)
-                or str(p)
-                in {
-                    "plugin.toml",
-                    "toolkit.lock.json",
-                    "version.txt",
-                    "package.json",
-                    "pnpm-lock.yaml",
-                    "pnpm-workspace.yaml",
-                    ".node-version",
-                    ".python-version",
-                }
-            ],
-        ),
+        "input": digest(root, frontend_inputs(ctx, source_files(root))),
         "files": {
             p.relative_to(root / "dist/web").as_posix(): hashlib.sha256(
                 p.read_bytes()
