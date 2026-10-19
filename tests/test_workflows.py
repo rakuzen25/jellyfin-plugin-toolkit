@@ -36,6 +36,10 @@ class WorkflowTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "pin mismatch"):
                     pins.check_pins(root)
                 workflow.write_text(original)
+                workflow.write_text(original.replace("# v1.0.0", "# v2.0.0"))
+                with self.assertRaisesRegex(ValueError, "version comment"):
+                    pins.check_pins(root)
+                workflow.write_text(original)
                 preset.write_text(
                     json.dumps({"extends": ["github>example/toolkit#v2.0.0"]})
                 )

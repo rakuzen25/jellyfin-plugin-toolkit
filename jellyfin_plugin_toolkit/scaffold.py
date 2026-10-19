@@ -440,7 +440,9 @@ def generate(
     )
     from jellyfin_plugin_toolkit.workflows import render
 
-    for filename, contents in render(lock["repository"], revision).items():
+    for filename, contents in render(
+        lock["repository"], revision, version=lock["version"]
+    ).items():
         put(".github/workflows/" + filename, contents)
     put(
         "release-please-config.json",

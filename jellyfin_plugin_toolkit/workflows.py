@@ -3,9 +3,11 @@
 import re
 
 
-def render(repository, revision, catalog=None):
+def render(repository, revision, catalog=None, version="v1.0.0"):
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Workflow generation requires an immutable toolkit revision")
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise ValueError("Workflow version must identify the locked toolkit release")
     prefix = repository + "/.github/workflows/"
     validate = """name: Validate release candidate
 on:
@@ -21,7 +23,7 @@ permissions:
   actions: read
 jobs:
   validation:
-    uses: PREFIXvalidate.yml@REVISION
+    uses: PREFIXvalidate.yml@REVISION # TOOLKIT_TAG
     with:
       full: ${{ inputs.full || false }}
 """
@@ -35,7 +37,7 @@ permissions:
   actions: read
 jobs:
   safety:
-    uses: PREFIXvalidate.yml@REVISION
+    uses: PREFIXvalidate.yml@REVISION # TOOLKIT_TAG
     with:
       ref: ${{ github.sha }}
       scheduled: ${{ github.event_name == 'schedule' }}
@@ -59,7 +61,7 @@ permissions:
   attestations: write
 jobs:
   release:
-    uses: PREFIXrelease.yml@REVISION
+    uses: PREFIXrelease.yml@REVISION # TOOLKIT_TAG
     with:
       tag: ${{ inputs.tag }}
       validated_run_id: ${{ inputs.validated_run_id }}
@@ -78,7 +80,7 @@ permissions:
   attestations: write
 jobs:
   prepare:
-    uses: PREFIXprepare-release.yml@REVISION
+    uses: PREFIXprepare-release.yml@REVISION # TOOLKIT_TAG
     with:
       app_client_id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
     secrets:
@@ -108,7 +110,7 @@ permissions:
 jobs:
   notify:
     if: github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease)
-    uses: PREFIXcatalog-notify.yml@REVISION
+    uses: PREFIXcatalog-notify.yml@REVISION # TOOLKIT_TAG
     with:
       catalog_repository: CATALOG
       tag: ${{ github.event.release.tag_name || inputs.tag }}
@@ -117,6 +119,8 @@ jobs:
       PLUGIN_APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
 """.replace("CATALOG", catalog)
     return {
-        name: text.replace("PREFIX", prefix).replace("REVISION", revision)
+        name: text.replace("PREFIX", prefix)
+        .replace("REVISION", revision)
+        .replace("TOOLKIT_TAG", version)
         for name, text in contents.items()
     }

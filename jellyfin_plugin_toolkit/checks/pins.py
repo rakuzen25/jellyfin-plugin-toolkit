@@ -23,10 +23,17 @@ def check_pins(root, release=False):
         *(root / ".github/workflows").glob("*.yaml"),
     ]:
         text = workflow.read_text()
-        for pin in re.findall(
-            re.escape(lock["repository"]) + r"/\.github/workflows/[\w.-]+@([^\s#]+)",
+        for match in re.finditer(
+            re.escape(lock["repository"])
+            + r"/\.github/workflows/[\w.-]+@([^\s#]+)(?:[ \t]+#[ \t]*(v[^\s]+))?",
             text,
         ):
+            pin = match[1]
+            if match[2] != lock["version"]:
+                raise ValueError(
+                    "Toolkit workflow version comment and archive versions differ: "
+                    + str(workflow)
+                )
             if not re.fullmatch(r"[0-9a-f]{40}", pin) or pin != revision:
                 raise ValueError(
                     "Toolkit archive/workflow pin mismatch: " + str(workflow)

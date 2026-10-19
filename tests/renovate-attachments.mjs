@@ -58,3 +58,32 @@ assert.ok(preset.packageRules.some((rule) => rule.matchUpdateTypes?.includes("ma
 console.log(
     "PASS: Renovate extracts the lock and updates its release/checksum using consecutive release attachments; workflow pins share one manually reviewed group",
 );
+
+// Reusable workflows need version comments: SHA-only references are disabled by Renovate.
+const { GlobalConfig } = await import("/usr/local/renovate/dist/config/global.js");
+GlobalConfig.set({ localDir: root });
+const { extractPackageFile: extractActions } = await import("/usr/local/renovate/dist/modules/manager/github-actions/index.js");
+const { compile } = await import("/usr/local/renovate/dist/util/template/index.js");
+for (const name of ["validate", "release", "prepare-release", "catalog-notify"]) {
+    const workflow =
+        "name: Fixture\non: push\njobs:\n  call:\n    uses: rakuzen25/jellyfin-plugin-toolkit/.github/workflows/" +
+        name +
+        ".yml@" +
+        "a".repeat(40) +
+        " # " +
+        before.tag_name +
+        "\n";
+    const dep = (await extractActions(workflow, ".github/workflows/" + name + ".yml", {})).deps[0];
+    assert.notEqual(dep.enabled, false);
+    assert.equal(dep.currentValue, before.tag_name);
+    assert.equal(dep.currentDigest, "a".repeat(40));
+    const replacement = compile(dep.autoReplaceStringTemplate, { ...dep, newValue: after.tag_name, newDigest: "b".repeat(40) });
+    const updated = workflow.replace(dep.replaceString, replacement);
+    const next = (await extractActions(updated, ".github/workflows/" + name + ".yml", {})).deps[0];
+    assert.equal(next.currentValue, after.tag_name);
+    assert.equal(next.currentDigest, "b".repeat(40));
+    assert.equal(next.depName, dependency.depName);
+}
+console.log(
+    "PASS: native GitHub Actions extraction and replacement update version comments and all reusable workflow digests with the toolkit release",
+);

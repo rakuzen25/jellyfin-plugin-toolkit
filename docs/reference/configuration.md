@@ -31,7 +31,7 @@ Paths are repository-relative and cannot escape the checkout. Frontend entries a
 
 An operation is a table containing `commands`, a list of argv arrays, and optional `cwd`. Supported placeholders are `{python}`, `{root}`, `{toolkit}`, `{pnpm}`, and `{dotnet}`. Arguments are passed directly without a shell. Overrides use `check-frontend`, `test-tooling`, `test-installation`, and the corresponding command/target names. Extra test arguments are forwarded to the configured command.
 
-Unknown maintained inputs fail CI classification until a rule covers them. A toolkit update changes evidence fingerprints. Archive metadata, immutable reusable-workflow revisions, and the versioned Renovate preset must agree; partial updates fail validation.
+Unknown maintained inputs fail CI classification until a rule covers them. A toolkit update changes evidence fingerprints. Archive metadata, immutable reusable-workflow revisions and their release-version comments, and the versioned Renovate preset must agree; partial updates fail validation.
 
 ## Commands
 
