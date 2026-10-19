@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""Verified toolkit bootstrap. Shared implementation lives in the locked archive."""
+
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import sys
+import tarfile
+import tempfile
+import urllib.request
+from pathlib import Path, PurePosixPath
+
+
+def install(root, download=False):
+    cache = root / ".build/toolkit"
+    if (root / ".build").is_symlink() or cache.is_symlink():
+        raise ValueError("Toolkit cache cannot redirect outside the checkout")
+    cache.mkdir(parents=True, exist_ok=True)
+    with (cache / ".bootstrap.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _install_locked(root, download)
+
+
+def _install_locked(root, download=False):
+    lock = json.loads((root / "toolkit.lock.json").read_text())
+    if lock.get("schema") != 1 or not re.fullmatch(
+        r"[\w.-]+/[\w.-]+", lock.get("repository", "")
+    ):
+        raise ValueError("Invalid toolkit repository or lock schema")
+    version, digest = lock.get("version", ""), lock.get("sha256", "")
+    if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[\w.]+)?", version) or not re.fullmatch(
+        r"[a-f0-9]{64}", digest
+    ):
+        raise ValueError("Invalid toolkit version or SHA-256")
+    cache = root / ".build/toolkit"
+    cache.mkdir(parents=True, exist_ok=True)
+    archive = cache / (digest + ".tar.gz")
+    supplied = os.environ.get("JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE")
+    embedded = root / "build-support/toolkit.tar.gz"
+    source = Path(supplied) if supplied else embedded if embedded.is_file() else archive
+    if not source.is_file():
+        if not download:
+            raise ValueError("Locked toolkit is missing; run ./plugin bootstrap")
+        url = f"https://github.com/{lock['repository']}/releases/download/{version}/jellyfin-plugin-toolkit-{version[1:]}.tar.gz"
+        with urllib.request.urlopen(url, timeout=60) as response:
+            payload = response.read(100_000_001)
+        if len(payload) > 100_000_000:
+            raise ValueError("Toolkit archive exceeds size limit")
+    else:
+        payload = source.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != digest:
+        raise ValueError(
+            "Toolkit archive SHA-256 mismatch; working installation preserved"
+        )
+    if (
+        not archive.is_file()
+        or hashlib.sha256(archive.read_bytes()).hexdigest() != digest
+    ):
+        temporary = archive.with_suffix(".download")
+        temporary.write_bytes(payload)
+        temporary.replace(archive)
+    target = cache / digest
+    with tarfile.open(archive, "r:gz") as package:
+        members = package.getmembers()
+        names = set()
+        total = 0
+        for member in members:
+            path = PurePosixPath(member.name)
+            if (
+                path.is_absolute()
+                or ".." in path.parts
+                or "\\" in member.name
+                or not member.name
+                or member.name in names
+            ):
+                raise ValueError("Unsafe or duplicate toolkit archive path")
+            if not member.isfile() and not member.isdir():
+                raise ValueError(
+                    "Toolkit archive contains a link or unsupported member"
+                )
+            if path.as_posix() != member.name.rstrip("/") or str(path) == ".":
+                raise ValueError("Unsafe noncanonical toolkit archive path")
+            names.add(member.name)
+            total += member.size
+            if total > 300_000_000:
+                raise ValueError("Expanded toolkit archive exceeds size limit")
+        required = {
+            "toolkit-release.json",
+            "toolkit-files.json",
+            "jellyfin_plugin_toolkit/__init__.py",
+            "jellyfin_plugin_toolkit/cli.py",
+            "jellyfin_plugin_toolkit/context.py",
+            "node/build.mjs",
+            "msbuild/Plugin.props",
+            "ui/lifecycle.ts",
+            "LICENSE",
+            "NOTICE",
+        }
+        entries = {member.name: member for member in members if member.isfile()}
+        if not required <= entries.keys():
+            raise ValueError(
+                "Toolkit archive is incomplete; working installation preserved"
+            )
+        if (
+            entries["toolkit-release.json"].size > 4096
+            or entries["toolkit-files.json"].size > 2_000_000
+        ):
+            raise ValueError("Toolkit metadata exceeds size limit")
+        metadata = json.load(package.extractfile(entries["toolkit-release.json"]))
+        if metadata.get("version") != version[1:] or metadata.get("schema") != 1:
+            raise ValueError("Toolkit archive version differs from lock")
+        inventory = json.load(package.extractfile(entries["toolkit-files.json"]))
+        expected = {
+            name: hashlib.sha256(package.extractfile(member).read()).hexdigest()
+            for name, member in entries.items()
+            if name != "toolkit-files.json"
+        }
+        if inventory != {"schema": 1, "files": expected}:
+            raise ValueError("Toolkit source inventory is incomplete or altered")
+        expected_files = {m.name for m in members if m.isfile()}
+        valid = (
+            target.is_dir()
+            and not target.is_symlink()
+            and not any(p.is_symlink() for p in target.rglob("*"))
+            and {
+                p.relative_to(target).as_posix()
+                for p in target.rglob("*")
+                if p.is_file()
+            }
+            == expected_files
+            and all(
+                (target / m.name).is_file()
+                and not (target / m.name).is_symlink()
+                and hashlib.sha256((target / m.name).read_bytes()).digest()
+                == hashlib.sha256(package.extractfile(m).read()).digest()
+                for m in members
+                if m.isfile()
+            )
+        )
+        if not valid:
+            staged = Path(tempfile.mkdtemp(prefix="extract-", dir=cache))
+            try:
+                for member in members:
+                    destination = staged / member.name
+                    if member.isdir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                    else:
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_bytes(package.extractfile(member).read())
+                        destination.chmod(0o755 if member.mode & 0o111 else 0o644)
+                metadata = json.loads((staged / "toolkit-release.json").read_text())
+                if metadata["version"] != version[1:]:
+                    raise ValueError("Toolkit archive version differs from lock")
+                if target.is_symlink():
+                    raise ValueError("Toolkit cache directory cannot be a symlink")
+                if target.exists():
+                    shutil.rmtree(target)
+                staged.replace(target)
+            finally:
+                if staged.exists():
+                    shutil.rmtree(staged)
+    current = cache / "current"
+    if current.exists() and not current.is_symlink():
+        raise ValueError("Toolkit current pointer must be a symlink")
+    link = cache / ".current-next"
+    link.unlink(missing_ok=True)
+    link.symlink_to(target.name, target_is_directory=True)
+    link.replace(current)
+    sys.path.insert(0, str(target))
+    os.environ["JELLYFIN_PLUGIN_ROOT"] = str(root)
+    os.environ["JELLYFIN_PLUGIN_TOOLKIT_ROOT"] = str(target)
+    return target
+
+
+if __name__ == "__main__":
+    try:
+        install(
+            Path(__file__).resolve().parent,
+            len(sys.argv) > 1 and sys.argv[1] in {"bootstrap", "_install"},
+        )
+        if len(sys.argv) > 1 and sys.argv[1] == "_install":
+            if environment := os.environ.get("GITHUB_ENV"):
+                with open(environment, "a") as stream:
+                    stream.write(
+                        "PYTHONPATH="
+                        + os.environ["JELLYFIN_PLUGIN_TOOLKIT_ROOT"]
+                        + "\n"
+                    )
+                    for key in ("JELLYFIN_PLUGIN_ROOT", "JELLYFIN_PLUGIN_TOOLKIT_ROOT"):
+                        stream.write(key + "=" + os.environ[key] + "\n")
+        else:
+            from jellyfin_plugin_toolkit.cli import main
+
+            main()
+    except (ValueError, OSError) as error:
+        raise SystemExit(str(error)) from error

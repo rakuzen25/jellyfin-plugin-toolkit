@@ -1,0 +1,41 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "customManagers": [
+        {
+            "customType": "regex",
+            "managerFilePatterns": ["/^toolkit\\.lock\\.json$/"],
+            "matchStrings": [
+                "\"repository\"\\s*:\\s*\"(?<depName>[^\"\\s]+)\"[\\s\\S]*?\"version\"\\s*:\\s*\"(?<currentValue>v[^\"\\s]+)\"[\\s\\S]*?\"sha256\"\\s*:\\s*\"(?<currentDigest>[a-f0-9]{64})\""
+            ],
+            "datasourceTemplate": "github-release-attachments",
+            "versioningTemplate": "semver"
+        },
+        {
+            "customType": "regex",
+            "managerFilePatterns": ["/^plugin\\.toml$/"],
+            "matchStrings": [
+                "\"(?<depName>mcr\\.microsoft\\.com/playwright|rhysd/actionlint):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+            ],
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker"
+        }
+    ],
+    "packageRules": [
+        {
+            "description": "Keep toolkit archive version, checksum and reusable workflow pins together.",
+            "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],
+            "groupName": "Jellyfin plugin toolkit",
+            "groupSlug": "jellyfin-plugin-toolkit",
+            "automerge": false,
+            "pinDigests": true,
+            "separateMajorMinor": false
+        },
+        {
+            "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],
+            "matchUpdateTypes": ["major"],
+            "dependencyDashboardApproval": true,
+            "labels": ["toolkit-major-review"]
+        }
+    ],
+    "description": ["Pinned toolkit archive, workflow and preset updates in one manually reviewed pull request."]
+}

@@ -1,0 +1,78 @@
+"""Source, toolkit and exact artifact fingerprints."""
+
+import hashlib
+import json
+
+from jellyfin_plugin_toolkit.common.source_inventory import source_files
+from jellyfin_plugin_toolkit.context import Context
+
+
+def digest(root, paths, normalize_version=False):
+    value = hashlib.sha256()
+    for path in sorted(paths):
+        data = (root / path).read_bytes()
+        if normalize_version and str(path) == "version.txt":
+            data = b"RELEASE\n"
+        if normalize_version and path.name == "packages.lock.json":
+            context = Context.load(root)
+            own = {
+                name.casefold()
+                for name in [
+                    context.identity["assembly"],
+                    *context.config["backend"].get("project_assemblies", []),
+                ]
+            }
+            lock = json.loads(data)
+            for framework in lock["dependencies"].values():
+                for dependency in framework.values():
+                    if dependency.get("type") == "Project":
+                        for name in dependency.get("dependencies", {}):
+                            if name.casefold() in own:
+                                dependency["dependencies"][name] = "[RELEASE, )"
+            data = json.dumps(lock, sort_keys=True).encode()
+        value.update(str(path).encode() + b"\0" + data + b"\0")
+    return value.hexdigest()
+
+
+def artifact_hashes(root):
+    return {
+        p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in sorted((root / "dist").iterdir())
+        if p.suffix == ".zip" or p.name in {"manifest.json", "SHA256SUMS"}
+    }
+
+
+def web_inputs(root):
+    ctx = Context.load(root)
+    directory = ctx.config.get("frontend", {}).get("directory", "frontend") + "/"
+    return {
+        "input": digest(
+            root,
+            [
+                p
+                for p in source_files(root)
+                if str(p).startswith(directory)
+                or str(p)
+                in {
+                    "plugin.toml",
+                    "toolkit.lock.json",
+                    "version.txt",
+                    "package.json",
+                    "pnpm-lock.yaml",
+                    "pnpm-workspace.yaml",
+                    ".node-version",
+                    ".python-version",
+                }
+            ],
+        ),
+        "files": {
+            p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted((root / "dist/web").glob("*"))
+            if p.is_file()
+        },
+    }
+
+
+def verify_web(root):
+    if json.loads((root / "dist/web-build.json").read_text()) != web_inputs(root):
+        raise ValueError("Prepared frontend inputs or asset hashes changed")

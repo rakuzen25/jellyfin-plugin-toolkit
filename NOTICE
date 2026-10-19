@@ -1,0 +1,9 @@
+Original toolkit code: Copyright 2026 rakuzen25 and contributors; Apache-2.0.
+The optional ui/lifecycle.ts and its test retain MPL-2.0.
+Build/release machinery extracted from LyricBridge; upstream component notices remain with their respective plugins.
+
+The lifecycle module was extracted from LyricBridge's MPL-2.0 renderer.
+LyricMotion (ThisIsTeddyBear/Jellyfin-LyricMotion), version 3.3, is licensed
+under the Mozilla Public License 2.0. Its applicable attribution is retained.
+The corresponding editable lifecycle source and MPL-2.0.txt accompany this archive.
+See licenses.spdx.json for the explicit file-level exception inventory.

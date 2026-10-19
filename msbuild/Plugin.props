@@ -1,0 +1,24 @@
+<Project>
+  <Import Project="$(PluginRepositoryRoot).build/generated/PluginIdentity.props" />
+  <PropertyGroup>
+    <PluginManagedProject Condition="'$(PluginManagedProject)' == ''">true</PluginManagedProject>
+    <Deterministic>true</Deterministic>
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <PathMap>$(PluginRepositoryRoot)=/_/</PathMap>
+    <JellyfinReferenceDir Condition="'$(JellyfinReferenceDir)' == '' and '$(JELLYFIN_PLUGIN_REFERENCE_DIR)' != ''">$(JELLYFIN_PLUGIN_REFERENCE_DIR)</JellyfinReferenceDir>
+    <JellyfinReferenceDir Condition="'$(JellyfinReferenceDir)' == ''">$(PluginRepositoryRoot).build/jellyfin</JellyfinReferenceDir>
+    <PluginWebAssets Condition="'$(PluginWebAssets)' == ''">$(PluginRepositoryRoot)dist/web</PluginWebAssets>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(PluginManagedProject)' == 'true'">
+    <TargetFramework>$(PluginTargetFramework)</TargetFramework>
+    <Version>$(PluginVersion)</Version>
+    <VersionPrefix>$(PluginVersion)</VersionPrefix>
+    <PackageVersion>$(PluginVersion)</PackageVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+  </PropertyGroup>
+</Project>

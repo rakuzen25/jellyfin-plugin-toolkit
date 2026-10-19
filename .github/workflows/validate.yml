@@ -1,0 +1,490 @@
+name: Validate release candidate
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ""
+      base:
+        type: string
+        default: ""
+      release_tag:
+        type: string
+        default: ""
+      release_mode:
+        type: boolean
+        default: false
+      full:
+        type: boolean
+        default: false
+      scheduled:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: validation-${{ github.repository }}-${{ (inputs.scheduled || github.workflow == 'Changed-input full safety check') && 'scheduled' || inputs.release_tag || github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ inputs.release_tag == '' && !inputs.scheduled && github.workflow != 'Changed-input full safety check' }}
+defaults:
+  run:
+    shell: bash
+env:
+  RELEASE_MODE: ${{ inputs.release_mode || false }}
+  RELEASE_TAG: ${{ inputs.release_tag || '' }}
+  REPOSITORY: ${{ github.repository }}
+  CI_RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+jobs:
+  impact:
+    runs-on: ubuntu-24.04
+    outputs:
+      metadata: ${{ steps.plan.outputs.metadata }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      backend: ${{ steps.plan.outputs.backend }}
+      tooling: ${{ steps.plan.outputs.tooling }}
+      workflow: ${{ steps.plan.outputs.workflow }}
+      rendering: ${{ steps.plan.outputs.rendering }}
+      performance: ${{ steps.plan.outputs.performance }}
+      artifacts: ${{ steps.plan.outputs.artifacts }}
+      web: ${{ steps.plan.outputs.web }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+      - run: pnpm check docs
+      - run: python3 plugin release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ inputs.base || github.event.pull_request.base.sha || github.event.before }}
+          FULL: ${{ inputs.full || false }}
+          SCHEDULED: ${{ inputs.scheduled || false }}
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            if comparison_base=$(git merge-base "$BASE" HEAD); then
+              BASE="$comparison_base"
+            else
+              echo "Comparison history unavailable; selecting full validation."
+              BASE=""
+            fi
+          fi
+          args=(--reuse --base "$BASE")
+          if [ "$FULL" = true ]; then args+=(--full); fi
+          if [ "$SCHEDULED" = true ]; then args+=(--scheduled); fi
+          if [ "$RELEASE_MODE" = true ]; then args+=(--release); fi
+          python3 plugin ci plan "${args[@]}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: validation-plan
+          path: dist/plan.json
+          if-no-files-found: error
+  metadata:
+    needs: impact
+    if: needs.impact.outputs.metadata == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+      - run: mkdir -p dist/evidence
+      - run: python3 plugin ci metadata-check 2>&1 | tee dist/evidence/metadata.log
+      - name: Validate Renovate configuration with the upstream validator
+        run: >-
+          docker run --rm --network none --entrypoint renovate-config-validator
+          -v "$PWD/renovate.json:/tmp/renovate.json:ro"
+          ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21
+          --strict /tmp/renovate.json 2>&1 | tee -a dist/evidence/metadata.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-metadata
+  frontend:
+    needs: impact
+    if: needs.impact.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+      - run: mkdir -p dist/evidence
+      - name: Check affected frontend inputs
+        if: needs.impact.outputs.frontend == 'true'
+        run: (pnpm check frontend && pnpm test frontend) 2>&1 | tee dist/evidence/frontend-checks.log
+      - run: (pnpm build frontend && python3 plugin ci web-record) 2>&1 | tee dist/evidence/frontend-build.log
+      - run: python3 plugin test web-installation --assets dist/web
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: browser-assets
+          path: |
+            dist/web/
+            dist/web-build.json
+          if-no-files-found: error
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-frontend
+  backend:
+    env:
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: "1"
+    needs: [impact, frontend]
+    if: always() && needs.impact.result == 'success' && (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') && needs.impact.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          dotnet: "true"
+          references: "true"
+      - run: mkdir -p dist/evidence
+      - name: Check .NET formatting
+        run: python3 plugin check backend 2>&1 | tee dist/evidence/dotnet-format.log
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.impact.outputs.web == 'true'
+        with:
+          name: browser-assets
+          path: dist
+      - if: needs.impact.outputs.web == 'true'
+        run: python3 plugin ci web-verify
+      - run: python3 plugin test backend --results-directory dist/evidence --report-xunit-trx 2>&1 | tee dist/evidence/backend.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-backend
+  tooling:
+    needs: impact
+    if: needs.impact.outputs.tooling == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          python: "true"
+          node: "true"
+      - run: mkdir -p dist/evidence
+      - run: JELLYFIN_PLUGIN_PYTHON=python python3 plugin check tooling 2>&1 | tee dist/evidence/tooling.log
+      - run: python3 plugin test tooling 2>&1 | tee -a dist/evidence/tooling.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-tooling
+  workflow:
+    needs: [impact, frontend]
+    if: needs.impact.outputs.workflow == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+      - run: mkdir -p dist/evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.impact.outputs.web == 'true'
+        with:
+          name: browser-assets
+          path: dist
+      - if: needs.impact.outputs.web == 'true'
+        run: python3 plugin ci web-verify
+      - run: CI_BROWSER_GROUP=workflow pnpm test browser --project workflow-chromium --workers=2 2>&1 | tee dist/evidence/browser.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-workflow
+  rendering:
+    needs: [impact, frontend]
+    if: needs.impact.outputs.rendering == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, mobile-chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+      - run: mkdir -p dist/evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.impact.outputs.web == 'true'
+        with:
+          name: browser-assets
+          path: dist
+      - if: needs.impact.outputs.web == 'true'
+        run: python3 plugin ci web-verify
+      - run: CI_BROWSER_GROUP=rendering pnpm test browser --project "${{ matrix.project }}" --workers=2 2>&1 | tee dist/evidence/browser.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-rendering${{ matrix.project }}
+  performance:
+    needs: [impact, frontend]
+    if: needs.impact.outputs.performance == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [stress-chromium, stress-mobile-chromium]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+      - run: mkdir -p dist/evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.impact.outputs.web == 'true'
+        with:
+          name: browser-assets
+          path: dist
+      - if: needs.impact.outputs.web == 'true'
+        run: python3 plugin ci web-verify
+      - run: CI_BROWSER_GROUP=performance pnpm test browser --project "${{ matrix.project }}" --workers=1 2>&1 | tee dist/evidence/browser.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-performance${{ matrix.project }}
+  package:
+    needs: [impact, frontend]
+    if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+          dotnet: "true"
+          references: "true"
+      - run: mkdir -p dist/evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.impact.outputs.web == 'true'
+        with:
+          name: browser-assets
+          path: dist
+      - if: needs.impact.outputs.web == 'true'
+        run: python3 plugin ci web-verify
+      - run: python3 plugin release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
+      - name: Build clean candidate with verified browser assets
+        run: |
+          args=()
+          if [ "${{ needs.impact.outputs.web }}" = true ]; then args+=(--prepared-web); fi
+          if [ "$RELEASE_MODE" = true ]; then args+=(--release); fi
+          python3 plugin build "${args[@]}" 2>&1 | tee dist/evidence/package.log
+      - run: python3 plugin test artifact-inventory
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: candidate-unverified
+          path: |
+            dist/*.zip
+            dist/manifest.json
+            dist/SHA256SUMS
+            dist/clean-build.json
+          if-no-files-found: error
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-package
+  installation:
+    needs: [impact, package]
+    if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          python: "true"
+          dotnet: "true"
+          references: "true"
+      - run: mkdir -p dist/evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: candidate-unverified
+          path: dist
+      - run: python3 plugin test installation 2>&1 | tee dist/evidence/installation.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-installation
+  reproducibility:
+    needs: [impact, package]
+    if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+          dotnet: "true"
+          references: "true"
+      - run: mkdir -p dist/evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: candidate-unverified
+          path: dist
+      - run: python3 plugin release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
+      - run: python3 plugin test reproducibility 2>&1 | tee dist/evidence/reproducibility.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-reproducibility
+  advisories:
+    needs: impact
+    if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+        with:
+          node: "true"
+          dotnet: "true"
+          references: "true"
+      - run: mkdir -p dist/evidence
+      - run: python3 plugin test advisories 2>&1 | tee dist/evidence/advisories.log
+      - uses: ./.build/toolkit/current/.github/actions/evidence
+        if: always()
+        with:
+          name: evidence-advisories
+  validate:
+    needs: [impact, metadata, frontend, backend, tooling, workflow, rendering, performance, package, installation, reproducibility, advisories]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report selection failure
+        if: needs.impact.result != 'success'
+        run: |
+          echo "Validation selection failed; inspect the impact job for classification or comparison errors."
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: ./.build/toolkit/current/.github/actions/setup
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: validation-plan
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.package.result == 'success'
+        with:
+          name: candidate-unverified
+          path: dist
+      - name: Aggregate required validation and bind evidence to artifacts
+        env:
+          CI_JOB_RESULTS: ${{ toJSON(needs) }}
+        run: python3 plugin ci finish
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: plugin-validation-receipt
+          path: dist/validation.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: success() && needs.package.result == 'success'
+        with:
+          name: plugin-candidate
+          path: |
+            dist/*.zip
+            dist/manifest.json
+            dist/SHA256SUMS
+            dist/validation.json
+          if-no-files-found: error

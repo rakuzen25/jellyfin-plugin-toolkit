@@ -1,0 +1,10 @@
+dist/
+.build/
+node_modules/
+**/node_modules/
+**/bin/
+**/obj/
+.venv/
+pnpm-lock.yaml
+/CHANGELOG.md
+tests/browser/results*/

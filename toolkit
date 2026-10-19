@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+
+from jellyfin_plugin_toolkit.archive import pack
+
+parser = argparse.ArgumentParser()
+parser.add_argument("command", choices=["pack", "test", "new"])
+parser.add_argument("destination", nargs="?", type=Path)
+parser.add_argument("--id")
+parser.add_argument("--name")
+parser.add_argument("--repository")
+parser.add_argument("--admin", action="store_true")
+parser.add_argument("--host-project", default="src/Host/Plugin.csproj")
+parser.add_argument("--release", action="store_true")
+args = parser.parse_args()
+root = Path(__file__).resolve().parent
+if args.command == "new":
+    from jellyfin_plugin_toolkit.scaffold import generate
+
+    if not all([args.destination, args.id, args.name, args.repository]):
+        parser.error("new requires destination, --id, --name and --repository")
+    generate(
+        None,
+        args.destination,
+        args.id,
+        args.name,
+        args.repository,
+        args.admin,
+        args.host_project,
+    )
+elif args.command == "pack":
+    archive, digest = pack(root, root / "dist", release=args.release)
+    print(archive, digest)
+else:
+    import unittest
+
+    result = unittest.TextTestRunner(verbosity=2).run(
+        unittest.defaultTestLoader.discover(str(root / "tests"))
+    )
+    raise SystemExit(not result.wasSuccessful())
