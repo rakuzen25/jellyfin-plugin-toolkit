@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.1.0...v0.1.1) (2026-10-20)
+
+
+### Features
+
+* add shared scripts ([a367f84](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/a367f84cabed32bc3050c958c6ef733ec1541c5d))
+
 ## 0.1.0 (2026-10-19)
 
 
