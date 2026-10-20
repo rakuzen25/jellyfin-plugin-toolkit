@@ -175,3 +175,138 @@ class CommandTests(ConsumerTestCase):
         self.assertEqual(self.root, run.call_args.kwargs["cwd"])
         default_format.assert_not_called()
         lint.assert_called_once_with(self.ctx)
+
+
+class AfterOperationTests(ConsumerTestCase):
+    def test_standard_check_finishes_before_after_commands(self):
+        self.ctx.config["operations"] = {
+            "check-docs": {"after": [["extra", "{root}"]], "cwd": "docs"}
+        }
+        (self.root / "docs").mkdir()
+        events = []
+        with (
+            patch.object(
+                tasks, "check_default", side_effect=lambda *_: events.append("default")
+            ),
+            patch.object(
+                tasks,
+                "run",
+                side_effect=lambda *args, **kw: events.append((args, kw["cwd"])),
+            ),
+        ):
+            tasks.check(self.ctx, "docs")
+        self.assertEqual(
+            ["default", (("extra", str(self.root)), self.root / "docs")], events
+        )
+
+    def test_standard_failure_skips_after_commands(self):
+        self.ctx.config["operations"] = {"check-docs": {"after": [["extra"]]}}
+        with (
+            patch.object(
+                tasks,
+                "check_default",
+                side_effect=subprocess.CalledProcessError(1, "standard"),
+            ),
+            patch.object(tasks, "run") as run,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            tasks.check(self.ctx, "docs")
+        run.assert_not_called()
+
+    def test_after_failure_stops_remaining_commands(self):
+        self.ctx.config["operations"] = {
+            "check-docs": {"after": [["first"], ["second"]]}
+        }
+        with (
+            patch.object(tasks, "check_default") as default,
+            patch.object(
+                tasks, "run", side_effect=subprocess.CalledProcessError(1, "first")
+            ) as run,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            tasks.check(self.ctx, "docs")
+        default.assert_called_once_with(self.ctx, "docs")
+        self.assertEqual(1, run.call_count)
+
+    def test_test_arguments_reach_default_but_not_after(self):
+        self.ctx.config["operations"] = {"test-backend": {"after": [["extra"]]}}
+        with (
+            patch.object(tasks, "test_default") as default,
+            patch.object(tasks, "run") as run,
+        ):
+            tasks.test(self.ctx, "backend", ["--filter", "literal $(name)"])
+        default.assert_called_once_with(
+            self.ctx, "backend", ["--filter", "literal $(name)"]
+        )
+        self.assertEqual(("extra",), run.call_args.args)
+
+    def test_replacement_still_receives_arguments_without_running_default(self):
+        self.ctx.config["operations"] = {"test-example": {"commands": [["custom"]]}}
+        with (
+            patch.object(tasks, "test_default") as default,
+            patch.object(tasks, "run") as run,
+        ):
+            tasks.test(self.ctx, "example", ["--literal"])
+        default.assert_not_called()
+        self.assertEqual(("custom", "--literal"), run.call_args.args)
+
+    def test_format_after_uses_standard_formatting(self):
+        self.ctx.config["operations"] = {"format-docs": {"after": [["extra"]]}}
+        with (
+            patch("jellyfin_plugin_toolkit.checks.formatting.format_target") as default,
+            patch.object(tasks, "run") as run,
+        ):
+            tasks.format_target(self.ctx, "docs", True)
+        default.assert_called_once_with(self.ctx, "docs", True)
+        self.assertEqual(("extra",), run.call_args.args)
+
+    def test_invalid_hooks_are_rejected_by_context_loading(self):
+        from jellyfin_plugin_toolkit.scaffold import toml
+
+        for spec in [
+            {"commands": [["replace"]], "after": [["extra"]]},
+            {"after": []},
+            {"after": ["shell command"]},
+            {"after": [[]]},
+            {},
+        ]:
+            with self.subTest(spec=spec):
+                self.ctx.config["operations"] = {"check-tooling": spec}
+                (self.root / "plugin.toml").write_text(toml(self.ctx.config))
+                with self.assertRaises(ValueError):
+                    Context.load(self.root)
+        self.ctx.config["operations"] = {"test-unknown": {"after": [["extra"]]}}
+        (self.root / "plugin.toml").write_text(toml(self.ctx.config))
+        with self.assertRaisesRegex(ValueError, "standard operation"):
+            Context.load(self.root)
+
+    def test_after_hooks_do_not_disable_standard_integration_checks(self):
+        from jellyfin_plugin_toolkit.bindings import check_integrations
+
+        selected = {
+            "validation": {"check_targets": ["tooling"]},
+            "operations": {
+                "check-tooling": {"after": [["extra"]]},
+                "format-check-tooling": {"commands": [["custom-formatter"]]},
+            },
+        }
+        (self.root / "Directory.Build.props").write_text("msbuild/Plugin.props")
+        with self.assertRaisesRegex(ValueError, "integration is missing"):
+            check_integrations(self.root, selected)
+        (self.root / "eslint.config.mjs").write_text("configs/eslint.mjs")
+        (self.root / "pyproject.toml").write_text("configs/ruff.toml")
+        check_integrations(self.root, selected)
+        (self.root / "eslint.config.mjs").unlink()
+        selected["operations"]["check-tooling"] = {"commands": [["custom-checker"]]}
+        check_integrations(self.root, selected)
+
+    def test_standard_tooling_discovery_can_import_the_verified_toolkit(self):
+        tests = self.root / "tests/tooling"
+        tests.mkdir(parents=True)
+        (tests / "test_business.py").write_text(
+            "import unittest\nfrom jellyfin_plugin_toolkit.context import Context\n"
+            "class BusinessTests(unittest.TestCase):\n"
+            "    def test_business(self):\n"
+            '        self.assertEqual("example", Context.load().identity["id"])\n'
+        )
+        tasks.test(self.ctx, "tooling", ["-k", "business"])

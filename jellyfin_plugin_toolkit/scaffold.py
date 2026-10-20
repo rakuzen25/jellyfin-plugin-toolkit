@@ -126,7 +126,7 @@ def generate(
             "groups": groups,
             "check_targets": ["backend", "tooling", "docs"]
             + (["frontend"] if admin else []),
-            "unit_groups": ["backend", "tooling"],
+            "unit_groups": ["backend"],
             "acceptance_groups": ["installation", "reproducibility"],
             "rules": [
                 {"name": "docs", "patterns": ["*.md", "docs/**"], "groups": []},
@@ -156,21 +156,6 @@ def generate(
                     "groups": groups,
                 },
             ],
-        },
-        "operations": {
-            "test-tooling": {
-                "commands": [
-                    ["{python}", "-m", "unittest", "discover", "-s", "tests/tooling"]
-                ]
-            },
-            "test-installation": {
-                "commands": [["{python}", "-m", "jellyfin_plugin_toolkit.installation"]]
-            },
-            "test-reproducibility": {
-                "commands": [
-                    ["{python}", "-m", "jellyfin_plugin_toolkit.reproducibility"]
-                ]
-            },
         },
         "distribution": {
             "web": False,
@@ -310,10 +295,6 @@ def generate(
         "using Xunit;\nusing System.Runtime.CompilerServices;\npublic sealed class IdentityTests { [Fact] public void IdentityIsStable() { var plugin = (ExamplePlugin.Plugin)RuntimeHelpers.GetUninitializedObject(typeof(ExamplePlugin.Plugin)); Assert.Equal(Guid.Parse("
         + json.dumps(config["plugin"]["guid"])
         + "), plugin.Id); } }\n",
-    )
-    put(
-        "tests/tooling/test_configuration.py",
-        'import unittest\nclass StarterTests(unittest.TestCase):\n    def test_configuration_loads(self):\n        from jellyfin_plugin_toolkit.context import Context\n        self.assertTrue(Context.load().identity["guid"])\n',
     )
     put(
         "CHANGELOG.md",
@@ -473,7 +454,7 @@ def generate(
     put(".release-please-manifest.json", json.dumps({".": "0.1.0"}, indent=4) + "\n")
     put(
         ".prettierrc.mjs",
-        'export { default } from "./.build/toolkit/current/configs/prettier.mjs";\n',
+        'import preset from "./.build/toolkit/current/configs/prettier.mjs";\n/** @type {import("prettier").Config} */\nconst config = preset;\nexport default config;\n',
     )
     shutil.copy2(TOOLKIT_ROOT / ".prettierignore", destination / ".prettierignore")
     print("Generated plugin consumer at", destination)

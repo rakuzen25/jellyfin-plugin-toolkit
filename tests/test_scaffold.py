@@ -92,6 +92,8 @@ class StarterTests(unittest.TestCase):
                 self.assertTrue((root / filename).is_file(), filename)
             self.assertFalse((root / "frontend/build.mjs").exists())
             self.assertNotIn("build", Context.load(root).config["frontend"])
+            self.assertNotIn("operations", Context.load(root).config)
+            self.assertFalse((root / "tests/tooling/test_configuration.py").exists())
             self.assertIn(
                 "configs/eslint.mjs", (root / "eslint.config.mjs").read_text()
             )

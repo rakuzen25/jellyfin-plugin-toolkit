@@ -8,6 +8,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from jellyfin_plugin_toolkit.operations import validate_operations
+
 TOOLKIT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -191,21 +193,7 @@ class Context:
             or "artifacts" not in groups
         ):
             raise ValueError("Validation requires unique backend and artifacts groups")
-        for name, operation in config.get("operations", {}).items():
-            commands = operation.get("commands", [])
-            if (
-                not isinstance(commands, list)
-                or not commands
-                or any(
-                    not isinstance(c, list)
-                    or not c
-                    or not all(isinstance(a, str) for a in c)
-                    for c in commands
-                )
-            ):
-                raise ValueError(
-                    "Operations contain argv arrays, not shell commands: " + name
-                )
+        validate_operations(config.get("operations", {}))
         frontend = config.get("frontend", {})
         validate_paths(root, config)
         validate_jobs(config["validation"], groups)

@@ -18,6 +18,10 @@ def run(*args, cwd, env=None):
     subprocess.run([str(a) for a in args], cwd=cwd, env=env, check=True)
 
 
+def toolkit_environment(root, toolkit_root):
+    return {**os.environ, "PYTHONPATH": str(toolkit_root) + os.pathsep + str(root)}
+
+
 def python_checks(ctx):
     selected = os.environ.get("JELLYFIN_PLUGIN_PYTHON")
     local = ctx.root / ".venv/bin/python"

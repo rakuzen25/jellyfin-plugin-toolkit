@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
-from jellyfin_plugin_toolkit import bindings
+from jellyfin_plugin_toolkit import bindings, bootstrap
 
 AUTHOR = {
     "name": "Jellyfin toolkit synchronization",
@@ -137,7 +137,7 @@ def prepare(root, repository, pr, bot):
         cache = destination / ".build/toolkit"
         cache.mkdir(parents=True)
         for selected in [old, new]:
-            bindings.bootstrap_api()["validate_lock"](selected)
+            bootstrap.validate_lock(selected)
             source = bindings.safe_path(
                 root, ".build/toolkit/" + selected["sha256"] + ".tar.gz"
             )

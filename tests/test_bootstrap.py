@@ -2,15 +2,23 @@ import hashlib
 import io
 import json
 import os
-import runpy
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from jellyfin_plugin_toolkit import bootstrap
+
 ROOT = Path(__file__).resolve().parents[1]
-install = runpy.run_path(str(ROOT / "bootstrap/plugin"))["install"]
+
+
+def install(root):
+    lock = json.loads((root / "toolkit.lock.json").read_text())
+    payload, _ = bootstrap.load_archive(
+        root, lock, supplied=os.environ.get("JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE")
+    )
+    return bootstrap.install(root, lock, payload)
 
 
 class BootstrapTests(unittest.TestCase):
@@ -204,6 +212,53 @@ class BootstrapTests(unittest.TestCase):
                     self.assertRaises(ValueError),
                 ):
                     install(root)
+
+
+class InstallationRecoveryTests(unittest.TestCase):
+    archive = BootstrapTests.archive
+
+    def test_failed_cache_replacement_restores_previous_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive, lock = self.archive(root, {"package.py": b"verified"})
+            target = bootstrap.install(root, lock, archive.read_bytes())
+            (target / "package.py").write_bytes(b"local edit")
+            replace = Path.replace
+
+            def fail_activation(path, destination):
+                if path.name.startswith("extract-"):
+                    raise OSError("interrupted activation")
+                return replace(path, destination)
+
+            with patch.object(Path, "replace", fail_activation):
+                with self.assertRaisesRegex(OSError, "interrupted activation"):
+                    bootstrap.install(root, lock, archive.read_bytes())
+            self.assertEqual(b"local edit", (target / "package.py").read_bytes())
+            self.assertEqual(target, (root / ".build/toolkit/current").resolve())
+            bootstrap.install(root, lock, archive.read_bytes())
+            self.assertEqual(b"verified", (target / "package.py").read_bytes())
+
+    def test_next_install_recovers_interrupted_cache_directory_move(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive, lock = self.archive(root, {"package.py": b"verified"})
+            target = bootstrap.install(root, lock, archive.read_bytes())
+            backup = target.parent / (".replaced-" + target.name)
+            target.replace(backup)
+            bootstrap.install(root, lock, archive.read_bytes())
+            self.assertEqual(b"verified", (target / "package.py").read_bytes())
+            self.assertFalse(backup.exists())
+
+    def test_unexpected_cache_file_is_replaced_with_a_verified_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive, lock = self.archive(root, {"package.py": b"verified"})
+            cache = root / ".build/toolkit"
+            cache.mkdir(parents=True)
+            target = cache / lock["sha256"]
+            target.write_text("unexpected file")
+            bootstrap.install(root, lock, archive.read_bytes())
+            self.assertEqual(b"verified", (target / "package.py").read_bytes())
 
 
 if __name__ == "__main__":

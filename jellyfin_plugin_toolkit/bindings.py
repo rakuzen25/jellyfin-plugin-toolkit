@@ -6,7 +6,6 @@ import fcntl
 import json
 import os
 import re
-import runpy
 import shutil
 import stat
 import subprocess
@@ -15,7 +14,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from jellyfin_plugin_toolkit import bootstrap
 from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
+from jellyfin_plugin_toolkit.operations import replaces
 
 INTEGRATIONS = {
     "eslint": "configs/eslint.mjs",
@@ -26,11 +27,6 @@ INTEGRATIONS = {
     "frontend": "node/build.mjs",
 }
 DESCRIPTOR = {"schema": 1, "launcher": "bootstrap/plugin", "integrations": INTEGRATIONS}
-
-
-def bootstrap_api():
-    # Execute only the already trusted updater's standard-library verifier.
-    return runpy.run_path(str(TOOLKIT_ROOT / "bootstrap/plugin"))
 
 
 def descriptor(files):
@@ -217,9 +213,8 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
         raise ValueError(
             "Interrupted synchronization; run ./plugin toolkit sync --recover"
         )
-    api = bootstrap_api()
     new = json.loads(safe_path(root, "toolkit.lock.json").read_text())
-    _, files = api["load_archive"](root, new, download)
+    _, files = bootstrap.load_archive(root, new, download)
     descriptor(files)
     git_root = git_root or root
     if base_ref:
@@ -236,7 +231,7 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
             old = json.loads(record.read_text())
     if old["repository"] != new["repository"]:
         raise ValueError("Base and target toolkit repositories must match")
-    _, previous = api["load_archive"](root, old, download)
+    _, previous = bootstrap.load_archive(root, old, download)
     descriptor(previous)
     old = {**old, "revision": json.loads(previous["toolkit-release.json"])["revision"]}
     launcher = safe_path(root, "plugin")
@@ -498,11 +493,10 @@ def main(argv=None):
 
 def check_integrations(root, config):
     """Check bindings for default components; consumer overrides retain ownership."""
-    operations = config.get("operations", {})
     checks = config.get("validation", {}).get("check_targets", ["backend", "tooling"])
-    tooling = "tooling" in checks and "check-tooling" not in operations
+    tooling = "tooling" in checks and not replaces(config, "check-tooling")
     frontend = config.get("frontend", {})
-    frontend_checks = "frontend" in checks and "check-frontend" not in operations
+    frontend_checks = "frontend" in checks and not replaces(config, "check-frontend")
     expected = []
     if tooling:
         expected.extend(
@@ -522,7 +516,7 @@ def check_integrations(root, config):
             ]
         )
     if any(
-        "format-check-" + target not in operations
+        not replaces(config, "format-check-" + target)
         for target in checks
         if target != "backend"
     ):

@@ -12,14 +12,22 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from jellyfin_plugin_toolkit import bindings
+from jellyfin_plugin_toolkit import bindings, bootstrap
 from jellyfin_plugin_toolkit.maintenance import editor
 from jellyfin_plugin_toolkit.workflows import render
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def release(root, version, revision, launcher=None, contract=None, cli=b"fixture"):
+def release(
+    root,
+    version,
+    revision,
+    launcher=None,
+    contract=None,
+    cli=b"fixture",
+    bootstrap_code=None,
+):
     files = {
         "toolkit-release.json": json.dumps(
             {"schema": 1, "version": version, "revision": revision}
@@ -45,6 +53,11 @@ def release(root, version, revision, launcher=None, contract=None, cli=b"fixture
             ).items()
         },
     }
+    files["jellyfin_plugin_toolkit/bootstrap.py"] = (
+        bootstrap_code
+        if bootstrap_code is not None
+        else (ROOT / "jellyfin_plugin_toolkit/bootstrap.py").read_bytes()
+    )
     files["jellyfin_plugin_toolkit/__init__.py"] = b""
     files["jellyfin_plugin_toolkit/cli.py"] = cli
     files[".github/workflows/prepare-release.yml"] = b"fixture"
@@ -275,7 +288,7 @@ class BindingTests(unittest.TestCase):
         script = """
 import os, sys
 from pathlib import Path
-from jellyfin_plugin_toolkit import bindings
+from jellyfin_plugin_toolkit import bindings, bootstrap
 root = Path(sys.argv[1])
 changes = bindings.plan(root, sys.argv[2])
 replace = os.replace
@@ -361,7 +374,7 @@ class LauncherTrustTests(unittest.TestCase):
             self.root,
             "1.0.0",
             "a" * 40,
-            cli=b'def main():\n    print("TRUSTED BASE")\n',
+            cli=b'def main(argv):\n    print("TRUSTED BASE")\n',
         )
         self.lock(old)
         self.git("add", "toolkit.lock.json")
@@ -382,6 +395,7 @@ class LauncherTrustTests(unittest.TestCase):
             "2.0.0",
             "b" * 40,
             cli=b'raise RuntimeError("TARGET CODE EXECUTED")\n',
+            bootstrap_code=b'raise RuntimeError("PROPOSED BOOTSTRAP EXECUTED")\n',
         )
         self.lock(new)
         result = subprocess.run(
@@ -406,15 +420,16 @@ class LauncherTrustTests(unittest.TestCase):
             self.root,
             "1.0.0",
             "a" * 40,
-            cli=b'def main():\n    print("TRUSTED ACTIVE BASE")\n',
+            cli=b'def main(argv):\n    print("TRUSTED ACTIVE BASE")\n',
         )
         self.lock(old)
-        bindings.bootstrap_api()["install"](self.root)
+        bootstrap.install(self.root, old, bootstrap.load_archive(self.root, old)[0])
         new = release(
             self.root,
             "2.0.0",
             "b" * 40,
             cli=b'raise RuntimeError("TARGET CODE EXECUTED")\n',
+            bootstrap_code=b'raise RuntimeError("PROPOSED BOOTSTRAP EXECUTED")\n',
         )
         self.lock(new)
         result = subprocess.run(
@@ -425,3 +440,14 @@ class LauncherTrustTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("TRUSTED ACTIVE BASE\n", result.stdout)
+
+    def test_fresh_sync_requires_an_explicit_verified_base(self):
+        result = subprocess.run(
+            [sys.executable, str(self.root / "plugin"), "toolkit", "sync"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("--base-ref", result.stderr)
+        self.assertFalse((self.root / ".build/toolkit/current").exists())

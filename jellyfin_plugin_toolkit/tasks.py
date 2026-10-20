@@ -16,13 +16,15 @@ from jellyfin_plugin_toolkit.common.process import (
     executable,
     python_checks,
     run,
+    toolkit_environment,
 )
 from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
+from jellyfin_plugin_toolkit.operations import supports_default
 
 
-def operation(ctx, name, extra=()):
+def operation(ctx, name, extra=(), *, kind="commands"):
     spec = ctx.config.get("operations", {}).get(name)
-    if spec is None:
+    if spec is None or kind not in spec:
         return False
     replacements = {
         "python": python_checks(ctx),
@@ -31,7 +33,7 @@ def operation(ctx, name, extra=()):
         "pnpm": executable("pnpm"),
         "dotnet": executable("dotnet"),
     }
-    for command in spec.get("commands", []):
+    for command in spec[kind]:
         argv = []
         for argument in command:
             for key, value in replacements.items():
@@ -41,12 +43,20 @@ def operation(ctx, name, extra=()):
             *argv,
             *extra,
             cwd=ctx.path(spec.get("cwd", ".")),
-            env={
-                **os.environ,
-                "PYTHONPATH": str(TOOLKIT_ROOT) + os.pathsep + str(ctx.root),
-            },
+            env=toolkit_environment(ctx.root, TOOLKIT_ROOT),
         )
     return True
+
+
+def dispatch_operation(ctx, name, default, extra=()):
+    if operation(ctx, name, extra):
+        return
+    if "after" in ctx.config.get("operations", {}).get(
+        name, {}
+    ) and not supports_default(name):
+        raise ValueError("After hook requires a standard operation: " + name)
+    default()
+    operation(ctx, name, kind="after")
 
 
 def verify_tools(ctx):
@@ -108,10 +118,7 @@ def bootstrap(ctx):
             str(local),
             "-m",
             "jellyfin_plugin_toolkit.checks.check_pip",
-            env={
-                **os.environ,
-                "PYTHONPATH": str(TOOLKIT_ROOT) + os.pathsep + str(ctx.root),
-            },
+            env=toolkit_environment(ctx.root, TOOLKIT_ROOT),
             cwd=ctx.root,
         )
         run(
@@ -138,17 +145,20 @@ def frontend_build(ctx):
 
 
 def format_target(ctx, target, fix):
-    if not operation(ctx, ("format-" if fix else "format-check-") + target):
-        from jellyfin_plugin_toolkit.checks.formatting import (
-            format_target as format_files,
-        )
+    from jellyfin_plugin_toolkit.checks.formatting import format_target as format_files
 
-        format_files(ctx, target, fix)
+    dispatch_operation(
+        ctx,
+        ("format-" if fix else "format-check-") + target,
+        lambda: format_files(ctx, target, fix),
+    )
 
 
 def check(ctx, target):
-    if operation(ctx, "check-" + target):
-        return
+    dispatch_operation(ctx, "check-" + target, lambda: check_default(ctx, target))
+
+
+def check_default(ctx, target):
     if target == "backend":
         from jellyfin_plugin_toolkit.checks.architecture import check_projects
 
@@ -257,8 +267,12 @@ def browser_tests(ctx, extra):
 
 
 def test(ctx, target, extra):
-    if operation(ctx, "test-" + target, extra):
-        return
+    dispatch_operation(
+        ctx, "test-" + target, lambda: test_default(ctx, target, extra), extra
+    )
+
+
+def test_default(ctx, target, extra):
     if target == "reproducibility":
         from jellyfin_plugin_toolkit.reproducibility import main
 
@@ -312,6 +326,21 @@ def test(ctx, target, extra):
             *extra,
             cwd=ctx.root / ctx.config["frontend"].get("directory", "frontend"),
         )
+    elif target == "tooling":
+        if (ctx.root / "tests/tooling").is_dir():
+            run(
+                python_checks(ctx),
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tests/tooling",
+                *extra,
+                cwd=ctx.root,
+                env=toolkit_environment(ctx.root, TOOLKIT_ROOT),
+            )
+        else:
+            print("No consumer tooling tests configured.")
     elif target == "browser":
         browser_tests(ctx, extra)
     else:
