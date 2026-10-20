@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.1.2...v0.2.0) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* improve boundaries
+
+### Features
+
+* generate internal project release updates ([fb20f84](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/fb20f846c4fb377ac3f9cfce46ba23788d8eacd6))
+* improve boundaries ([2e608ca](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/2e608ca4e1775dde76ec20e1c668880bf4108376))
+
 ## [0.1.2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.1.1...v0.1.2) (2026-10-20)
 
 
