@@ -38,8 +38,8 @@ def canonical_rule(rule):
 
 def internal_references(ctx):
     """Return lockfile paths and their (framework, project, dependency, range) rows."""
-    assemblies = set(ctx.config["backend"].get("project_assemblies", []))
-    assemblies.add(ctx.identity["assembly"])
+    assemblies = set(ctx.config.backend.project_assemblies)
+    assemblies.add(ctx.identity.assembly)
     locks = {}
     for name in source_files(ctx.root):
         if name.name != "packages.lock.json":

@@ -142,7 +142,7 @@ class LocalSandboxTests(ConsumerTestCase):
             data = Path(directory) / ".build/local-jellyfin"
             data.mkdir(parents=True)
             plugins = data / "config/plugins"
-            previous = plugins / (self.ctx.identity["name"] + "_previous")
+            previous = plugins / (self.ctx.identity.name + "_previous")
             previous.mkdir(parents=True)
             release = sandbox.load_identity(self.ctx.root)
             (previous / "meta.json").write_text(json.dumps({"guid": release.guid}))
@@ -158,7 +158,7 @@ class LocalSandboxTests(ConsumerTestCase):
                 if build_fails:
                     raise ValueError("compile error")
                 output.mkdir()
-                (output / (self.ctx.identity["assembly"] + ".dll")).write_text(
+                (output / (self.ctx.identity.assembly + ".dll")).write_text(
                     "new plugin"
                 )
 
@@ -190,12 +190,8 @@ class LocalSandboxTests(ConsumerTestCase):
                     self.assertTrue(
                         (
                             plugins
-                            / (
-                                self.ctx.identity["name"]
-                                + "_"
-                                + release.jellyfin_version
-                            )
-                            / (self.ctx.identity["assembly"] + ".dll")
+                            / (self.ctx.identity.name + "_" + release.jellyfin_version)
+                            / (self.ctx.identity.assembly + ".dll")
                         ).exists()
                     )
             self.assertTrue(other.exists())

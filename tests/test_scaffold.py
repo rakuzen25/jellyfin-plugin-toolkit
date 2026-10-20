@@ -12,7 +12,7 @@ class StarterTests(unittest.TestCase):
             root = Path(directory) / "plugin"
             generate(None, root, "example", "Example", "example/plugin")
             context = Context.load(root)
-            self.assertEqual({"Host"}, set(context.config["backend"]["projects"]))
+            self.assertEqual({"Host"}, set(context.config.backend.projects))
             self.assertFalse((root / "frontend").exists())
             self.assertFalse((root / "src/Core").exists())
 
@@ -30,9 +30,9 @@ class StarterTests(unittest.TestCase):
             )
             context = Context.load(root)
             self.assertTrue((root / "server/Entry.csproj").exists())
-            self.assertTrue(context.config["frontend"]["enabled"])
+            self.assertTrue(context.config.frontend.enabled)
             self.assertTrue((root / "frontend/admin/config.ts").exists())
-            self.assertFalse(context.config["distribution"]["web"])
+            self.assertFalse(context.config.distribution.web)
 
     def test_existing_destination_and_escaping_project_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -91,7 +91,7 @@ class StarterTests(unittest.TestCase):
             ]:
                 self.assertTrue((root / filename).is_file(), filename)
             self.assertFalse((root / "frontend/build.mjs").exists())
-            self.assertNotIn("build", Context.load(root).config["frontend"])
+            self.assertNotIn("build", Context.load(root).config.frontend)
             self.assertNotIn("operations", Context.load(root).config)
             self.assertFalse((root / "tests/tooling/test_configuration.py").exists())
             self.assertIn(

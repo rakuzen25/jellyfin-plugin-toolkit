@@ -1,9 +1,12 @@
 import http from "node:http";
-import { watch, existsSync } from "node:fs";
 import { readFile, mkdir, rm, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { dependency } from "../../node/dependencies.mjs";
+
+const { watch } = await dependency("chokidar");
+const { createProxyMiddleware, responseInterceptor } = await dependency("http-proxy-middleware");
 /** Coalesce editor bursts, never overlap work, and retain edits received during builds. */
 export function rebuildQueue(build, report = console.error, delay = 150, { paused = false, onState = () => {} } = {}) {
     let timer,
@@ -130,6 +133,67 @@ export function proxyServer(state, configuration) {
     const clients = new Set();
     const sockets = new Set();
     let revision = 0;
+    const route = (request) => {
+        const url = new URL(request.url, "http://localhost");
+        return {
+            asset: url.pathname.startsWith(assetPrefix) ? url.pathname.slice(assetPrefix.length) : undefined,
+            config: url.pathname.toLowerCase() === "/web/configurationpage" && url.searchParams.get("name") === settingsPage,
+            index: /^(\/web\/?|\/web\/index\.html)$/i.test(url.pathname),
+        };
+    };
+    const options = {
+        router: () => "http://127.0.0.1:" + state.port,
+        changeOrigin: true,
+        on: {
+            open(socket) {
+                sockets.add(socket);
+                socket.on("close", () => sockets.delete(socket));
+            },
+            error(_error, _req, res) {
+                if (typeof res.writeHead === "function") {
+                    if (!res.headersSent) res.writeHead(502);
+                    res.end("Jellyfin unavailable; see the development terminal.");
+                } else res.destroy();
+            },
+        },
+    };
+    const passthrough = createProxyMiddleware(options);
+    const intercept = responseInterceptor(async (body, response, req, res) => {
+        const { asset, config, index } = route(req);
+        res.setHeader("cache-control", "no-store");
+        res.removeHeader("etag");
+        res.removeHeader("last-modified");
+        if (config) return state.files.get("config.html") || body;
+        if (asset) return state.files.get(asset) || body;
+        if (index && String(response.headers["content-type"]).includes("text/html"))
+            return body.toString().replace(/<\/head>/i, '<script defer src="/__jellyfin_plugin_dev/client.js"></script></head>');
+        return body;
+    });
+    const assets = createProxyMiddleware({
+        ...options,
+        selfHandleResponse: true,
+        on: {
+            ...options.on,
+            proxyReq(request) {
+                request.removeHeader("if-none-match");
+                request.removeHeader("if-modified-since");
+            },
+            proxyRes(response, req, res) {
+                if (response.statusCode === 200) {
+                    delete response.headers.etag;
+                    delete response.headers["last-modified"];
+                    response.headers["cache-control"] = "no-store";
+                    const match = route(req);
+                    const replacement = state.files.get(match.config ? "config.html" : match.asset);
+                    if (req.method === "HEAD" && replacement) response.headers["content-length"] = String(replacement.length);
+                    void intercept(response, req, res);
+                } else {
+                    res.writeHead(response.statusCode, response.headers);
+                    response.pipe(res);
+                }
+            },
+        },
+    });
     const server = http.createServer((req, res) => {
         const url = new URL(req.url, "http://localhost");
         if (url.pathname === "/__jellyfin_plugin_dev/events") {
@@ -149,80 +213,17 @@ export function proxyServer(state, configuration) {
             res.end("Jellyfin is building or restarting; see the development terminal.");
             return;
         }
-        const headers = { ...req.headers, host: "127.0.0.1:" + state.port, "accept-encoding": "identity" };
-        if (url.pathname.startsWith(assetPrefix) || url.pathname.toLowerCase() === "/web/configurationpage") {
-            delete headers["if-none-match"];
-            delete headers["if-modified-since"];
-        }
-        const upstream = http.request({ hostname: "127.0.0.1", port: state.port, path: req.url, method: req.method, headers }, async (response) => {
-            const asset = url.pathname.startsWith(assetPrefix) ? url.pathname.slice(assetPrefix.length) : undefined;
-            const config = url.pathname.toLowerCase() === "/web/configurationpage" && url.searchParams.get("name") === settingsPage;
-            const index = /^(\/web\/?|\/web\/index\.html)$/i.test(url.pathname) && String(response.headers["content-type"]).includes("text/html");
-            const replace = response.statusCode === 200 && (rendererAssets.includes(asset) || config || index);
-            if (!replace) {
-                res.writeHead(response.statusCode, response.headers);
-                response.pipe(res);
-                return;
-            }
-            try {
-                const chunks = [];
-                for await (const chunk of response) chunks.push(chunk);
-                let body = Buffer.concat(chunks);
-                if (config) body = state.files.get("config.html") || body;
-                else if (asset) body = state.files.get(asset) || body;
-                else
-                    body = Buffer.from(body.toString().replace(/<\/head>/i, '<script defer src="/__jellyfin_plugin_dev/client.js"></script></head>'));
-                const outputHeaders = { ...response.headers, "cache-control": "no-store", "content-length": body.length };
-                for (const key of ["etag", "last-modified", "content-encoding", "transfer-encoding"]) delete outputHeaders[key];
-                res.writeHead(response.statusCode, outputHeaders);
-                res.end(req.method === "HEAD" ? undefined : body);
-            } catch (error) {
-                res.destroy(error);
-            }
-        });
-        upstream.on("error", () => {
-            if (!res.headersSent) res.writeHead(502);
-            res.end("Jellyfin unavailable; see the development terminal.");
-        });
-        req.on("aborted", () => upstream.destroy());
-        req.pipe(upstream);
+        const match = route(req);
+        const proxy = rendererAssets.includes(match.asset) || match.config || match.index ? assets : passthrough;
+        void proxy(req, res);
     });
     server.on("connection", (socket) => {
         sockets.add(socket);
         socket.on("close", () => sockets.delete(socket));
     });
     server.on("upgrade", (req, socket, head) => {
-        if (!state.port) {
-            socket.destroy();
-            return;
-        }
-        const upstream = http.request({
-            hostname: "127.0.0.1",
-            port: state.port,
-            path: req.url,
-            headers: { ...req.headers, host: "127.0.0.1:" + state.port },
-        });
-        upstream.on("upgrade", (response, connection, upstreamHead) => {
-            socket.write(
-                "HTTP/1.1 101 Switching Protocols\r\n" +
-                    Object.entries(response.headers)
-                        .map(([key, value]) => key + ": " + value)
-                        .join("\r\n") +
-                    "\r\n\r\n",
-            );
-            if (head.length) connection.write(head);
-            if (upstreamHead.length) socket.write(upstreamHead);
-            connection.on("error", () => socket.destroy());
-            socket.on("error", () => connection.destroy());
-            socket.on("close", () => connection.destroy());
-            connection.pipe(socket).pipe(connection);
-        });
-        upstream.on("response", (response) => {
-            socket.end("HTTP/1.1 " + response.statusCode + " Rejected\r\nConnection: close\r\n\r\n");
-            response.resume();
-        });
-        upstream.on("error", () => socket.destroy());
-        upstream.end();
+        if (state.port) passthrough.upgrade(req, socket, head);
+        else socket.destroy();
     });
     return {
         server,
@@ -394,7 +395,7 @@ export async function session(argv = process.argv.slice(2)) {
         if (stopPromise) return stopPromise;
         stopping = true;
         stopPromise = (async () => {
-            for (const watcher of watchers) watcher.close();
+            await Promise.all(watchers.map((watcher) => watcher.close()));
             for (const child of children) {
                 try {
                     process.kill(-child.pid, "SIGINT");
@@ -426,26 +427,23 @@ export async function session(argv = process.argv.slice(2)) {
     process.once("SIGINT", () => void shutdown());
     process.once("SIGTERM", () => void shutdown());
     try {
-        for (const name of sourcePolicy(config).directories.filter((name) => existsSync(path.join(root, name)))) {
-            watchers.push(
-                watch(path.join(root, name), { recursive: true }, (_, filename) => {
-                    if (filename) {
-                        const kind = classifyChange(name + "/" + filename, config);
-                        if (kind) queue.request(kind);
-                    }
-                }),
-            );
-        }
+        const inputs = [...sourcePolicy(config).directories, "Directory.Build.props", "Directory.Build.targets", "global.json"].map((name) =>
+            path.join(root, name),
+        );
         watchers.push(
-            watch(root, (_, filename) => {
-                if (filename && !filename.includes("/")) {
-                    const kind = classifyChange(filename, config);
-                    if (kind) {
-                        queue.request(kind);
-                        if (filename === "Directory.Build.props") queue.request("frontend");
-                    }
-                }
-            }),
+            watch(inputs, {
+                ignoreInitial: true,
+                followSymlinks: false,
+                atomic: true,
+                ignored: (name) => /(^|[\\/])(node_modules|bin|obj|\.git|\.build|dist)([\\/]|$)/.test(path.relative(root, name)),
+            })
+                .on("all", (_event, filename) => {
+                    const relative = path.relative(root, filename).replaceAll("\\", "/");
+                    const kind = classifyChange(relative, config);
+                    if (kind) queue.request(kind);
+                    if (relative === "Directory.Build.props") queue.request("frontend");
+                })
+                .on("error", (error) => console.error("[dev] Watch failed:", error.message)),
         );
         help();
         if (process.stdin.isTTY) {

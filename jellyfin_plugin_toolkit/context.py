@@ -4,11 +4,11 @@ import json
 import os
 import re
 import tomllib
-import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from jellyfin_plugin_toolkit.operations import validate_operations
+from jellyfin_plugin_toolkit.configuration import Configuration
 
 TOOLKIT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -25,7 +25,6 @@ def relative(root: Path, value: str) -> Path:
 
 
 def output_name(value):
-    """Canonical names relative to a generated asset or distribution directory."""
     if not isinstance(value, str) or not value or "\\" in value:
         raise ValueError("Invalid output path")
     path = PurePosixPath(value)
@@ -39,92 +38,75 @@ def output_name(value):
     return value
 
 
-def validate_paths(root, config):
-    backend = config["backend"]
-    frontend = config.get("frontend", {})
-    browser = config.get("browser", {})
-    distribution = config.get("distribution", {})
+def validate_paths(root, config: Configuration):
+    backend, frontend, browser = config.backend, config.frontend, config.browser
+    distribution = config.distribution
     paths = [
-        *backend.get("tests", []),
-        *backend.get("source_roots", []),
-        *config.get("source", {}).get("files", []),
+        backend.entry,
+        *backend.projects.values(),
+        *backend.tests,
+        *backend.source_roots,
+        *config.source.roots,
+        *config.source.files,
+        browser.directory,
     ]
-    for key in (
-        "directory",
-        "build",
-        "assets",
-        "admin_template",
-        "admin_styles",
-        "boundary_check",
-    ):
-        if key in frontend:
-            paths.append(frontend[key])
-    for key in ("directory", "groups"):
-        if key in browser:
-            paths.append(browser[key])
-    architecture = config.get("architecture", {})
-    for project, dependencies in architecture.get("edges", {}).items():
+    paths.extend(
+        getattr(frontend, key)
+        for key in (
+            "directory",
+            "build",
+            "assets",
+            "admin_template",
+            "admin_styles",
+            "boundary_check",
+        )
+        if getattr(frontend, key) is not None
+    )
+    if browser.groups:
+        paths.append(browser.groups)
+    for project, dependencies in config.architecture.edges.items():
         paths.extend([project, *dependencies])
-    paths.extend(architecture.get("forbidden", {}))
-    for operation in config.get("operations", {}).values():
-        paths.append(operation.get("cwd", "."))
-    frontend_base = relative(root, frontend.get("directory", "frontend"))
-    for entry, output in frontend.get("entries", {}).items():
-        relative(frontend_base, entry)
+    paths.extend(config.architecture.forbidden)
+    paths.extend(operation.cwd for operation in config.operations.values())
+    base = relative(root, frontend.directory)
+    for entry, output in frontend.entries.items():
+        relative(base, entry)
         output_name(output)
-    if frontend.get("admin_entry"):
-        relative(frontend_base, frontend["admin_entry"])
-    for asset in frontend.get("extra_assets", []):
-        paths.append(asset["source"])
-        output_name(asset["name"])
-    for name in [
-        *frontend.get("required_assets", []),
-        *frontend.get("reload_assets", []),
-    ]:
+    if frontend.admin_entry:
+        relative(base, frontend.admin_entry)
+    for asset in frontend.extra_assets:
+        paths.append(asset.source)
+        output_name(asset.name)
+    for name in [*frontend.required_assets, *frontend.reload_assets]:
         output_name(name)
-    for key in ("notices", "web_notices"):
-        for entry in distribution.get(key, []):
-            paths.append(entry["source"])
-            output_name(entry.get("name", Path(entry["source"]).name))
-    for entry in distribution.get("payload_notices", []):
-        output_name(entry["source"])
-        output_name(entry["name"])
-    for entry in distribution.get("licenses", {}).values():
-        for name in entry.get("notices", []):
+    for entry in [*distribution.notices, *distribution.web_notices]:
+        paths.append(entry.source)
+        output_name(entry.name or Path(entry.source).name)
+    for entry in distribution.payload_notices:
+        output_name(entry.source)
+        output_name(entry.name)
+    for entry in [*distribution.licenses.values(), *distribution.licensed_paths]:
+        for name in entry.notices:
             output_name(name)
-    for entry in distribution.get("licensed_paths", []):
-        output_name(entry["prefix"].rstrip("/"))
-        for name in entry.get("notices", []):
-            output_name(name)
+    for entry in distribution.licensed_paths:
+        output_name(entry.prefix.rstrip("/"))
     for value in paths:
         relative(root, value)
-
-
-def validate_jobs(validation, groups):
-    for key in ("job_names", "aggregate_jobs"):
-        mapping = validation.get(key, {})
-        if not isinstance(mapping, dict) or set(mapping) - set(groups):
-            raise ValueError("Invalid validation." + key)
-        for jobs in mapping.values():
-            validate_job_list(jobs, key)
-    if "artifact_jobs" in validation:
-        validate_job_list(validation["artifact_jobs"], "artifact_jobs")
-
-
-def validate_job_list(jobs, key):
-    if (
-        not isinstance(jobs, list)
-        or not jobs
-        or any(not isinstance(job, str) or not job.strip() for job in jobs)
-        or len(jobs) != len(set(jobs))
-    ):
-        raise ValueError("Validation job lists must be nonempty and unique: " + key)
+    for spec in config.validation.browser_inputs.values():
+        for pattern in spec.files:
+            relative(root, pattern)
 
 
 @dataclass(frozen=True)
 class Context:
     root: Path
-    config: dict
+    config: Configuration
+
+    def __post_init__(self):
+        if isinstance(self.config, dict):
+            object.__setattr__(
+                self, "config", Configuration.model_validate(self.config)
+            )
 
     @classmethod
     def load(cls, root: Path | None = None):
@@ -138,86 +120,17 @@ class Context:
                 )
         root = root.resolve()
         with (root / "plugin.toml").open("rb") as source:
-            config = tomllib.load(source)
-        if config.get("schema") != 1:
-            raise ValueError("Unsupported plugin configuration schema")
-        identity = config.get("plugin", {})
-        for key in (
-            "id",
-            "name",
-            "guid",
-            "assembly",
-            "repository",
-            "owner",
-            "description",
-            "overview",
-            "category",
-        ):
-            if not isinstance(identity.get(key), str) or not identity[key].strip():
-                raise ValueError("Missing plugin." + key)
-        if not re.fullmatch(r"[a-z][a-z0-9-]*", identity["id"]):
-            raise ValueError("Invalid plugin id")
-        uuid.UUID(identity["guid"])
-        if not re.fullmatch(r"[\w.-]+/[\w.-]+", identity["repository"]):
-            raise ValueError("Invalid GitHub repository")
-        host = config.get("host", {})
-        if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", host.get("abi", "")):
-            raise ValueError("Invalid host ABI")
-        if host.get("framework") != "net10.0" or host.get("platform") != "linux/amd64":
-            raise ValueError("The toolkit supports net10.0 on linux/amd64")
-        if not re.fullmatch(
-            r"jellyfin/jellyfin@sha256:[0-9a-f]{64}", host.get("image", "")
-        ):
-            raise ValueError("Pin the official Jellyfin image by SHA-256")
+            config = Configuration.model_validate(tomllib.load(source))
+        validate_paths(root, config)
         version = (root / "version.txt").read_text().strip()
         if not re.fullmatch(r"\d+\.\d+\.\d+", version):
             raise ValueError("Invalid version.txt")
-        projects = config.get("backend", {}).get("projects", {})
-        entry = config.get("backend", {}).get("entry")
-        if not entry or not projects:
-            raise ValueError("Declare backend.entry and backend.projects")
-        for value in [
-            entry,
-            *projects.values(),
-            *config.get("source", {}).get("roots", []),
-        ]:
-            relative(root, value)
-        if entry not in projects.values():
-            raise ValueError("Backend entry must be a declared project")
-        groups = config.get("validation", {}).get("groups", [])
-        if (
-            not isinstance(groups, list)
-            or any(not isinstance(group, str) or not group.strip() for group in groups)
-            or len(groups) != len(set(groups))
-            or "backend" not in groups
-            or "artifacts" not in groups
-        ):
-            raise ValueError("Validation requires unique backend and artifacts groups")
-        validate_operations(config.get("operations", {}))
-        frontend = config.get("frontend", {})
-        validate_paths(root, config)
-        validate_jobs(config["validation"], groups)
-        for rule in config["validation"].get("rules", []):
-            if set(rule.get("groups", [])) - set(groups):
-                raise ValueError("Impact rule names a disabled validation group")
-        if (
-            frontend.get("enabled")
-            and not frontend.get("admin_entry")
-            and not frontend.get("entries")
-        ):
-            raise ValueError("Enabled frontend has no entrypoints")
-        if duplicate := identity.get("version"):
-            if duplicate != version:
-                raise ValueError(
-                    "plugin.version conflicts with authoritative version.txt"
-                )
-        import xml.etree.ElementTree as ET
-
-        owned = [
+        if config.plugin.version and config.plugin.version != version:
+            raise ValueError("plugin.version conflicts with authoritative version.txt")
+        for path in [
             root / "Directory.Build.props",
-            *[root / value for value in projects.values()],
-        ]
-        for path in owned:
+            *[root / value for value in config.backend.projects.values()],
+        ]:
             if not path.is_file():
                 continue
             tree = ET.parse(path)
@@ -227,16 +140,16 @@ class Context:
                 text = (element.text or "").strip()
                 if text and "$(" not in text and text != version:
                     raise ValueError("Conflicting version declaration: " + str(path))
-        host_project = root / config["backend"]["entry"]
+        host_project = root / config.backend.entry
         if host_project.is_file():
             assembly = ET.parse(host_project).find(".//AssemblyName")
-            if assembly is not None and assembly.text != identity["assembly"]:
+            if assembly is not None and assembly.text != config.plugin.assembly:
                 raise ValueError("Host AssemblyName conflicts with plugin.assembly")
         return cls(root, config)
 
     @property
     def identity(self):
-        return self.config["plugin"]
+        return self.config.plugin
 
     @property
     def version(self):
@@ -244,19 +157,19 @@ class Context:
 
     @property
     def groups(self):
-        return tuple(self.config["validation"]["groups"])
+        return tuple(self.config.validation.groups)
 
     @property
     def images(self):
         return {
-            **self.config.get("images", {}),
-            "jellyfin": self.config["host"]["image"],
-            "platform": self.config["host"]["platform"],
+            **self.config.images,
+            "jellyfin": self.config.host.image,
+            "platform": self.config.host.platform,
         }
 
     @property
     def prefix(self):
-        return self.identity["id"]
+        return self.identity.id
 
     def path(self, value):
         return relative(self.root, value)
@@ -271,13 +184,13 @@ class Context:
         for key, value in {
             "PluginVersion": self.version,
             "Version": self.version,
-            "PluginGuid": self.identity["guid"],
-            "PluginName": self.identity["name"],
-            "JellyfinTargetAbi": self.config["host"]["abi"],
-            "PluginTargetFramework": self.config["host"]["framework"],
+            "PluginGuid": self.identity.guid,
+            "PluginName": self.identity.name,
+            "JellyfinTargetAbi": self.config.host.abi,
+            "PluginTargetFramework": self.config.host.framework,
         }.items():
             ET.SubElement(properties, key).text = value
-        for name in self.config["backend"].get("unmanaged_projects", []):
+        for name in self.config.backend.unmanaged_projects:
             if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
                 raise ValueError("Invalid unmanaged project name")
             group = ET.SubElement(
@@ -289,6 +202,6 @@ class Context:
         ET.ElementTree(project).write(
             output / "PluginIdentity.props", encoding="unicode"
         )
-        data = {**self.config, "version": self.version, "root": str(self.root)}
+        data = {**self.config.data(), "version": self.version, "root": str(self.root)}
         (output / "plugin.json").write_text(json.dumps(data, indent=2) + "\n")
         return output

@@ -26,9 +26,10 @@ Checks require prepared dependencies and never install them. Full validation bui
 
 ## Generate a repository
 
-From a toolkit source checkout with its pinned Python available:
+From a toolkit source checkout with its pinned Python available, prepare the bundled runtime before generating consumers or packing a candidate:
 
 ```sh
+python3 scripts/runtime.py
 ./toolkit new /tmp/example-plugin --id example-plugin --name 'Example Plugin' --repository example/example-plugin --admin
 ```
 

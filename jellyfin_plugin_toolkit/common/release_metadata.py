@@ -33,9 +33,9 @@ def load_identity(root=None):
     context = Context.load(root)
     return PluginIdentity(
         version=context.version,
-        abi=context.config["host"]["abi"],
+        abi=context.config.host.abi,
         **{
-            key: context.identity[key]
+            key: getattr(context.identity, key)
             for key in ("guid", "name", "owner", "overview", "description", "category")
         },
     )

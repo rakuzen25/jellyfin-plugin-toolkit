@@ -10,9 +10,8 @@ from typing import Mapping
 
 from jellyfin_plugin_toolkit.common.artifacts import digest
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.context import validate_jobs
 
-SCHEMA = 4
+SCHEMA = 5
 POLICY = ("plugin.toml", "toolkit.lock.json", "version.txt")
 ARTIFACT_JOBS = ("package", "installation", "reproducibility", "advisories")
 
@@ -27,26 +26,23 @@ class ValidationPolicy:
 
     @classmethod
     def from_context(cls, ctx):
-        validation = ctx.config["validation"]
+        validation = ctx.config.validation
         groups = ctx.groups
-        validate_jobs(validation, groups)
+        validation.valid_groups()
         code = tuple(g for g in groups if g != "artifacts")
         return cls(
             groups,
             code,
             tuple(g for g in code if g != "metadata"),
             MappingProxyType(
-                {
-                    g: frozenset(validation.get("job_names", {}).get(g, [g]))
-                    for g in code
-                }
+                {g: frozenset(validation.job_names.get(g, [g])) for g in code}
             ),
             MappingProxyType(
                 {
                     g: tuple(
-                        validation.get("artifact_jobs", ARTIFACT_JOBS)
+                        validation.artifact_jobs
                         if g == "artifacts"
-                        else validation.get("aggregate_jobs", {}).get(g, [g])
+                        else validation.aggregate_jobs.get(g, [g])
                     )
                     for g in groups
                 }
@@ -69,13 +65,13 @@ def metadata_path(path):
 
 
 def classification(ctx, path):
-    rules = ctx.config["validation"].get("rules", [])
+    rules = ctx.config.validation.rules
     selected = set()
     matched = []
     for rule in rules:
-        if any(fnmatch.fnmatchcase(path, p) for p in rule["patterns"]):
-            matched.append(rule.get("name", "configured"))
-            selected.update(rule["groups"])
+        if any(fnmatch.fnmatchcase(path, p) for p in rule.patterns):
+            matched.append(rule.name)
+            selected.update(rule.groups)
     if not matched:
         raise ValueError("Unclassified CI input: " + path)
     if selected - set(ctx.groups):
@@ -120,12 +116,12 @@ def check_classification(ctx, changed):
 
 
 def browser_inventory(ctx):
-    browser = ctx.config.get("browser", {})
-    if not browser.get("groups"):
+    browser = ctx.config.browser
+    if not browser.groups:
         return
-    groups = json.loads(ctx.path(browser["groups"]).read_text())
+    groups = json.loads(ctx.path(browser.groups).read_text())
     entries = [name for names in groups.values() for name in names]
-    directory = ctx.path(browser.get("directory", "tests/browser"))
+    directory = ctx.path(browser.directory)
     actual = {
         p.relative_to(directory).as_posix()
         for p in directory.rglob("*.spec.cjs")
@@ -137,7 +133,7 @@ def browser_inventory(ctx):
         raise ValueError("Every browser spec must belong to exactly one group")
 
 
-def fingerprints(ctx):
+def fingerprints(ctx, browser=None):
     root = ctx.root
     files = source_files(root)
     shared = {Path(p) for p in POLICY} | {
@@ -155,7 +151,7 @@ def fingerprints(ctx):
         }
     }
     classified = {p: impacts(ctx, str(p)) for p in files}
-    return {
+    result = {
         g: digest(
             root,
             [p for p in files if g == "artifacts" or p in shared or g in classified[p]],
@@ -163,6 +159,40 @@ def fingerprints(ctx):
         )
         for g in ctx.groups
     }
+    if ctx.config.validation.browser_inputs:
+        from jellyfin_plugin_toolkit.ci.browser import verify
+
+        if browser is None:
+            raise ValueError(
+                "Precise browser fingerprints require built-asset evidence"
+            )
+        result.update(verify(ctx, browser))
+    return result
+
+
+def policy_fingerprint(ctx):
+    from jellyfin_plugin_toolkit.ci.browser import fingerprint
+
+    return fingerprint(
+        {
+            "schema": SCHEMA,
+            "toolkit": json.loads((ctx.root / "toolkit.lock.json").read_text()),
+            "workflows": digest(
+                ctx.root,
+                [
+                    p
+                    for p in source_files(ctx.root)
+                    if p.as_posix().startswith(
+                        (".github/workflows/", ".github/actions/")
+                    )
+                ],
+            ),
+            "groups": ctx.config.validation.groups,
+            "jobs": ctx.config.validation.job_names,
+            "aggregate": ctx.config.validation.aggregate_jobs,
+            "artifacts": ctx.config.validation.artifact_jobs,
+        }
+    )
 
 
 def metadata_check(ctx):

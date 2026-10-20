@@ -7,3 +7,8 @@ LyricMotion (ThisIsTeddyBear/Jellyfin-LyricMotion), version 3.3, is licensed
 under the Mozilla Public License 2.0. Its applicable attribution is retained.
 The corresponding editable lifecycle source and MPL-2.0.txt accompany this archive.
 See licenses.spdx.json for the explicit file-level exception inventory.
+
+Release archives include build-time Python dependencies under _vendor.
+Pydantic, pydantic-core, annotated-types, typing-inspection and Tomli-W retain
+their upstream MIT licenses. typing_extensions retains PSF-2.0.
+Original license files and distribution metadata accompany every bundled package.

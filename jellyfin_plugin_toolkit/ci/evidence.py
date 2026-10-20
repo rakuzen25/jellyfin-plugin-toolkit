@@ -258,13 +258,10 @@ def completed_group_origin(
     policy: str,
     fingerprint: str,
     cache: dict,
-    visited: frozenset = frozenset(),
 ) -> str | None:
-    """Resolve reuse chains to authenticated successful jobs in the latest attempt."""
+    """Resolve one direct origin and verify its authenticated original jobs."""
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     identifier = str(run["id"])
-    if identifier in visited or len(visited) >= 8:
-        return None
     if (
         receipt.get("policy") != policy
         or receipt.get("inputs", {}).get(group) != fingerprint
@@ -285,7 +282,7 @@ def completed_group_origin(
         origin = baseline.get("origins", {}).get(group)
     if origin:
         origin = str(origin)
-        if not re.fullmatch(r"[0-9]+", origin):
+        if not re.fullmatch(r"[0-9]+", origin) or origin == identifier:
             return None
         key = ("receipt", origin)
         if key not in cache:
@@ -299,19 +296,16 @@ def completed_group_origin(
                 return None
             cache[key] = (source, read_receipt(repository, source))
         source, proof = cache[key]
-        if not proof:
+        if (
+            not proof
+            or proof.get("policy") != policy
+            or proof.get("inputs", {}).get(group) != fingerprint
+            or proof.get("groups", {}).get(group) != "success"
+            or group in proof.get("reused", {})
+            or group in proof.get("full_baseline", {}).get("origins", {})
+        ):
             return None
-        return completed_group_origin(
-            ctx,
-            repository,
-            source,
-            proof,
-            group,
-            policy,
-            fingerprint,
-            cache,
-            visited | {identifier},
-        )
+        run, receipt, identifier = source, proof, origin
     if receipt.get("groups", {}).get(group) != "success":
         return None
     key = ("jobs", identifier)
@@ -431,7 +425,7 @@ def verify(ctx, receipt: dict, repository: str, run_id: str) -> None:
         receipt.get("groups", {}).get(g) != "success" for g in validation.groups
     ):
         raise ValueError("Receipt lacks complete successful release gates")
-    if receipt.get("inputs") != ci_policy.fingerprints(ctx):
+    if receipt.get("inputs") != ci_policy.fingerprints(ctx, receipt.get("browser", {})):
         raise ValueError("Validation input fingerprints changed")
     if not receipt.get("artifacts") or receipt[
         "artifacts"

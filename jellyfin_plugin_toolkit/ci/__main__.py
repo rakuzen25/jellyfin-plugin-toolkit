@@ -24,6 +24,7 @@ def main(argv=None) -> None:
             "web-record",
             "web-verify",
             "metadata-check",
+            "browser-verify",
         ),
     )
     parser.add_argument("--root", type=Path, default=None)
@@ -33,6 +34,9 @@ def main(argv=None) -> None:
     parser.add_argument("--scheduled", action="store_true")
     parser.add_argument("--reuse", action="store_true")
     parser.add_argument("--run-id", default="")
+    parser.add_argument("--group")
+    parser.add_argument("--project")
+    parser.add_argument("--workers", type=int)
     args = parser.parse_args(argv)
     ctx = Context.load(args.root)
     root = ctx.root
@@ -42,6 +46,16 @@ def main(argv=None) -> None:
     ctx.generated()
     if args.command == "metadata-check":
         ci_policy.metadata_check(ctx)
+    elif args.command == "browser-verify":
+        from jellyfin_plugin_toolkit.ci.browser import verify_execution
+
+        verify_execution(
+            ctx,
+            json.loads((root / "dist/plan.json").read_text()),
+            args.group,
+            args.project,
+            args.workers,
+        )
     elif args.command == "plan":
         try:
             result = ci_planning.plan(
@@ -67,7 +81,7 @@ def main(argv=None) -> None:
                 stream.write(
                     "web="
                     + str(
-                        ctx.config.get("frontend", {}).get("enabled", False)
+                        ctx.config.frontend.enabled
                         and bool(
                             set(result["execute"])
                             & {
@@ -127,10 +141,7 @@ def main(argv=None) -> None:
         current = artifacts.web_inputs(root)
         if args.command == "web-record":
             if not all(
-                name in current["files"]
-                for name in ctx.config["frontend"].get(
-                    "required_assets", ["config.html"]
-                )
+                name in current["files"] for name in ctx.config.frontend.required_assets
             ):
                 raise ValueError("Prepared web assets are incomplete")
             path.write_text(json.dumps(current, indent=2) + "\n")

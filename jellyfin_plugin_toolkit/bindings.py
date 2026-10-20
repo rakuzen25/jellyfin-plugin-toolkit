@@ -493,9 +493,9 @@ def main(argv=None):
 
 def check_integrations(root, config):
     """Check bindings for default components; consumer overrides retain ownership."""
-    checks = config.get("validation", {}).get("check_targets", ["backend", "tooling"])
+    checks = config.validation.check_targets
     tooling = "tooling" in checks and not replaces(config, "check-tooling")
-    frontend = config.get("frontend", {})
+    frontend = config.frontend
     frontend_checks = "frontend" in checks and not replaces(config, "check-frontend")
     expected = []
     if tooling:
@@ -510,7 +510,7 @@ def check_integrations(root, config):
             [
                 ("eslint.config.mjs", "configs/eslint.mjs"),
                 (
-                    frontend.get("directory", "frontend") + "/tsconfig.json",
+                    frontend.directory + "/tsconfig.json",
                     "configs/tsconfig.json",
                 ),
             ]

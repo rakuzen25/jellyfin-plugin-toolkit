@@ -289,7 +289,7 @@ class GroupReuseTests(IsolatedCiTestCase):
                 )
             )
 
-    def test_reuse_chain_resolves_to_original_job_and_rejects_cycles(self):
+    def test_direct_reference_resolves_to_original_job_and_rejects_cycles(self):
         run, receipt, jobs = self.fixture()
         origin = dict(run, id=99)
         receipt["reused"] = {"backend": {"run_id": "99"}}
@@ -745,6 +745,28 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
         )
         self.assertEqual(result["comparison"]["base"], "previous")
         self.assertIn("performance", result["execute"])
+
+    def test_manual_full_validation_bypasses_matching_scheduled_evidence(self):
+        inputs = {group: group for group in self.validation.groups}
+        with (
+            patch.dict(
+                os.environ, {"GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "synthetic"}
+            ),
+            patch.object(ci_policy, "fingerprints", return_value=inputs),
+            patch.object(
+                ci_evidence,
+                "evidence",
+                return_value={
+                    group: {"run_id": "100", "input": group}
+                    for group in self.validation.groups
+                },
+            ),
+            patch.object(ci_policy, "git", return_value="commit"),
+        ):
+            selection = ci_planning.plan(self.ctx, "", True, False, True, True)
+        self.assertEqual(set(selection["execute"]), set(self.validation.groups))
+        self.assertEqual(selection["reused"], {})
+        self.assertEqual(selection["full_baseline"], {})
 
     def test_shared_fingerprint_change_requires_group_even_without_path_selection(self):
         original = ci_policy.fingerprints(self.ctx)

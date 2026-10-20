@@ -23,8 +23,8 @@ from jellyfin_plugin_toolkit.operations import supports_default
 
 
 def operation(ctx, name, extra=(), *, kind="commands"):
-    spec = ctx.config.get("operations", {}).get(name)
-    if spec is None or kind not in spec:
+    spec = ctx.config.operations.get(name)
+    if spec is None or getattr(spec, kind) is None:
         return False
     replacements = {
         "python": python_checks(ctx),
@@ -33,7 +33,7 @@ def operation(ctx, name, extra=(), *, kind="commands"):
         "pnpm": executable("pnpm"),
         "dotnet": executable("dotnet"),
     }
-    for command in spec[kind]:
+    for command in getattr(spec, kind):
         argv = []
         for argument in command:
             for key, value in replacements.items():
@@ -42,7 +42,7 @@ def operation(ctx, name, extra=(), *, kind="commands"):
         run(
             *argv,
             *extra,
-            cwd=ctx.path(spec.get("cwd", ".")),
+            cwd=ctx.path(spec.cwd),
             env=toolkit_environment(ctx.root, TOOLKIT_ROOT),
         )
     return True
@@ -51,9 +51,8 @@ def operation(ctx, name, extra=(), *, kind="commands"):
 def dispatch_operation(ctx, name, default, extra=()):
     if operation(ctx, name, extra):
         return
-    if "after" in ctx.config.get("operations", {}).get(
-        name, {}
-    ) and not supports_default(name):
+    spec = ctx.config.operations.get(name)
+    if spec and spec.after is not None and not supports_default(name):
         raise ValueError("After hook requires a standard operation: " + name)
     default()
     operation(ctx, name, kind="after")
@@ -136,10 +135,10 @@ def bootstrap(ctx):
 
 def frontend_build(ctx):
     ctx.generated()
-    if ctx.config.get("frontend", {}).get("enabled", False):
+    if ctx.config.frontend.enabled:
         run(
             "node",
-            ctx.config["frontend"].get("build") or str(TOOLKIT_ROOT / "node/build.mjs"),
+            ctx.config.frontend.build or str(TOOLKIT_ROOT / "node/build.mjs"),
             cwd=ctx.root,
         )
 
@@ -185,7 +184,7 @@ def check_default(ctx, target):
         run(
             executable("pnpm"),
             "--dir",
-            ctx.config["frontend"].get("directory", "frontend"),
+            ctx.config.frontend.directory,
             "exec",
             "tsc",
             "--noEmit",
@@ -202,13 +201,13 @@ def check_default(ctx, target):
 
 def backend_tests(ctx, extra):
     ctx.generated()
-    frontend = ctx.config.get("frontend", {})
-    if frontend.get("enabled") and any(
+    frontend = ctx.config.frontend
+    if frontend.enabled and any(
         not (ctx.root / "dist/web" / asset).is_file()
-        for asset in frontend.get("required_assets", ["config.html"])
+        for asset in frontend.required_assets
     ):
         frontend_build(ctx)
-    for project in ctx.config["backend"].get("tests", []):
+    for project in ctx.config.backend.tests:
         run(
             executable("dotnet"),
             "restore",
@@ -235,7 +234,7 @@ def backend_tests(ctx, extra):
 
 
 def browser_tests(ctx, extra):
-    directory = ctx.config.get("browser", {}).get("directory", "tests/browser")
+    directory = ctx.config.browser.directory
     results = Path(tempfile.mkdtemp(prefix="results-run.", dir=ctx.root / directory))
     run(
         "node",
@@ -281,7 +280,7 @@ def test_default(ctx, target, extra):
     if target == "advisories":
         if (ctx.root / "pnpm-lock.yaml").exists():
             run(executable("pnpm"), "audit", cwd=ctx.root)
-        for project in ctx.config["backend"].get("tests", []):
+        for project in ctx.config.backend.tests:
             run(
                 executable("dotnet"),
                 "restore",
@@ -324,7 +323,7 @@ def test_default(ctx, target, extra):
             "--experimental-strip-types",
             "--test",
             *extra,
-            cwd=ctx.root / ctx.config["frontend"].get("directory", "frontend"),
+            cwd=ctx.root / ctx.config.frontend.directory,
         )
     elif target == "tooling":
         if (ctx.root / "tests/tooling").is_dir():

@@ -1,6 +1,5 @@
 """Consumer isolation, input boundaries and evidence trust regressions."""
 
-import copy
 import io
 import json
 import os
@@ -30,11 +29,11 @@ class SweepTests(ConsumerTestCase):
 
     def test_operations_and_policies_stay_with_the_supplied_consumer(self):
         with tempfile.TemporaryDirectory() as directory:
-            config = copy.deepcopy(self.ctx.config)
+            config = self.ctx.config.data()
             config["validation"] = {"groups": ["backend", "artifacts"], "rules": []}
             other = create_consumer(Path(directory), config)
             for ctx in (self.ctx, other, self.ctx):
-                ctx.config["operations"] = {
+                ctx.config.operations = {
                     "test-custom": {"commands": [["fixture", "{root}"]]}
                 }
                 with patch.object(tasks, "run") as run:
@@ -107,7 +106,7 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
         ]
         for section, key, value in invalid:
             with self.subTest(section=section, key=key):
-                selected = copy.deepcopy(self.ctx.config)
+                selected = self.ctx.config.data()
                 selected.setdefault(section, {})[key] = value
                 self.write_config(selected)
                 with self.assertRaises(ValueError):
@@ -116,7 +115,7 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
     def test_empty_commands_and_jobs_cannot_disable_validation(self):
         for key in ("job_names", "aggregate_jobs", "artifact_jobs", "commands"):
             with self.subTest(key=key):
-                selected = copy.deepcopy(self.ctx.config)
+                selected = self.ctx.config.data()
                 if key == "commands":
                     selected["operations"] = {"test-x": {"commands": []}}
                 else:
@@ -126,7 +125,7 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
                 self.write_config(selected)
                 with self.assertRaises(ValueError):
                     Context.load(self.root)
-        selected = copy.deepcopy(self.ctx.config)
+        selected = self.ctx.config.data()
         selected["validation"]["aggregate_jobs"] = {"backend": []}
         with self.assertRaises(ValueError):
             planning.finish(
@@ -136,7 +135,7 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
             )
 
     def test_explicit_sources_must_exist_and_cannot_be_symlinks(self):
-        self.ctx.config["source"] = {"roots": ["optional"], "files": ["missing.txt"]}
+        self.ctx.config.source = {"roots": ["optional"], "files": ["missing.txt"]}
         self.write_config(self.ctx.config)
         with self.assertRaisesRegex(ValueError, "Missing maintained"):
             source_files(self.root)
@@ -166,16 +165,16 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
                     (root / "inputs/link").symlink_to(
                         root / "actual", target_is_directory=True
                     )
-                ctx.config["source"] = {"roots": ["inputs"]}
+                ctx.config.source = {"roots": ["inputs"]}
                 (root / "plugin.toml").write_text(toml(ctx.config))
                 with self.assertRaisesRegex(ValueError, "symlink"):
                     source_files(root)
 
     def test_external_assets_are_fingerprinted_and_must_be_maintained(self):
-        self.ctx.config["frontend"]["extra_assets"] = [
+        self.ctx.config.frontend.extra_assets = [
             {"source": "legal/NOTICE", "name": "NOTICE"}
         ]
-        self.ctx.config["source"] = {"roots": ["frontend", "legal"]}
+        self.ctx.config.source = {"roots": ["frontend", "legal"]}
         (self.root / "legal").mkdir()
         asset = self.root / "legal/NOTICE"
         asset.write_text("first")
@@ -183,7 +182,7 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
         first = web_inputs(self.root)
         asset.write_text("second")
         self.assertNotEqual(first, web_inputs(self.root))
-        self.ctx.config["source"]["roots"].remove("legal")
+        self.ctx.config.source.roots.remove("legal")
         self.write_config(self.ctx.config)
         with self.assertRaisesRegex(ValueError, "outside maintained"):
             web_inputs(self.root)

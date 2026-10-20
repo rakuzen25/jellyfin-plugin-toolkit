@@ -25,7 +25,7 @@ def inventory(ctx):
     binary = f"{ctx.prefix}-{ctx.version}.zip"
     source = f"{ctx.prefix}-source-{ctx.version}.zip"
     expected = {binary, source, "manifest.json"}
-    if ctx.config["distribution"].get("web", False):
+    if ctx.config.distribution.web:
         expected.add(f"{ctx.prefix}-web-{ctx.version}.zip")
     sums = {}
     for line in (dist / "SHA256SUMS").read_text().splitlines():
@@ -41,15 +41,15 @@ def inventory(ctx):
         names = members(package)
         metadata = json.loads(package.read("meta.json"))
         if (
-            metadata["guid"] != ctx.identity["guid"]
-            or metadata["name"] != ctx.identity["name"]
+            metadata["guid"] != ctx.identity.guid
+            or metadata["name"] != ctx.identity.name
         ):
             raise ValueError("Package identity differs")
         inventory = json.loads(package.read("dependency-inventory.json"))["files"]
         binaries = {n for n in names if n.endswith(".dll")}
         if binaries != {e["file"] for e in inventory if e["file"].endswith(".dll")}:
             raise ValueError("Binary inventory is incomplete")
-        if ctx.identity["assembly"] + ".dll" not in binaries:
+        if ctx.identity.assembly + ".dll" not in binaries:
             raise ValueError("Host assembly is missing")
         for name in binaries:
             if Path(name).name.startswith(HOST_LIBRARIES):
@@ -83,7 +83,7 @@ def inventory(ctx):
             raise ValueError("Corresponding toolkit source differs")
     manifest = json.loads((dist / "manifest.json").read_text())[0]
     if (
-        manifest["guid"] != ctx.identity["guid"]
+        manifest["guid"] != ctx.identity.guid
         or manifest["versions"][0]["checksum"]
         != hashlib.md5((dist / binary).read_bytes()).hexdigest()
     ):

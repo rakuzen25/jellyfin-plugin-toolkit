@@ -8,36 +8,13 @@ import uuid
 from datetime import date
 from pathlib import Path
 
+import tomli_w
+
 from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, relative
 
 
-def value(v):
-    if isinstance(v, dict):
-        return (
-            "{ "
-            + ", ".join(json.dumps(str(k)) + " = " + value(w) for k, w in v.items())
-            + " }"
-        )
-    if isinstance(v, list):
-        return "[" + ", ".join(value(w) for w in v) + "]"
-    return json.dumps(v, ensure_ascii=False)
-
-
 def toml(config):
-    return "".join(
-        (
-            "["
-            + name
-            + "]\n"
-            + "".join(
-                json.dumps(k) + " = " + value(v) + "\n" for k, v in values.items()
-            )
-            + "\n"
-        )
-        if isinstance(values, dict)
-        else name + " = " + value(values) + "\n\n"
-        for name, values in config.items()
-    )
+    return tomli_w.dumps(config.data() if hasattr(config, "data") else config)
 
 
 def generate(
@@ -190,7 +167,10 @@ def generate(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
 
-    put("plugin.toml", toml(config))
+    put(
+        "plugin.toml",
+        "#:schema .build/toolkit/current/configs/plugin.schema.json\n" + toml(config),
+    )
     put("toolkit.lock.json", json.dumps(lock, indent=4) + "\n")
     put("version.txt", "0.1.0\n")
     put(
@@ -379,7 +359,11 @@ def generate(
             "directory": "tests/browser",
             "groups": "tests/browser/groups.json",
         }
-        put("plugin.toml", toml(config))
+        put(
+            "plugin.toml",
+            "#:schema .build/toolkit/current/configs/plugin.schema.json\n"
+            + toml(config),
+        )
         put(
             "tests/browser/package.json",
             json.dumps(

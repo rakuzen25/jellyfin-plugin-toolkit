@@ -7,12 +7,10 @@ import urllib.error
 import urllib.request
 import zipfile
 from datetime import UTC, datetime
-from pathlib import Path
 
 import jellyfin_plugin_toolkit.ci.evidence as ci_evidence
 import jellyfin_plugin_toolkit.ci.policy as ci_policy
 from jellyfin_plugin_toolkit.common import artifacts
-from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.context import Context
 
 
@@ -23,16 +21,15 @@ def plan(
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     ci_policy.browser_inventory(ctx)
     ci_policy.check_classification(ctx, [])
-    inputs = ci_policy.fingerprints(ctx)
-    policy = artifacts.digest(
-        root,
-        [Path(p) for p in ci_policy.POLICY]
-        + [
-            p
-            for p in source_files(root)
-            if str(p).startswith((".github/workflows/", ".github/actions/"))
-        ],
-    )
+    from jellyfin_plugin_toolkit.ci.browser import capture
+
+    if ctx.config.validation.browser_inputs:
+        from jellyfin_plugin_toolkit.tasks import frontend_build
+
+        frontend_build(ctx)
+    browser = capture(ctx)
+    inputs = ci_policy.fingerprints(ctx, browser)
+    policy = ci_policy.policy_fingerprint(ctx)
     changed: list[str] = []
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     cumulative = (
@@ -102,7 +99,7 @@ def plan(
         ):
             print("Evidence unavailable; required checks will run", file=sys.stderr)
     full_baseline = {}
-    if scheduled:
+    if scheduled and not full:
         # All meaningful groups must match a full run, never merely a narrow pass.
         required = (
             set()
@@ -141,6 +138,7 @@ def plan(
         "run_attempt": int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")),
         "policy": policy,
         "inputs": inputs,
+        "browser": browser,
         "changed": changed,
         "classified_changes": classified_changes,
         "required": sorted(required),

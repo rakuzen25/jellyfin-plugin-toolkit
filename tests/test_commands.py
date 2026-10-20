@@ -69,7 +69,7 @@ class CommandTests(ConsumerTestCase):
 
     def test_operations_use_argv_and_preserve_globs(self):
         context = Context.load(self.root)
-        selected = dict(context.config)
+        selected = context.config.data()
         selected["operations"] = {
             "test-example": {
                 "commands": [["{python}", "fixture.py", "**/*.{ts,mjs}", "$(literal)"]]
@@ -118,10 +118,12 @@ class CommandTests(ConsumerTestCase):
             root = Path(directory)
             context = SimpleNamespace(
                 root=root,
-                config={
-                    "frontend": {"enabled": True, "required_assets": ["config.html"]},
-                    "backend": {"tests": []},
-                },
+                config=SimpleNamespace(
+                    frontend=SimpleNamespace(
+                        enabled=True, required_assets=["config.html"]
+                    ),
+                    backend=SimpleNamespace(tests=[]),
+                ),
                 generated=Mock(),
             )
             with (
@@ -160,7 +162,7 @@ class CommandTests(ConsumerTestCase):
         )
 
     def test_tooling_check_preserves_consumer_formatting_override(self):
-        self.ctx.config["operations"] = {
+        self.ctx.config.operations = {
             "format-check-tooling": {"commands": [["formatter", "--verify"]]}
         }
         with (
@@ -179,7 +181,7 @@ class CommandTests(ConsumerTestCase):
 
 class AfterOperationTests(ConsumerTestCase):
     def test_standard_check_finishes_before_after_commands(self):
-        self.ctx.config["operations"] = {
+        self.ctx.config.operations = {
             "check-docs": {"after": [["extra", "{root}"]], "cwd": "docs"}
         }
         (self.root / "docs").mkdir()
@@ -200,7 +202,7 @@ class AfterOperationTests(ConsumerTestCase):
         )
 
     def test_standard_failure_skips_after_commands(self):
-        self.ctx.config["operations"] = {"check-docs": {"after": [["extra"]]}}
+        self.ctx.config.operations = {"check-docs": {"after": [["extra"]]}}
         with (
             patch.object(
                 tasks,
@@ -214,9 +216,7 @@ class AfterOperationTests(ConsumerTestCase):
         run.assert_not_called()
 
     def test_after_failure_stops_remaining_commands(self):
-        self.ctx.config["operations"] = {
-            "check-docs": {"after": [["first"], ["second"]]}
-        }
+        self.ctx.config.operations = {"check-docs": {"after": [["first"], ["second"]]}}
         with (
             patch.object(tasks, "check_default") as default,
             patch.object(
@@ -229,7 +229,7 @@ class AfterOperationTests(ConsumerTestCase):
         self.assertEqual(1, run.call_count)
 
     def test_test_arguments_reach_default_but_not_after(self):
-        self.ctx.config["operations"] = {"test-backend": {"after": [["extra"]]}}
+        self.ctx.config.operations = {"test-backend": {"after": [["extra"]]}}
         with (
             patch.object(tasks, "test_default") as default,
             patch.object(tasks, "run") as run,
@@ -241,7 +241,7 @@ class AfterOperationTests(ConsumerTestCase):
         self.assertEqual(("extra",), run.call_args.args)
 
     def test_replacement_still_receives_arguments_without_running_default(self):
-        self.ctx.config["operations"] = {"test-example": {"commands": [["custom"]]}}
+        self.ctx.config.operations = {"test-example": {"commands": [["custom"]]}}
         with (
             patch.object(tasks, "test_default") as default,
             patch.object(tasks, "run") as run,
@@ -251,7 +251,7 @@ class AfterOperationTests(ConsumerTestCase):
         self.assertEqual(("custom", "--literal"), run.call_args.args)
 
     def test_format_after_uses_standard_formatting(self):
-        self.ctx.config["operations"] = {"format-docs": {"after": [["extra"]]}}
+        self.ctx.config.operations = {"format-docs": {"after": [["extra"]]}}
         with (
             patch("jellyfin_plugin_toolkit.checks.formatting.format_target") as default,
             patch.object(tasks, "run") as run,
@@ -271,25 +271,36 @@ class AfterOperationTests(ConsumerTestCase):
             {},
         ]:
             with self.subTest(spec=spec):
-                self.ctx.config["operations"] = {"check-tooling": spec}
-                (self.root / "plugin.toml").write_text(toml(self.ctx.config))
+                selected = self.ctx.config.data()
+                selected["operations"] = {"check-tooling": spec}
+                (self.root / "plugin.toml").write_text(toml(selected))
                 with self.assertRaises(ValueError):
                     Context.load(self.root)
-        self.ctx.config["operations"] = {"test-unknown": {"after": [["extra"]]}}
-        (self.root / "plugin.toml").write_text(toml(self.ctx.config))
+        selected = self.ctx.config.data()
+        selected["operations"] = {"test-unknown": {"after": [["extra"]]}}
+        (self.root / "plugin.toml").write_text(toml(selected))
         with self.assertRaisesRegex(ValueError, "standard operation"):
             Context.load(self.root)
 
     def test_after_hooks_do_not_disable_standard_integration_checks(self):
         from jellyfin_plugin_toolkit.bindings import check_integrations
 
-        selected = {
-            "validation": {"check_targets": ["tooling"]},
-            "operations": {
-                "check-tooling": {"after": [["extra"]]},
-                "format-check-tooling": {"commands": [["custom-formatter"]]},
-            },
-        }
+        selected = self.ctx.config.data()
+        selected.update(
+            {
+                "validation": {
+                    "groups": ["backend", "artifacts"],
+                    "check_targets": ["tooling"],
+                },
+                "operations": {
+                    "check-tooling": {"after": [["extra"]]},
+                    "format-check-tooling": {"commands": [["custom-formatter"]]},
+                },
+            }
+        )
+        from jellyfin_plugin_toolkit.configuration import Configuration, Operation
+
+        selected = Configuration.model_validate(selected)
         (self.root / "Directory.Build.props").write_text("msbuild/Plugin.props")
         with self.assertRaisesRegex(ValueError, "integration is missing"):
             check_integrations(self.root, selected)
@@ -297,7 +308,7 @@ class AfterOperationTests(ConsumerTestCase):
         (self.root / "pyproject.toml").write_text("configs/ruff.toml")
         check_integrations(self.root, selected)
         (self.root / "eslint.config.mjs").unlink()
-        selected["operations"]["check-tooling"] = {"commands": [["custom-checker"]]}
+        selected.operations["check-tooling"] = Operation(commands=[["custom-checker"]])
         check_integrations(self.root, selected)
 
     def test_standard_tooling_discovery_can_import_the_verified_toolkit(self):
@@ -307,6 +318,6 @@ class AfterOperationTests(ConsumerTestCase):
             "import unittest\nfrom jellyfin_plugin_toolkit.context import Context\n"
             "class BusinessTests(unittest.TestCase):\n"
             "    def test_business(self):\n"
-            '        self.assertEqual("example", Context.load().identity["id"])\n'
+            '        self.assertEqual("example", Context.load().identity.id)\n'
         )
         tasks.test(self.ctx, "tooling", ["-k", "business"])

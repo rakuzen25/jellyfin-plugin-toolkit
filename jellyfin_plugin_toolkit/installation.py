@@ -94,7 +94,7 @@ class Session:
                 version = info.get("Version", info.get("version", ""))
                 if (
                     version.split(".")[:2]
-                    == self.context.config["host"]["abi"].split(".")[:2]
+                    == self.context.config.host.abi.split(".")[:2]
                 ):
                     with urllib.request.urlopen(
                         self.base + "/health", timeout=5
@@ -119,7 +119,7 @@ class Session:
 
     def assert_loaded(self):
         plugins = self.call("/Plugins")
-        expected = uuid.UUID(self.context.identity["guid"])
+        expected = uuid.UUID(self.context.identity.guid)
         plugin = next(
             (p for p in plugins if uuid.UUID(p.get("id", p.get("Id", ""))) == expected),
             None,
@@ -131,9 +131,9 @@ class Session:
         with zipfile.ZipFile(archive) as package:
             names = members(package)
             metadata = json.loads(package.read("meta.json"))
-            if uuid.UUID(metadata["guid"]) != uuid.UUID(self.context.identity["guid"]):
+            if uuid.UUID(metadata["guid"]) != uuid.UUID(self.context.identity.guid):
                 raise ValueError("Installation archive belongs to a different plugin")
-            if self.context.identity["assembly"] + ".dll" not in names:
+            if self.context.identity.assembly + ".dll" not in names:
                 raise ValueError("Installation archive is missing the host assembly")
             if sum(item.file_size for item in package.infolist()) > 1_000_000_000:
                 raise ValueError("Expanded installation archive exceeds size limit")
@@ -158,7 +158,7 @@ class Session:
             plugins = self.root / "config/plugins"
             backup = Path(directory) / "previous"
             backup.mkdir()
-            expected = uuid.UUID(self.context.identity["guid"])
+            expected = uuid.UUID(self.context.identity.guid)
             for folder in plugins.iterdir():
                 meta = folder / "meta.json"
                 if (
@@ -236,7 +236,7 @@ class Session:
                 "/cache:rw,size=3g,mode=1777",
                 "--mount",
                 f"type=bind,source={media},target=/fixture-media,readonly",
-                self.context.config["host"]["image"],
+                self.context.config.host.image,
             )
             identifier = result.splitlines()[-1]
             if len(identifier) != 64 or any(

@@ -19,15 +19,12 @@ def reference_directory(ctx):
 def publish(ctx, output, web, *, configuration="Release", references=None):
     root = ctx.root
     ctx.generated()
-    if (
-        ctx.config.get("frontend", {}).get("enabled", False)
-        and not (web / "config.html").is_file()
-    ):
+    if ctx.config.frontend.enabled and not (web / "config.html").is_file():
         raise ValueError("Frontend assets are missing; run ./plugin build frontend")
     references = references or ensure(ctx, reference_directory(ctx))
     if output.exists():
         shutil.rmtree(output)
-    project = str(ctx.path(ctx.config["backend"]["entry"]))
+    project = str(ctx.path(ctx.config.backend.entry))
     properties = [
         "-p:JellyfinReferenceDir=" + str(references),
         "-p:PluginWebAssets=" + str(web),
@@ -65,7 +62,7 @@ def publish(ctx, output, web, *, configuration="Release", references=None):
 
 
 def maintained_csharp(ctx, pattern):
-    roots = ctx.config.get("backend", {}).get("source_roots", ["src", "tests/backend"])
+    roots = ctx.config.backend.source_roots
     return sorted(
         p
         for directory in roots

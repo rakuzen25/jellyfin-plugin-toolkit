@@ -1,6 +1,7 @@
 """Exercise a generated consumer's real, owned development sandbox."""
 
 import argparse
+import json
 import os
 import signal
 import socket
@@ -11,10 +12,60 @@ import urllib.request
 from pathlib import Path
 
 
+def exercise_edits(root, log, child, base):
+    """Observe actual filesystem events, failed compilation and backend deployment."""
+
+    def wait_for(marker, offset):
+        deadline = time.monotonic() + 240
+        while time.monotonic() < deadline:
+            if child.poll() is not None:
+                raise RuntimeError("Development supervisor exited during edits")
+            if marker in log.read_text()[offset:]:
+                return
+            time.sleep(0.25)
+        raise TimeoutError("Development edit did not produce " + marker)
+
+    config = json.loads((root / ".build/generated/plugin.json").read_text())
+    frontend = config.get("frontend", {})
+    if frontend.get("enabled"):
+        entry = frontend.get("admin_entry") or next(iter(frontend["entries"]))
+        source = root / frontend.get("directory", "frontend") / entry
+        original = source.read_bytes()
+        try:
+            offset = len(log.read_text())
+            source.write_bytes(original + b"\nconst = ;\n")
+            wait_for("save again or press r to retry", offset)
+            with urllib.request.urlopen(base + "/health", timeout=5) as response:
+                assert response.status == 200
+            offset = len(log.read_text())
+            source.write_bytes(original)
+            wait_for("[dev] Ready ", offset)
+        finally:
+            if source.read_bytes() != original:
+                source.write_bytes(original)
+    source = next(
+        path
+        for path in (root / config["backend"]["entry"]).parent.rglob("*.cs")
+        if not {"obj", "bin"} & set(path.relative_to(root).parts)
+    )
+    original = source.read_bytes()
+    try:
+        offset = len(log.read_text())
+        source.write_bytes(original + b"\n// Exercise development restart.\n")
+        wait_for("[dev] Ready ", offset)
+        assert "Building backend" in log.read_text()[offset:]
+        with urllib.request.urlopen(base + "/health", timeout=5) as response:
+            assert response.status == 200
+    finally:
+        source.write_bytes(original)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("consumer", type=Path)
-    root = parser.parse_args().consumer.resolve()
+    parser.add_argument("--edits", action="store_true")
+    args = parser.parse_args()
+    root = args.consumer.resolve()
     toolkit = (root / ".build/toolkit/current").resolve()
     env = {
         **os.environ,
@@ -33,7 +84,7 @@ def main():
                 str(toolkit / "jellyfin_plugin_toolkit/dev/session.mjs"),
                 "--port",
                 str(port),
-                "--no-watch",
+                *([] if args.edits else ["--no-watch"]),
             ],
             cwd=root,
             env=env,
@@ -54,6 +105,8 @@ def main():
                 time.sleep(0.25)
             else:
                 raise TimeoutError("Owned development sandbox did not become ready")
+            if args.edits:
+                exercise_edits(root, log, child, f"http://127.0.0.1:{port}")
         except BaseException:
             print(log.read_text(), file=sys.stderr)
             raise
@@ -81,6 +134,8 @@ def main():
     assert child.returncode == 0, log.read_text()
     assert "[dev] Stopped; sandbox data retained." in log.read_text()
     print("PASS: owned development sandbox starts, serves health, and stops cleanly")
+    if args.edits:
+        print("PASS: watched frontend failure/recovery and backend restart")
 
 
 if __name__ == "__main__":

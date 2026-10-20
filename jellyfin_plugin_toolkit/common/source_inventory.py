@@ -67,7 +67,7 @@ def source_files(root):
     root = root.resolve()
     ctx = Context.load(root)
     files = []
-    for directory in ctx.config.get("source", {}).get("roots", ROOTS):
+    for directory in ctx.config.source.roots:
         base = ctx.path(directory)
         for parent in [base, *base.parents]:
             if parent == root:
@@ -101,35 +101,32 @@ def source_files(root):
         if (root / name).exists() or (root / name).is_symlink()
     )
     files.extend(
-        maintained_file(root, ctx.path(name))
-        for name in ctx.config.get("source", {}).get("files", [])
+        maintained_file(root, ctx.path(name)) for name in ctx.config.source.files
     )
     for key in ("notices", "web_notices"):
-        for entry in ctx.config.get("distribution", {}).get(key, []):
-            files.append(maintained_file(root, ctx.path(entry["source"])))
+        for entry in getattr(ctx.config.distribution, key):
+            files.append(maintained_file(root, ctx.path(entry.source)))
     return sorted(set(files))
 
 
 def frontend_inputs(ctx, maintained):
     """Exact declared frontend sources and toolchain inputs, including external assets."""
-    frontend = ctx.config.get("frontend", {})
-    directory = frontend.get("directory", "frontend")
-    roots = [directory, frontend.get("assets", directory + "/assets")]
+    frontend = ctx.config.frontend
+    directory = frontend.directory
+    roots = [directory, frontend.assets or directory + "/assets"]
     explicit = []
-    if frontend.get("enabled"):
-        if frontend.get("build"):
-            explicit.append(frontend["build"])
+    if frontend.enabled:
+        if frontend.build:
+            explicit.append(frontend.build)
+        explicit.extend(str(Path(directory) / name) for name in frontend.entries)
+        if frontend.admin_entry:
+            explicit.append(str(Path(directory) / frontend.admin_entry))
         explicit.extend(
-            str(Path(directory) / name) for name in frontend.get("entries", {})
-        )
-        if frontend.get("admin_entry"):
-            explicit.append(str(Path(directory) / frontend["admin_entry"]))
-        explicit.extend(
-            frontend[key]
+            getattr(frontend, key)
             for key in ("admin_template", "admin_styles", "boundary_check")
-            if frontend.get(key)
+            if getattr(frontend, key)
         )
-        explicit.extend(entry["source"] for entry in frontend.get("extra_assets", []))
+        explicit.extend(entry.source for entry in frontend.extra_assets)
     selected = {
         p
         for p in maintained

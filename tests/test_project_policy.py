@@ -18,9 +18,11 @@ class ProjectPolicyTests(ConsumerTestCase):
         project = self.root / "server/Entry.csproj"
         project.parent.mkdir()
         project.write_text("<Project />")
-        self.ctx.config["backend"]["entry"] = "server/Entry.csproj"
-        self.ctx.config["backend"]["projects"] = {"Host": "server/Entry.csproj"}
-        self.ctx.config["architecture"] = {"edges": {"server/Entry.csproj": []}}
+        self.ctx.config.backend = {
+            "entry": "server/Entry.csproj",
+            "projects": {"Host": "server/Entry.csproj"},
+        }
+        self.ctx.config.architecture = {"edges": {"server/Entry.csproj": []}}
         (self.root / "plugin.toml").write_text(toml(self.ctx.config))
         check_projects(self.root)
         project.write_text(

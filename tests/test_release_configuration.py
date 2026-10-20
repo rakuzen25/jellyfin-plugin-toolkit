@@ -127,7 +127,7 @@ class ReleaseConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incomplete or stale"):
             configuration.check(self.root)
         self.apply()
-        selected = copy.deepcopy(self.ctx.config)
+        selected = self.ctx.config.data()
         selected["backend"]["project_assemblies"].append("Example.Infrastructure")
         (self.root / "plugin.toml").write_text(toml(selected))
         with self.assertRaisesRegex(ValueError, "incomplete or stale"):

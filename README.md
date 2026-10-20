@@ -12,4 +12,4 @@ Plugins own their behavior, Jellyfin registration, APIs, persistence, and applic
 
 Original source is Apache-2.0. See [NOTICE](NOTICE) for inherited attribution and file-level exceptions, including the MPL-2.0 resource lifecycle module.
 
-Run `pnpm check` to verify formatting and linting, and `pnpm format` to apply formatting. Install the pinned Python check requirements and run `pnpm install --frozen-lockfile` first. Checks do not restore dependencies. CI runs the same check command.
+Run `pnpm check` to verify formatting and linting, and `pnpm format` to apply formatting. With the pinned Python, run `python3 scripts/runtime.py`, install the Python check requirements, and run `pnpm install --frozen-lockfile` first. Runtime preparation installs hash-locked wheels into the ignored build directory; release archives include those exact dependencies. Checks do not restore dependencies. CI runs the same check command.

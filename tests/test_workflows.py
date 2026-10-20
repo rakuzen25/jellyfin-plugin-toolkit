@@ -96,7 +96,9 @@ class WorkflowTests(unittest.TestCase):
             directory.mkdir(parents=True)
             (directory / "validate.yml").write_text("name: Fixture\n")
             context = SimpleNamespace(
-                config={"images": {"actionlint": "fixture@sha256:" + "a" * 64}}
+                config=SimpleNamespace(
+                    images={"actionlint": "fixture@sha256:" + "a" * 64}
+                )
             )
             with (
                 patch.object(checker.Context, "load", return_value=context),

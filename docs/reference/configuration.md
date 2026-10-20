@@ -10,6 +10,8 @@ Each consumer has three primary inputs:
 
 Native `.python-version`, `.node-version`, `global.json`, `package.json`, and dependency lockfiles remain authoritative for their tools. Generated MSBuild properties and frontend bindings live under the ignored `.build` directory.
 
+Configuration is strictly typed: unknown fields and incorrect value types fail loading. Add `#:schema .build/toolkit/current/configs/plugin.schema.json` to `plugin.toml` for editor validation. Python adapters use model attributes; use `ctx.config.data()` when a plain dictionary is required.
+
 ## Configuration sections
 
 | Section        | Fields and behavior                                                                                                                                                                                     |
@@ -39,6 +41,12 @@ after = [["{python}", "-m", "mypy"]]
 The optional repository-relative `cwd` applies only to declared commands. Supported placeholders are `{python}`, `{root}`, `{toolkit}`, `{pnpm}`, and `{dotnet}`. Arguments are passed directly without a shell. Operation names include `check-frontend`, `test-tooling`, `test-installation`, and the corresponding command/target names. Extra test arguments reach the standard operation or replacement commands, never the `after` commands. Standard tooling tests discover Python tests under `tests/tooling` when that directory exists; consumers without tooling tests do not need a synthetic framework test.
 
 Unknown maintained inputs fail CI classification until a rule covers them. A toolkit update changes evidence fingerprints. Archive metadata, immutable reusable-workflow revisions and their release-version comments, and the versioned Renovate preset must agree; partial updates fail validation.
+
+### Fixture-only browser result reuse
+
+An optional `validation.browser_inputs.<group>` table declares `files` (maintained test, fixture, and configuration patterns), `assets` (built `dist/web` patterns), `projects`, `workers`, and `runner` (the GitHub runner label). Every pattern must match at least one file. Use this only for tests whose runtime inputs are fully represented by those assets and fixtures. Suites using a live application server retain ordinary fingerprints.
+
+Planning builds the frontend before looking for reusable results. Result identity covers emitted asset bytes, declared test inputs, browser image, command, project/worker settings, and runner image. Broad impact rules still select checks, but unrelated source changes need not invalidate a fixture-only result. Browser jobs verify planned assets and execution settings before testing. Missing or expired evidence executes checks, and explicit full validation bypasses reuse. Receipt schema changes invalidate earlier evidence.
 
 ## Commands
 

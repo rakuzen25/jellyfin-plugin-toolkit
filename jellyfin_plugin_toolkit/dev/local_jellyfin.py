@@ -165,7 +165,7 @@ def deploy(ctx, web: Path, requested_mounts: list[str] | None = None) -> None:
     release = load_identity(ctx.root)
     plugins = (ctx.root / ".build/local-jellyfin") / "config/plugins"
     plugins.mkdir(parents=True, exist_ok=True)
-    previous = list(plugins.glob(ctx.identity["name"] + "_*"))
+    previous = list(plugins.glob(ctx.identity.name + "_*"))
     for folder in previous:
         meta = folder / "meta.json"
         if (
@@ -180,7 +180,7 @@ def deploy(ctx, web: Path, requested_mounts: list[str] | None = None) -> None:
         staging = Path(temporary)
         candidate = staging / "candidate"
         publish(ctx, candidate, web, configuration="Debug")
-        if not (candidate / (ctx.identity["assembly"] + ".dll")).is_file():
+        if not (candidate / (ctx.identity.assembly + ".dll")).is_file():
             raise ValueError("Build did not produce the plugin assembly")
         (candidate / "meta.json").write_text(
             json.dumps(
@@ -204,7 +204,7 @@ def deploy(ctx, web: Path, requested_mounts: list[str] | None = None) -> None:
             shutil.copytree(folder, backup / folder.name)
         was_running = bool(inspect(ctx))
         stop(ctx)
-        target = plugins / (ctx.identity["name"] + "_" + release.jellyfin_version)
+        target = plugins / (ctx.identity.name + "_" + release.jellyfin_version)
         try:
             for folder in previous:
                 shutil.rmtree(folder)
@@ -239,11 +239,9 @@ def dev(ctx, args: argparse.Namespace) -> None:
         media_paths(ctx, [] if args.clear_media_mounts else args.media_mount)
         verify_tools(ctx)
         if (
-            ctx.config.get("frontend", {}).get("enabled", False)
+            ctx.config.frontend.enabled
             and not (
-                ctx.root
-                / ctx.config["frontend"].get("directory", "frontend")
-                / "node_modules/esbuild"
+                ctx.root / ctx.config.frontend.directory / "node_modules/esbuild"
             ).exists()
         ):
             raise ValueError(

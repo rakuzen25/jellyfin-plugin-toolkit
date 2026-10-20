@@ -71,7 +71,7 @@ def main(argv=None):
         print(
             json.dumps(
                 {
-                    "plugin": ctx.identity["id"],
+                    "plugin": ctx.identity.id,
                     "version": ctx.version,
                     "root": str(ctx.root),
                     "groups": ctx.groups,
@@ -105,18 +105,14 @@ def main(argv=None):
 
         package(ctx, args.release, args.prepared_web)
     elif args.task == "validate":
-        for target in ctx.config["validation"].get(
-            "check_targets", ["backend", "tooling"]
-        ):
+        for target in ctx.config.validation.check_targets:
             tasks.check(ctx, target)
-        for target in ctx.config["validation"].get(
-            "unit_groups", ["backend", "tooling"]
-        ):
+        for target in ctx.config.validation.unit_groups:
             tasks.test(ctx, target, [])
         from jellyfin_plugin_toolkit.build.clean_package import clean_package
 
         clean_package(ctx)
-        for target in ctx.config["validation"].get("acceptance_groups", []):
+        for target in ctx.config.validation.acceptance_groups:
             tasks.test(ctx, target, [])
     elif args.task == "new":
         from jellyfin_plugin_toolkit.scaffold import generate
@@ -135,9 +131,9 @@ def main(argv=None):
         targets = (
             [args.target]
             if args.target
-            else ctx.config["validation"].get("unit_groups", ["backend", "tooling"])
+            else ctx.config.validation.unit_groups
             if args.task == "test"
-            else ctx.config["validation"].get("check_targets", ["backend", "tooling"])
+            else ctx.config.validation.check_targets
         )
         for target in targets:
             if args.task == "check":

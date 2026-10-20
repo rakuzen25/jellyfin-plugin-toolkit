@@ -6,6 +6,8 @@ Source licensing and compiled plugin distribution obligations are recorded separ
 
 Each consumer declares the actual distributed binary and notice inventory in `plugin.toml`. Undeclared binaries, missing notices and host DLLs in plugin payloads fail packaging. Build-only dependencies remain in native lockfiles and are distinguished from shipped dependencies. Build provenance records the pinned official host image and hashes of extracted host references.
 
+Toolkit archives include Python runtime dependencies under `_vendor`, including their original distribution metadata and license files. `requirements-runtime.txt` pins their versions and download hashes; archive inventory verification covers their installed bytes. These build-time dependencies do not become plugin runtime assemblies. Node tooling dependencies remain in consumer manifests and pnpm lockfiles.
+
 The source ZIP includes maintained plugin inputs and the exact verified toolkit archive. It must rebuild the candidate without requiring the toolkit release to remain online. Record exceptions with SPDX license identifiers and explicit origin information; do not relicense inherited files when moving them.
 
 See also the [Apache compatibility guidance](https://www.apache.org/foundation/license-faq.html).

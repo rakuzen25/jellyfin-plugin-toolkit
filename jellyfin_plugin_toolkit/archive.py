@@ -43,14 +43,35 @@ def pack(root: Path, output: Path, *, release=False):
             raise ValueError(
                 "Release archives require a clean committed toolkit checkout"
             )
-    files = {
-        p.relative_to(root).as_posix(): p.read_bytes()
-        for p in root.rglob("*")
-        if p.is_file()
-        and not p.is_symlink()
-        and not set(p.relative_to(root).parts) & EXCLUDE
-        and not p.name.endswith(".pyc")
-    }
+    files = {}
+    for directory, folders, names in root.walk():
+        # Prune generated trees before traversal, including sandbox-owned storage.
+        folders[:] = [
+            name
+            for name in folders
+            if name not in EXCLUDE and not (directory / name).is_symlink()
+        ]
+        for name in names:
+            path = directory / name
+            if (
+                name not in EXCLUDE
+                and not name.endswith(".pyc")
+                and not path.is_symlink()
+                and path.is_file()
+            ):
+                files[path.relative_to(root).as_posix()] = path.read_bytes()
+    if (root / "requirements-runtime.txt").is_file():
+        from scripts.runtime import verify
+
+        verify(root)
+        files.update(
+            {
+                "_vendor/" + name: (root / ".build/runtime" / name).read_bytes()
+                for name in json.loads((root / ".build/runtime.json").read_text())[
+                    "files"
+                ]
+            }
+        )
     files["toolkit-release.json"] = (
         json.dumps(
             {"schema": 1, "version": version, "revision": revision}, sort_keys=True

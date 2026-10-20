@@ -235,6 +235,11 @@ jobs:
           path: dist
       - if: needs.impact.outputs.web == 'true'
         run: python3 plugin ci web-verify
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: validation-plan
+          path: dist
+      - run: python3 plugin ci browser-verify --group workflow --project "workflow-chromium" --workers 2
       - run: CI_BROWSER_GROUP=workflow pnpm test browser --project workflow-chromium --workers=2 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/toolkit/current/.github/actions/evidence
         if: always()
@@ -269,6 +274,11 @@ jobs:
           path: dist
       - if: needs.impact.outputs.web == 'true'
         run: python3 plugin ci web-verify
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: validation-plan
+          path: dist
+      - run: python3 plugin ci browser-verify --group rendering --project "${{ matrix.project }}" --workers 2
       - run: CI_BROWSER_GROUP=rendering pnpm test browser --project "${{ matrix.project }}" --workers=2 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/toolkit/current/.github/actions/evidence
         if: always()
@@ -303,6 +313,11 @@ jobs:
           path: dist
       - if: needs.impact.outputs.web == 'true'
         run: python3 plugin ci web-verify
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: validation-plan
+          path: dist
+      - run: python3 plugin ci browser-verify --group performance --project "${{ matrix.project }}" --workers 1
       - run: CI_BROWSER_GROUP=performance pnpm test browser --project "${{ matrix.project }}" --workers=1 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/toolkit/current/.github/actions/evidence
         if: always()

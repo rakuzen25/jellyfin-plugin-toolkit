@@ -26,7 +26,7 @@ def check_workflows(root: Path):
         str(root) + ":/work:ro",
         "-w",
         "/work",
-        context.config["images"]["actionlint"],
+        context.config.images["actionlint"],
         *paths,
         cwd=root,
     )

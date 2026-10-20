@@ -24,6 +24,8 @@ def main():
             "prettier",
             "--write" if fix else "--check",
             "**/*.{md,json,mjs,ts,yml,yaml}",
+            "!.build/**",
+            "!dist/**",
         ],
         [
             "pnpm",

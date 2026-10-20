@@ -17,14 +17,13 @@ def package(ctx, release=False, prepared_web=False):
     ctx.generated()
     if (ctx.root / "pnpm-lock.yaml").is_file():
         run(executable("pnpm"), "install", "--frozen-lockfile", cwd=ctx.root)
-    if ctx.config.get("frontend", {}).get("enabled", False):
+    if ctx.config.frontend.enabled:
         if prepared_web:
             verify_web(ctx.root)
         else:
             run(
                 "node",
-                ctx.config["frontend"].get("build")
-                or str(TOOLKIT_ROOT / "node/build.mjs"),
+                ctx.config.frontend.build or str(TOOLKIT_ROOT / "node/build.mjs"),
                 cwd=ctx.root,
             )
     with tempfile.TemporaryDirectory(prefix="jellyfin-plugin-publish-") as temporary:

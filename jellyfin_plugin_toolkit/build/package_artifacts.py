@@ -39,7 +39,7 @@ def assemble(ctx, staging, release_mode=False):
     prefix = ctx.prefix
     repository = os.environ.get(
         "JELLYFIN_PLUGIN_REPOSITORY_URL",
-        "https://github.com/" + ctx.identity["repository"],
+        "https://github.com/" + ctx.identity.repository,
     )
     download = os.environ.get(
         "JELLYFIN_PLUGIN_DOWNLOAD_BASE_URL",
@@ -65,22 +65,22 @@ def assemble(ctx, staging, release_mode=False):
     for binary in plugin.glob("*.dll"):
         if binary.name.startswith(HOST_LIBRARIES):
             binary.unlink()
-    distribution = ctx.config["distribution"]
-    for entry in distribution.get("notices", []):
-        source = ctx.path(entry["source"])
-        destination = notices / entry.get("name", source.name)
+    distribution = ctx.config.distribution
+    for entry in distribution.notices:
+        source = ctx.path(entry.source)
+        destination = notices / (entry.name or source.name)
         if not source.is_file():
             raise ValueError("Missing distribution notice: " + str(source))
         shutil.copy2(source, destination)
-    for entry in distribution.get("payload_notices", []):
-        source = plugin / entry["source"]
+    for entry in distribution.payload_notices:
+        source = plugin / entry.source
         if not source.is_file():
             raise ValueError("Missing payload notice: " + str(source))
-        shutil.copy2(source, notices / entry["name"])
-    license_entries = distribution.get("licenses", {})
+        shutil.copy2(source, notices / entry.name)
+    license_entries = distribution.licenses
     inventory = []
     dependencies = {}
-    lock = root / ctx.config["backend"]["entry"]
+    lock = root / ctx.config.backend.entry
     lock = lock.parent / "packages.lock.json"
     if lock.exists():
         for framework in json.loads(lock.read_text())["dependencies"].values():
@@ -98,27 +98,26 @@ def assemble(ctx, staging, release_mode=False):
             entry = next(
                 (
                     item
-                    for item in distribution.get("licensed_paths", [])
-                    if relative.startswith(item["prefix"])
+                    for item in distribution.licensed_paths
+                    if relative.startswith(item.prefix)
                 ),
                 None,
             )
         if entry is None:
             continue
-        required = entry["notices"]
+        required = entry.notices
         for notice in required:
             if not (notices / notice).is_file():
                 raise ValueError("Missing required notice: " + notice)
-        package = entry.get("package", "project-source")
+        package = entry.package
         inventory.append(
             {
                 "file": relative,
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 "package": package,
-                "version": entry.get(
-                    "version", dependencies.get(package, {}).get("resolved", version)
-                ),
-                "license": entry.get("license", "Apache-2.0"),
+                "version": entry.version
+                or dependencies.get(package, {}).get("resolved", version),
+                "license": entry.license,
                 "notices": ["notices/" + name for name in required],
             }
         )
@@ -168,8 +167,8 @@ def assemble(ctx, staging, release_mode=False):
         [(p, p.relative_to(plugin)) for p in plugin.rglob("*") if p.is_file()],
     )
     products = [binary]
-    if distribution.get("web", False):
-        excluded = set(distribution.get("web_exclude", ["demo.html", "demo.wav"]))
+    if distribution.web:
+        excluded = set(distribution.web_exclude)
         files = [
             (p, p.relative_to(root / "dist/web"))
             for p in (root / "dist/web").rglob("*")
@@ -177,9 +176,9 @@ def assemble(ctx, staging, release_mode=False):
         ]
         existing = {str(n) for _, n in files}
         files.extend(
-            (ctx.path(e["source"]), Path(e["name"]))
-            for e in distribution.get("web_notices", [])
-            if e["name"] not in existing
+            (ctx.path(e.source), Path(e.name))
+            for e in distribution.web_notices
+            if e.name not in existing
         )
         products.append(archive(out / f"{prefix}-web-{version}.zip", files))
     toolkit_archive = root / ".build/toolkit" / (lock_data["sha256"] + ".tar.gz")

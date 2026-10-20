@@ -1,0 +1,830 @@
+{
+    "$defs": {
+        "Architecture": {
+            "additionalProperties": false,
+            "properties": {
+                "edges": {
+                    "additionalProperties": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "title": "Edges",
+                    "type": "object"
+                },
+                "forbidden": {
+                    "additionalProperties": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "title": "Forbidden",
+                    "type": "object"
+                }
+            },
+            "title": "Architecture",
+            "type": "object"
+        },
+        "Asset": {
+            "additionalProperties": false,
+            "properties": {
+                "source": {
+                    "minLength": 1,
+                    "title": "Source",
+                    "type": "string"
+                },
+                "name": {
+                    "minLength": 1,
+                    "title": "Name",
+                    "type": "string"
+                }
+            },
+            "required": ["source", "name"],
+            "title": "Asset",
+            "type": "object"
+        },
+        "Backend": {
+            "additionalProperties": false,
+            "properties": {
+                "entry": {
+                    "minLength": 1,
+                    "title": "Entry",
+                    "type": "string"
+                },
+                "projects": {
+                    "additionalProperties": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "minProperties": 1,
+                    "title": "Projects",
+                    "type": "object"
+                },
+                "project_assemblies": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "title": "Project Assemblies",
+                    "type": "array"
+                },
+                "tests": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "title": "Tests",
+                    "type": "array"
+                },
+                "source_roots": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "title": "Source Roots",
+                    "type": "array"
+                },
+                "unmanaged_projects": {
+                    "items": {
+                        "pattern": "^[A-Za-z0-9_.-]+$",
+                        "type": "string"
+                    },
+                    "title": "Unmanaged Projects",
+                    "type": "array"
+                }
+            },
+            "required": ["entry", "projects"],
+            "title": "Backend",
+            "type": "object"
+        },
+        "Browser": {
+            "additionalProperties": false,
+            "properties": {
+                "directory": {
+                    "default": "tests/browser",
+                    "title": "Directory",
+                    "type": "string"
+                },
+                "groups": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Groups"
+                },
+                "command": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "minItems": 1,
+                    "title": "Command",
+                    "type": "array"
+                }
+            },
+            "title": "Browser",
+            "type": "object"
+        },
+        "BrowserInputs": {
+            "additionalProperties": false,
+            "description": "Explicit fixture-only test inputs; live-server suites use ordinary fingerprints.",
+            "properties": {
+                "files": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "minItems": 1,
+                    "title": "Files",
+                    "type": "array"
+                },
+                "assets": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "minItems": 1,
+                    "title": "Assets",
+                    "type": "array"
+                },
+                "projects": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "minItems": 1,
+                    "title": "Projects",
+                    "type": "array"
+                },
+                "workers": {
+                    "default": 1,
+                    "minimum": 1,
+                    "title": "Workers",
+                    "type": "integer"
+                },
+                "runner": {
+                    "default": "ubuntu-24.04",
+                    "minLength": 1,
+                    "title": "Runner",
+                    "type": "string"
+                }
+            },
+            "required": ["files", "projects"],
+            "title": "BrowserInputs",
+            "type": "object"
+        },
+        "Distribution": {
+            "additionalProperties": false,
+            "properties": {
+                "web": {
+                    "default": false,
+                    "title": "Web",
+                    "type": "boolean"
+                },
+                "notices": {
+                    "items": {
+                        "$ref": "#/$defs/Notice"
+                    },
+                    "title": "Notices",
+                    "type": "array"
+                },
+                "web_notices": {
+                    "items": {
+                        "$ref": "#/$defs/Asset"
+                    },
+                    "title": "Web Notices",
+                    "type": "array"
+                },
+                "payload_notices": {
+                    "items": {
+                        "$ref": "#/$defs/Asset"
+                    },
+                    "title": "Payload Notices",
+                    "type": "array"
+                },
+                "licenses": {
+                    "additionalProperties": {
+                        "$ref": "#/$defs/License"
+                    },
+                    "title": "Licenses",
+                    "type": "object"
+                },
+                "licensed_paths": {
+                    "items": {
+                        "$ref": "#/$defs/LicensedPath"
+                    },
+                    "title": "Licensed Paths",
+                    "type": "array"
+                },
+                "web_exclude": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Web Exclude",
+                    "type": "array"
+                }
+            },
+            "title": "Distribution",
+            "type": "object"
+        },
+        "Frontend": {
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "default": false,
+                    "title": "Enabled",
+                    "type": "boolean"
+                },
+                "directory": {
+                    "default": "frontend",
+                    "minLength": 1,
+                    "title": "Directory",
+                    "type": "string"
+                },
+                "build": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Build"
+                },
+                "assets": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Assets"
+                },
+                "entries": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "title": "Entries",
+                    "type": "object"
+                },
+                "admin_entry": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Admin Entry"
+                },
+                "admin_template": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Admin Template"
+                },
+                "admin_styles": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Admin Styles"
+                },
+                "boundary_check": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Boundary Check"
+                },
+                "script_marker": {
+                    "default": "<!-- PLUGIN_CONFIG_SCRIPT -->",
+                    "title": "Script Marker",
+                    "type": "string"
+                },
+                "style_marker": {
+                    "default": "/* PLUGIN_STYLES */",
+                    "title": "Style Marker",
+                    "type": "string"
+                },
+                "version_symbol": {
+                    "default": "__PLUGIN_VERSION__",
+                    "title": "Version Symbol",
+                    "type": "string"
+                },
+                "banners": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "title": "Banners",
+                    "type": "object"
+                },
+                "extra_assets": {
+                    "items": {
+                        "$ref": "#/$defs/Asset"
+                    },
+                    "title": "Extra Assets",
+                    "type": "array"
+                },
+                "required_assets": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Required Assets",
+                    "type": "array"
+                },
+                "reload_assets": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Reload Assets",
+                    "type": "array"
+                }
+            },
+            "title": "Frontend",
+            "type": "object"
+        },
+        "Host": {
+            "additionalProperties": false,
+            "properties": {
+                "abi": {
+                    "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$",
+                    "title": "Abi",
+                    "type": "string"
+                },
+                "framework": {
+                    "const": "net10.0",
+                    "title": "Framework",
+                    "type": "string"
+                },
+                "platform": {
+                    "const": "linux/amd64",
+                    "title": "Platform",
+                    "type": "string"
+                },
+                "image": {
+                    "pattern": "^jellyfin/jellyfin@sha256:[0-9a-f]{64}$",
+                    "title": "Image",
+                    "type": "string"
+                }
+            },
+            "required": ["abi", "framework", "platform", "image"],
+            "title": "Host",
+            "type": "object"
+        },
+        "License": {
+            "additionalProperties": false,
+            "properties": {
+                "license": {
+                    "default": "Apache-2.0",
+                    "title": "License",
+                    "type": "string"
+                },
+                "notices": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Notices",
+                    "type": "array"
+                },
+                "package": {
+                    "default": "project-source",
+                    "title": "Package",
+                    "type": "string"
+                },
+                "version": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Version"
+                }
+            },
+            "required": ["notices"],
+            "title": "License",
+            "type": "object"
+        },
+        "LicensedPath": {
+            "additionalProperties": false,
+            "properties": {
+                "license": {
+                    "default": "Apache-2.0",
+                    "title": "License",
+                    "type": "string"
+                },
+                "notices": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Notices",
+                    "type": "array"
+                },
+                "package": {
+                    "default": "project-source",
+                    "title": "Package",
+                    "type": "string"
+                },
+                "version": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Version"
+                },
+                "prefix": {
+                    "minLength": 1,
+                    "title": "Prefix",
+                    "type": "string"
+                }
+            },
+            "required": ["notices", "prefix"],
+            "title": "LicensedPath",
+            "type": "object"
+        },
+        "Notice": {
+            "additionalProperties": false,
+            "properties": {
+                "source": {
+                    "minLength": 1,
+                    "title": "Source",
+                    "type": "string"
+                },
+                "name": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Name"
+                }
+            },
+            "required": ["source"],
+            "title": "Notice",
+            "type": "object"
+        },
+        "Operation": {
+            "additionalProperties": false,
+            "properties": {
+                "commands": {
+                    "anyOf": [
+                        {
+                            "items": {
+                                "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                },
+                                "minItems": 1,
+                                "type": "array"
+                            },
+                            "minItems": 1,
+                            "type": "array"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Commands"
+                },
+                "after": {
+                    "anyOf": [
+                        {
+                            "items": {
+                                "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                },
+                                "minItems": 1,
+                                "type": "array"
+                            },
+                            "minItems": 1,
+                            "type": "array"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "After"
+                },
+                "cwd": {
+                    "default": ".",
+                    "title": "Cwd",
+                    "type": "string"
+                }
+            },
+            "title": "Operation",
+            "type": "object"
+        },
+        "Plugin": {
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "title": "Id",
+                    "type": "string"
+                },
+                "name": {
+                    "minLength": 1,
+                    "title": "Name",
+                    "type": "string"
+                },
+                "guid": {
+                    "minLength": 1,
+                    "title": "Guid",
+                    "type": "string"
+                },
+                "assembly": {
+                    "minLength": 1,
+                    "title": "Assembly",
+                    "type": "string"
+                },
+                "repository": {
+                    "pattern": "^[\\w.-]+/[\\w.-]+$",
+                    "title": "Repository",
+                    "type": "string"
+                },
+                "owner": {
+                    "minLength": 1,
+                    "title": "Owner",
+                    "type": "string"
+                },
+                "description": {
+                    "minLength": 1,
+                    "title": "Description",
+                    "type": "string"
+                },
+                "overview": {
+                    "minLength": 1,
+                    "title": "Overview",
+                    "type": "string"
+                },
+                "category": {
+                    "minLength": 1,
+                    "title": "Category",
+                    "type": "string"
+                },
+                "version": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Version"
+                }
+            },
+            "required": ["id", "name", "guid", "assembly", "repository", "owner", "description", "overview", "category"],
+            "title": "Plugin",
+            "type": "object"
+        },
+        "Rule": {
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "default": "configured",
+                    "title": "Name",
+                    "type": "string"
+                },
+                "patterns": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Patterns",
+                    "type": "array"
+                },
+                "groups": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Groups",
+                    "type": "array"
+                }
+            },
+            "required": ["patterns", "groups"],
+            "title": "Rule",
+            "type": "object"
+        },
+        "Sandbox": {
+            "additionalProperties": false,
+            "properties": {
+                "asset_prefix": {
+                    "default": "/__no_plugin_assets__/",
+                    "title": "Asset Prefix",
+                    "type": "string"
+                },
+                "settings_page": {
+                    "default": "",
+                    "title": "Settings Page",
+                    "type": "string"
+                }
+            },
+            "title": "Sandbox",
+            "type": "object"
+        },
+        "Source": {
+            "additionalProperties": false,
+            "properties": {
+                "roots": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Roots",
+                    "type": "array"
+                },
+                "files": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Files",
+                    "type": "array"
+                }
+            },
+            "title": "Source",
+            "type": "object"
+        },
+        "Validation": {
+            "additionalProperties": false,
+            "properties": {
+                "groups": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "title": "Groups",
+                    "type": "array"
+                },
+                "rules": {
+                    "items": {
+                        "$ref": "#/$defs/Rule"
+                    },
+                    "title": "Rules",
+                    "type": "array"
+                },
+                "check_targets": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Check Targets",
+                    "type": "array"
+                },
+                "unit_groups": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Unit Groups",
+                    "type": "array"
+                },
+                "acceptance_groups": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Acceptance Groups",
+                    "type": "array"
+                },
+                "job_names": {
+                    "additionalProperties": {
+                        "items": {
+                            "minLength": 1,
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "title": "Job Names",
+                    "type": "object"
+                },
+                "aggregate_jobs": {
+                    "additionalProperties": {
+                        "items": {
+                            "minLength": 1,
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "title": "Aggregate Jobs",
+                    "type": "object"
+                },
+                "artifact_jobs": {
+                    "items": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "title": "Artifact Jobs",
+                    "type": "array"
+                },
+                "browser_inputs": {
+                    "additionalProperties": {
+                        "$ref": "#/$defs/BrowserInputs"
+                    },
+                    "title": "Browser Inputs",
+                    "type": "object"
+                }
+            },
+            "required": ["groups"],
+            "title": "Validation",
+            "type": "object"
+        }
+    },
+    "additionalProperties": false,
+    "properties": {
+        "schema": {
+            "const": 1,
+            "title": "Schema",
+            "type": "integer"
+        },
+        "plugin": {
+            "$ref": "#/$defs/Plugin"
+        },
+        "host": {
+            "$ref": "#/$defs/Host"
+        },
+        "backend": {
+            "$ref": "#/$defs/Backend"
+        },
+        "validation": {
+            "$ref": "#/$defs/Validation"
+        },
+        "images": {
+            "additionalProperties": {
+                "type": "string"
+            },
+            "title": "Images",
+            "type": "object"
+        },
+        "architecture": {
+            "$ref": "#/$defs/Architecture"
+        },
+        "frontend": {
+            "$ref": "#/$defs/Frontend"
+        },
+        "browser": {
+            "$ref": "#/$defs/Browser"
+        },
+        "sandbox": {
+            "$ref": "#/$defs/Sandbox"
+        },
+        "source": {
+            "$ref": "#/$defs/Source"
+        },
+        "distribution": {
+            "$ref": "#/$defs/Distribution"
+        },
+        "operations": {
+            "additionalProperties": {
+                "$ref": "#/$defs/Operation"
+            },
+            "title": "Operations",
+            "type": "object"
+        }
+    },
+    "required": ["schema", "plugin", "host", "backend", "validation"],
+    "title": "Configuration",
+    "type": "object"
+}

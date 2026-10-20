@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 import { rebuildQueue, classifyChange, proxyServer, session } from "../jellyfin_plugin_toolkit/dev/session.mjs";
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function listen(server) {
@@ -228,11 +229,17 @@ test("proxy preserves authentication/status, supplies live assets, injects reloa
             res.end("unauthorized");
             return;
         }
-        res.writeHead(200, { "Content-Type": req.url.startsWith("/web/") ? "text/html" : "application/javascript", ETag: "old" });
-        res.end("<head></head><body>embedded</body>");
+        const body = gzipSync("<head></head><body>embedded</body>");
+        res.writeHead(200, {
+            "Content-Type": req.url.startsWith("/web/") ? "text/html" : "application/javascript",
+            "Content-Encoding": "gzip",
+            "Content-Length": body.length,
+            ETag: "old",
+        });
+        res.end(body);
     });
     upstream.on("upgrade", (req, socket) => {
-        socket.write("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: fixture\r\n\r\n");
+        socket.write("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n");
         socket.pipe(socket);
     });
     const port = await listen(upstream);
@@ -263,6 +270,13 @@ test("proxy preserves authentication/status, supplies live assets, injects reloa
     const script = await fetch(base + "/Example/assets/example.js?v=old");
     assert.equal(await script.text(), "live script");
     assert.equal(script.headers.get("cache-control"), "no-store");
+    assert.equal(script.headers.get("content-encoding"), null);
+    const head = await fetch(base + "/Example/assets/example.js", { method: "HEAD" });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get("content-length"), String(Buffer.byteLength("live script")));
+    assert.equal(head.headers.get("etag"), null);
+    assert.equal(head.headers.get("cache-control"), "no-store");
+    assert.equal(await head.text(), "");
     const index = await fetch(base + "/web/index.html");
     assert.match(await index.text(), /__jellyfin_plugin_dev\/client.js/);
     const other = await fetch(base + "/web/other.html");
@@ -275,7 +289,7 @@ test("proxy preserves authentication/status, supplies live assets, injects reloa
     await reader.cancel();
     const socket = net.connect(proxyPort, "127.0.0.1");
     await once(socket, "connect");
-    socket.write("GET /socket HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: fixture\r\n\r\n");
+    socket.write("GET /socket HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n");
     assert.match((await once(socket, "data"))[0].toString(), /101 Switching Protocols/);
     socket.write("hello");
     assert.equal((await once(socket, "data"))[0].toString(), "hello");

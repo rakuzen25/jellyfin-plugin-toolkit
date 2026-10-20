@@ -21,8 +21,8 @@ def digest(root, paths, normalize_version=False):
             own = {
                 name.casefold()
                 for name in [
-                    context.identity["assembly"],
-                    *context.config["backend"].get("project_assemblies", []),
+                    context.identity.assembly,
+                    *context.config.backend.project_assemblies,
                 ]
             }
             lock = json.loads(data)

@@ -102,7 +102,7 @@ def artifact_hashes(
         f"{prefix}-source-{release.version}.zip",
         "manifest.json",
     }
-    if ctx.config["distribution"].get("web", False):
+    if ctx.config.distribution.web:
         expected.add(f"{prefix}-web-{release.version}.zip")
     hashes = {}
     for line in (directory / "SHA256SUMS").read_text().splitlines():

@@ -56,8 +56,8 @@ def toolkit_graph(root):
 
 def check_projects(root):
     ctx = Context.load(root)
-    declared = ctx.config.get("architecture", {})
-    edges = declared.get("edges", {})
+    declared = ctx.config.architecture
+    edges = declared.edges
     graph = {}
     for name, dependencies in edges.items():
         path = ctx.path(name)
@@ -73,7 +73,7 @@ def check_projects(root):
             raise ValueError("Unexpected project dependencies: " + name)
         graph[name] = actual
     check_graph(graph)
-    for directory, forbidden in declared.get("forbidden", {}).items():
+    for directory, forbidden in declared.forbidden.items():
         for source in ctx.path(directory).rglob("*.cs"):
             if {"bin", "obj"}.intersection(source.parts):
                 continue
