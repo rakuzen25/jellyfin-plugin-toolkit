@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { readFile, readdir, writeFile, mkdir, rm, rename, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -114,4 +115,9 @@ export async function createBuilder(root) {
         await buildWeb();
     }
     return { root, bundleEntries, rendererAssets, compileWeb, writeGeneration, buildWeb, main };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    const root = process.env.JELLYFIN_PLUGIN_ROOT || process.cwd();
+    await (await createBuilder(root)).main();
 }

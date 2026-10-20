@@ -6,7 +6,7 @@ from jellyfin_plugin_toolkit.build.backend import publish, reference_directory
 from jellyfin_plugin_toolkit.build.package_artifacts import assemble
 from jellyfin_plugin_toolkit.common.artifacts import verify_web
 from jellyfin_plugin_toolkit.common.process import executable, run
-from jellyfin_plugin_toolkit.context import Context
+from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, Context
 
 
 def package(ctx, release=False, prepared_web=False):
@@ -23,7 +23,8 @@ def package(ctx, release=False, prepared_web=False):
         else:
             run(
                 "node",
-                ctx.config["frontend"].get("build", "frontend/build.mjs"),
+                ctx.config["frontend"].get("build")
+                or str(TOOLKIT_ROOT / "node/build.mjs"),
                 cwd=ctx.root,
             )
     with tempfile.TemporaryDirectory(prefix="jellyfin-plugin-publish-") as temporary:

@@ -23,13 +23,12 @@ def check_pins(root, release=False):
         *(root / ".github/workflows").glob("*.yaml"),
     ]:
         text = workflow.read_text()
-        for match in re.finditer(
-            re.escape(lock["repository"])
-            + r"/\.github/workflows/[\w.-]+@([^\s#]+)(?:[ \t]+#[ \t]*(v[^\s]+))?",
-            text,
-        ):
-            pin = match[1]
-            if match[2] != lock["version"]:
+        from jellyfin_plugin_toolkit.bindings import reference_tag, workflow_references
+
+        for match in workflow_references(text, lock["repository"]):
+            pin = match["revision"]
+            tag = reference_tag(match)
+            if tag is None or tag[0] != lock["version"]:
                 raise ValueError(
                     "Toolkit workflow version comment and archive versions differ: "
                     + str(workflow)
@@ -45,4 +44,14 @@ def check_pins(root, release=False):
             prefix = "github>" + lock["repository"] + "#"
             if preset.startswith(prefix) and preset[len(prefix) :] != lock["version"]:
                 raise ValueError("Toolkit preset and archive versions differ")
+    if metadata and (TOOLKIT_ROOT / "toolkit-bindings.json").is_file():
+        from jellyfin_plugin_toolkit.bindings import check_integrations, plan
+
+        if plan(root):
+            raise ValueError(
+                "Toolkit bindings have drift; run ./plugin toolkit sync to review the repair"
+            )
+        from jellyfin_plugin_toolkit.context import Context
+
+        check_integrations(root, Context.load(root).config)
     return metadata

@@ -35,3 +35,28 @@ From a toolkit source checkout with its pinned Python available:
 Replace `example/example-plugin` with your destination repository. Omit `--admin` for a backend-only plugin. Use `--host-project server/Entry.csproj` to exercise a different backend path. The destination must not exist. The generated GUID is unique and must remain stable after publication.
 
 The generated consumer obtains its locked release on `./plugin bootstrap`. For an unpublished candidate, supply the exact candidate archive through `JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE`; its checksum must still match `toolkit.lock.json`. A source distribution includes that archive at `build-support/toolkit.tar.gz`.
+
+## Adopt a foundation update
+
+Review the toolkit dependency PR, then preview and apply its binding changes against the base branch:
+
+```sh
+./plugin toolkit sync --base-ref main --download
+./plugin toolkit sync --base-ref main --download --apply
+./plugin bootstrap
+./plugin toolkit sync --check
+./plugin check
+./plugin test
+```
+
+The base branch must already use a release with binding synchronization. For the first migration, explicitly adopt the verified release's launcher and native preset imports, preserve consumer overrides, then run `./plugin toolkit sync --check`. Do not merge an adoption that points to a local or unpublished candidate. Publish and verify the release using the release procedure first.
+
+Compatible updates to consumer tools remain ordinary consumer dependency updates. If a fix or default should apply to other plugins using the same capability, prefer implementing it in the toolkit rather than maintaining copies or permanent consumer workarounds.
+
+Editors continue reading consumer-native configuration files, which inherit the shared defaults after bootstrap. To inspect tool paths or opt into VS Code setup:
+
+```sh
+./plugin toolkit paths
+./plugin toolkit editor vscode
+./plugin toolkit editor vscode --apply
+```

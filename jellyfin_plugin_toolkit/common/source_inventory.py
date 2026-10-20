@@ -37,6 +37,8 @@ CONFIGS = {
     "knip.json",
     "eslint.config.mjs",
     ".prettierrc.json",
+    ".prettierrc.mjs",
+    "prettier.config.mjs",
     ".prettierignore",
     "pyproject.toml",
     "requirements-check.txt",
@@ -115,7 +117,8 @@ def frontend_inputs(ctx, maintained):
     roots = [directory, frontend.get("assets", directory + "/assets")]
     explicit = []
     if frontend.get("enabled"):
-        explicit.append(frontend.get("build", directory + "/build.mjs"))
+        if frontend.get("build"):
+            explicit.append(frontend["build"])
         explicit.extend(
             str(Path(directory) / name) for name in frontend.get("entries", {})
         )

@@ -11,6 +11,10 @@ def main(argv=None):
     from jellyfin_plugin_toolkit.context import Context
 
     forwarded = list(sys.argv[1:] if argv is None else argv)
+    if forwarded and forwarded[0] == "toolkit":
+        from jellyfin_plugin_toolkit.maintenance import main as maintenance
+
+        return maintenance(forwarded[1:])
     if forwarded and forwarded[0] in {"ci", "release"}:
         import importlib
 
@@ -44,6 +48,7 @@ def main(argv=None):
     new.add_argument("--name", required=True)
     new.add_argument("--repository", required=True)
     new.add_argument("--admin", action="store_true")
+    new.add_argument("--sync-workflow", action="store_true")
     new.add_argument("--host-project", default="src/Host/Plugin.csproj")
     args, extra = parser.parse_known_args(forwarded)
     if extra and args.task != "test":
@@ -51,7 +56,13 @@ def main(argv=None):
     ctx = Context.load()
     from jellyfin_plugin_toolkit.checks.pins import check_pins
 
-    check_pins(ctx.root)
+    if args.task in {"dev", "bootstrap", "doctor"}:
+        try:
+            check_pins(ctx.root)
+        except ValueError as error:
+            print("Toolkit warning: " + str(error), file=sys.stderr)
+    else:
+        check_pins(ctx.root)
     ctx.generated()
     if args.task == "bootstrap":
         tasks.bootstrap(ctx)
@@ -118,6 +129,7 @@ def main(argv=None):
             args.repository,
             args.admin,
             args.host_project,
+            sync_workflow=args.sync_workflow,
         )
     else:
         targets = (

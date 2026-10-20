@@ -90,7 +90,15 @@ class StarterTests(unittest.TestCase):
                 "pyproject.toml",
             ]:
                 self.assertTrue((root / filename).is_file(), filename)
-            adapter = (root / "frontend/build.mjs").read_text()
-            self.assertIn("export const", adapter)
-            self.assertIn("compileWeb", adapter)
-            self.assertIn("writeGeneration", adapter)
+            self.assertFalse((root / "frontend/build.mjs").exists())
+            self.assertNotIn("build", Context.load(root).config["frontend"])
+            self.assertIn(
+                "configs/eslint.mjs", (root / "eslint.config.mjs").read_text()
+            )
+            self.assertIn("configs/ruff.toml", (root / "pyproject.toml").read_text())
+            self.assertIn(
+                "configs/prettier.mjs", (root / ".prettierrc.mjs").read_text()
+            )
+            self.assertIn(
+                "configs/tsconfig.json", (root / "frontend/tsconfig.json").read_text()
+            )

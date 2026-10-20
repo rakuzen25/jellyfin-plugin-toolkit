@@ -1,14 +1,5 @@
 {
-    "compilerOptions": {
-        "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "bundler",
-        "lib": ["ES2022", "DOM"],
-        "strict": true,
-        "noUncheckedIndexedAccess": true,
-        "noEmit": true,
-        "allowImportingTsExtensions": true
-    },
+    "extends": "./configs/tsconfig.json",
     "include": ["ui/**/*.ts"],
     "exclude": ["ui/**/*.test.ts"]
 }

@@ -11,6 +11,7 @@ parser.add_argument("--id")
 parser.add_argument("--name")
 parser.add_argument("--repository")
 parser.add_argument("--admin", action="store_true")
+parser.add_argument("--sync-workflow", action="store_true")
 parser.add_argument("--host-project", default="src/Host/Plugin.csproj")
 parser.add_argument("--release", action="store_true")
 args = parser.parse_args()
@@ -28,6 +29,7 @@ if args.command == "new":
         args.repository,
         args.admin,
         args.host_project,
+        sync_workflow=args.sync_workflow,
     )
 elif args.command == "pack":
     archive, digest = pack(root, root / "dist", release=args.release)

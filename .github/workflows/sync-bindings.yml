@@ -1,0 +1,94 @@
+name: Synchronize toolkit bindings
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        type: string
+        default: ""
+      pr_number:
+        type: string
+        default: ""
+      bot_login:
+        type: string
+        default: renovate[bot]
+      app_client_id:
+        type: string
+        required: true
+    secrets:
+      PLUGIN_APP_PRIVATE_KEY:
+        required: true
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+concurrency:
+  group: toolkit-sync-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+      base: ${{ steps.plan.outputs.base }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - name: Install the verified base release
+        run: python3 plugin _install
+      - name: Prepare with trusted code and read-only credentials
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          BOT_LOGIN: ${{ inputs.bot_login }}
+        run: |
+          args=()
+          if [ -n "$RUN_ID" ]; then args+=(--run-id "$RUN_ID"); fi
+          if [ -n "$PR_NUMBER" ]; then args+=(--pr "$PR_NUMBER"); fi
+          python3 -m jellyfin_plugin_toolkit.binding_pr prepare --bot "$BOT_LOGIN" --proposal "$RUNNER_TEMP/bindings.json" "${args[@]}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: steps.plan.outputs.ready == 'true'
+        with:
+          name: toolkit-binding-proposal
+          path: ${{ runner.temp }}/bindings.json
+          retention-days: 1
+          if-no-files-found: error
+  commit:
+    needs: prepare
+    if: needs.prepare.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: .python-version
+      - run: python3 plugin _install
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: toolkit-binding-proposal
+          path: ${{ runner.temp }}/binding-proposal
+      - name: Create repository-scoped synchronization token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: read
+          permission-workflows: write
+      - name: Recompute and commit the bounded update
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT_LOGIN: ${{ inputs.bot_login }}
+        run: python3 -m jellyfin_plugin_toolkit.binding_pr commit --bot "$BOT_LOGIN" --proposal "$RUNNER_TEMP/binding-proposal/bindings.json"

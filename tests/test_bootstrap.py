@@ -92,6 +92,22 @@ class BootstrapTests(unittest.TestCase):
                 self.assertEqual(working, (root / ".build/toolkit/current").resolve())
                 self.assertEqual(b"working", (working / "package.py").read_bytes())
 
+    def test_corrupt_embedded_archive_is_not_hidden_by_a_valid_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive, _ = self.archive(root, {"package.py": b"working"})
+            with patch.dict(
+                os.environ, {"JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE": str(archive)}
+            ):
+                target = install(root)
+            (root / "build-support").mkdir()
+            (root / "build-support/toolkit.tar.gz").write_bytes(
+                archive.read_bytes() + b"altered"
+            )
+            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                install(root)
+            self.assertEqual(b"working", (target / "package.py").read_bytes())
+
     def test_tampered_cache_is_repaired_from_verified_archive(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

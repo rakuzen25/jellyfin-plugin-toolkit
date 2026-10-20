@@ -37,5 +37,6 @@
             "labels": ["toolkit-major-review"]
         }
     ],
-    "description": ["Pinned toolkit archive, workflow and preset updates in one manually reviewed pull request."]
+    "description": ["Pinned toolkit archive, workflow and preset updates in one manually reviewed pull request."],
+    "gitIgnoredAuthors": ["jellyfin-plugin-toolkit-sync@users.noreply.github.com"]
 }

@@ -50,6 +50,7 @@ def generate(
     host_project="src/Host/Plugin.csproj",
     *,
     toolkit_archive=None,
+    sync_workflow=False,
 ):
     if not re.fullmatch(r"[a-z][a-z0-9-]*", identifier):
         raise ValueError("Invalid plugin id")
@@ -186,7 +187,6 @@ def generate(
         config["frontend"].update(
             {
                 "directory": "frontend",
-                "build": "frontend/build.mjs",
                 "entries": {},
                 "admin_entry": "admin/config.ts",
                 "admin_template": "frontend/admin/config.html",
@@ -224,7 +224,9 @@ def generate(
         )
         + "\n",
     )
-    shutil.copy2(TOOLKIT_ROOT / "bootstrap/plugin", destination / "plugin")
+    from jellyfin_plugin_toolkit.bindings import DESCRIPTOR
+
+    shutil.copy2(TOOLKIT_ROOT / DESCRIPTOR["launcher"], destination / "plugin")
     (destination / "plugin").chmod(0o755)
     for pin, contents in defaults["pins"].items():
         put(pin, contents)
@@ -238,7 +240,7 @@ def generate(
     )
     put(
         ".gitignore",
-        ".build/\ndist/\n.venv/\nnode_modules/\n**/bin/\n**/obj/\n**/__pycache__/\n**/results-run.*/\n**/TestResults/\n.ruff_cache/\n.mypy_cache/\n",
+        ".build/\ndist/\n.venv/\nnode_modules/\n/build-support/toolkit.tar.gz\n**/bin/\n**/obj/\n**/__pycache__/\n**/results-run.*/\n**/TestResults/\n.ruff_cache/\n.mypy_cache/\n",
     )
     put(
         "Directory.Build.props",
@@ -332,11 +334,14 @@ def generate(
         for key in ["bootstrap", "dev", "build", "check", "format", "test"]
     }
     put("package.json", json.dumps(package, indent=4) + "\n")
-    for filename in ["eslint.config.mjs", "requirements-check.txt"]:
-        put(filename, (TOOLKIT_ROOT / filename).read_text())
+    put(
+        "eslint.config.mjs",
+        'import js from "@eslint/js";\nimport { defineConfig } from "eslint/config";\nimport prettier from "eslint-config-prettier";\nimport globals from "globals";\nimport tseslint from "typescript-eslint";\nimport { createConfig } from "./.build/toolkit/current/configs/eslint.mjs";\nexport default createConfig({ js, defineConfig, prettier, globals, tseslint });\n',
+    )
+    put("requirements-check.txt", (TOOLKIT_ROOT / "requirements-check.txt").read_text())
     put(
         "pyproject.toml",
-        '[tool.ruff]\ntarget-version = "py315"\ninclude = ["scripts/**/*.py", "tests/**/*.py"]\n',
+        '[tool.ruff]\nextend = ".build/toolkit/current/configs/ruff.toml"\ntarget-version = "py315"\ninclude = ["scripts/**/*.py", "tests/**/*.py"]\n',
     )
 
     lock_template = (
@@ -373,25 +378,12 @@ def generate(
             "frontend/tsconfig.json",
             json.dumps(
                 {
-                    "compilerOptions": {
-                        "target": "ES2022",
-                        "module": "ESNext",
-                        "moduleResolution": "bundler",
-                        "lib": ["ES2022", "DOM"],
-                        "strict": True,
-                        "noUncheckedIndexedAccess": True,
-                        "noEmit": True,
-                        "allowImportingTsExtensions": True,
-                    },
+                    "extends": "../.build/toolkit/current/configs/tsconfig.json",
                     "include": ["**/*.ts"],
                 },
                 indent=4,
             )
             + "\n",
-        )
-        put(
-            "frontend/build.mjs",
-            'import { fileURLToPath } from "node:url";\nimport path from "node:path";\nimport { createBuilder } from "../.build/toolkit/current/node/build.mjs";\nconst builder = await createBuilder(fileURLToPath(new URL("../", import.meta.url)));\nexport const { root, bundleEntries, rendererAssets, compileWeb, writeGeneration, buildWeb } = builder;\nif (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await builder.main();\n',
         )
         put(
             "frontend/admin/config.html",
@@ -451,6 +443,13 @@ def generate(
         lock["repository"], revision, version=lock["version"]
     ).items():
         put(".github/workflows/" + filename, contents)
+    if sync_workflow:
+        from jellyfin_plugin_toolkit.workflows import render_sync
+
+        put(
+            ".github/workflows/toolkit-sync.yml",
+            render_sync(lock["repository"], revision, version=lock["version"]),
+        )
     put(
         "release-please-config.json",
         json.dumps(
@@ -465,7 +464,6 @@ def generate(
                 "packages": {
                     ".": {
                         "package-name": identifier,
-                        "extra-files": [{"type": "generic", "path": "version.txt"}],
                     }
                 },
             },
@@ -474,7 +472,10 @@ def generate(
         + "\n",
     )
     put(".release-please-manifest.json", json.dumps({".": "0.1.0"}, indent=4) + "\n")
-    for filename in [".prettierrc.json", ".prettierignore"]:
-        shutil.copy2(TOOLKIT_ROOT / filename, destination / filename)
+    put(
+        ".prettierrc.mjs",
+        'export { default } from "./.build/toolkit/current/configs/prettier.mjs";\n',
+    )
+    shutil.copy2(TOOLKIT_ROOT / ".prettierignore", destination / ".prettierignore")
     print("Generated plugin consumer at", destination)
     return config

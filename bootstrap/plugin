@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Verified toolkit bootstrap. Shared implementation lives in the locked archive."""
 
+import argparse
 import fcntl
 import hashlib
+import importlib
+import io
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -14,18 +18,30 @@ import urllib.request
 from pathlib import Path, PurePosixPath
 
 
-def install(root, download=False):
+def read_member(package: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
+    stream = package.extractfile(member)
+    if stream is None:
+        raise ValueError(f"Toolkit archive member is not a file: {member.name}")
+    with stream:
+        return stream.read()
+
+
+def install(root, download=False, selected_lock=None):
+    sys.dont_write_bytecode = True
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     cache = root / ".build/toolkit"
     if (root / ".build").is_symlink() or cache.is_symlink():
         raise ValueError("Toolkit cache cannot redirect outside the checkout")
     cache.mkdir(parents=True, exist_ok=True)
-    with (cache / ".bootstrap.lock").open("a") as lock:
+    lock_path = cache / ".bootstrap.lock"
+    if lock_path.is_symlink():
+        raise ValueError("Toolkit bootstrap lock cannot be a symlink")
+    with lock_path.open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return _install_locked(root, download)
+        return _install_locked(root, download, selected_lock)
 
 
-def _install_locked(root, download=False):
-    lock = json.loads((root / "toolkit.lock.json").read_text())
+def validate_lock(lock):
     if lock.get("schema") != 1 or not re.fullmatch(
         r"[\w.-]+/[\w.-]+", lock.get("repository", "")
     ):
@@ -35,35 +51,15 @@ def _install_locked(root, download=False):
         r"[a-f0-9]{64}", digest
     ):
         raise ValueError("Invalid toolkit version or SHA-256")
-    cache = root / ".build/toolkit"
-    cache.mkdir(parents=True, exist_ok=True)
-    archive = cache / (digest + ".tar.gz")
-    supplied = os.environ.get("JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE")
-    embedded = root / "build-support/toolkit.tar.gz"
-    source = Path(supplied) if supplied else embedded if embedded.is_file() else archive
-    if not source.is_file():
-        if not download:
-            raise ValueError("Locked toolkit is missing; run ./plugin bootstrap")
-        url = f"https://github.com/{lock['repository']}/releases/download/{version}/jellyfin-plugin-toolkit-{version[1:]}.tar.gz"
-        with urllib.request.urlopen(url, timeout=60) as response:
-            payload = response.read(100_000_001)
-        if len(payload) > 100_000_000:
-            raise ValueError("Toolkit archive exceeds size limit")
-    else:
-        payload = source.read_bytes()
-    if hashlib.sha256(payload).hexdigest() != digest:
+
+
+def archive_files(payload, lock):
+    validate_lock(lock)
+    if hashlib.sha256(payload).hexdigest() != lock["sha256"]:
         raise ValueError(
             "Toolkit archive SHA-256 mismatch; working installation preserved"
         )
-    if (
-        not archive.is_file()
-        or hashlib.sha256(archive.read_bytes()).hexdigest() != digest
-    ):
-        temporary = archive.with_suffix(".download")
-        temporary.write_bytes(payload)
-        temporary.replace(archive)
-    target = cache / digest
-    with tarfile.open(archive, "r:gz") as package:
+    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as package:
         members = package.getmembers()
         names = set()
         total = 0
@@ -109,59 +105,104 @@ def _install_locked(root, download=False):
             or entries["toolkit-files.json"].size > 2_000_000
         ):
             raise ValueError("Toolkit metadata exceeds size limit")
-        metadata = json.load(package.extractfile(entries["toolkit-release.json"]))
-        if metadata.get("version") != version[1:] or metadata.get("schema") != 1:
+        metadata = json.loads(read_member(package, entries["toolkit-release.json"]))
+        if (
+            metadata.get("version") != lock["version"][1:]
+            or metadata.get("schema") != 1
+        ):
             raise ValueError("Toolkit archive version differs from lock")
-        inventory = json.load(package.extractfile(entries["toolkit-files.json"]))
+        inventory = json.loads(read_member(package, entries["toolkit-files.json"]))
         expected = {
-            name: hashlib.sha256(package.extractfile(member).read()).hexdigest()
+            name: hashlib.sha256(read_member(package, member)).hexdigest()
             for name, member in entries.items()
             if name != "toolkit-files.json"
         }
         if inventory != {"schema": 1, "files": expected}:
             raise ValueError("Toolkit source inventory is incomplete or altered")
-        expected_files = {m.name for m in members if m.isfile()}
-        valid = (
-            target.is_dir()
-            and not target.is_symlink()
-            and not any(p.is_symlink() for p in target.rglob("*"))
-            and {
-                p.relative_to(target).as_posix()
-                for p in target.rglob("*")
-                if p.is_file()
-            }
-            == expected_files
-            and all(
-                (target / m.name).is_file()
-                and not (target / m.name).is_symlink()
-                and hashlib.sha256((target / m.name).read_bytes()).digest()
-                == hashlib.sha256(package.extractfile(m).read()).digest()
-                for m in members
-                if m.isfile()
-            )
-        )
-        if not valid:
-            staged = Path(tempfile.mkdtemp(prefix="extract-", dir=cache))
-            try:
-                for member in members:
-                    destination = staged / member.name
-                    if member.isdir():
-                        destination.mkdir(parents=True, exist_ok=True)
-                    else:
-                        destination.parent.mkdir(parents=True, exist_ok=True)
-                        destination.write_bytes(package.extractfile(member).read())
-                        destination.chmod(0o755 if member.mode & 0o111 else 0o644)
-                metadata = json.loads((staged / "toolkit-release.json").read_text())
-                if metadata["version"] != version[1:]:
-                    raise ValueError("Toolkit archive version differs from lock")
-                if target.is_symlink():
-                    raise ValueError("Toolkit cache directory cannot be a symlink")
-                if target.exists():
-                    shutil.rmtree(target)
-                staged.replace(target)
-            finally:
-                if staged.exists():
-                    shutil.rmtree(staged)
+        return {name: read_member(package, member) for name, member in entries.items()}
+
+
+def load_archive(root, lock, download=False, supplied=None):
+    validate_lock(lock)
+    cache = root / ".build/toolkit"
+    if (root / ".build").is_symlink() or cache.is_symlink():
+        raise ValueError("Toolkit cache cannot redirect outside the checkout")
+    archive = cache / (lock["sha256"] + ".tar.gz")
+    embedded = root / "build-support/toolkit.tar.gz"
+    if supplied:
+        payload = Path(supplied).read_bytes()
+    elif archive.is_file():
+        payload = archive.read_bytes()
+    elif (
+        embedded.is_file()
+        and hashlib.sha256(embedded.read_bytes()).hexdigest() == lock["sha256"]
+    ):
+        payload = embedded.read_bytes()
+    else:
+        if not download:
+            raise ValueError("Locked toolkit is missing; run ./plugin bootstrap")
+        version = lock["version"]
+        url = f"https://github.com/{lock['repository']}/releases/download/{version}/jellyfin-plugin-toolkit-{version[1:]}.tar.gz"
+        with urllib.request.urlopen(url, timeout=60) as response:
+            payload = response.read(100_000_001)
+    if len(payload) > 100_000_000:
+        raise ValueError("Toolkit archive exceeds size limit")
+    files = archive_files(payload, lock)
+    return payload, files
+
+
+def _install_locked(root, download=False, selected_lock=None):
+    lock = selected_lock or json.loads((root / "toolkit.lock.json").read_text())
+    supplied = os.environ.get("JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE")
+    embedded = root / "build-support/toolkit.tar.gz"
+    # A bundled source archive is authoritative for normal execution, even when
+    # a valid cache exists. Base-release maintenance may use a different lock.
+    root_lock = json.loads((root / "toolkit.lock.json").read_text())
+    if not supplied and embedded.is_file() and lock == root_lock:
+        supplied = str(embedded)
+    payload, files = load_archive(root, lock, download, supplied)
+    cache = root / ".build/toolkit"
+    digest = lock["sha256"]
+    archive = cache / (digest + ".tar.gz")
+    if archive.is_symlink() or archive.with_suffix(".download").is_symlink():
+        raise ValueError("Toolkit archive cache cannot contain symlinks")
+    if not archive.is_file() or archive.read_bytes() != payload:
+        temporary = archive.with_suffix(".download")
+        temporary.write_bytes(payload)
+        temporary.replace(archive)
+    target = cache / digest
+    valid = (
+        target.is_dir()
+        and not target.is_symlink()
+        and not any(p.is_symlink() for p in target.rglob("*"))
+        and {p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file()}
+        == set(files)
+        and all((target / name).read_bytes() == data for name, data in files.items())
+    )
+    if not valid:
+        staged = Path(tempfile.mkdtemp(prefix="extract-", dir=cache))
+        try:
+            for name, data in files.items():
+                destination = staged / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
+                destination.chmod(
+                    0o755 if name in {"bootstrap/plugin", "toolkit"} else 0o644
+                )
+            if target.is_symlink():
+                raise ValueError("Toolkit cache directory cannot be a symlink")
+            if target.exists():
+                shutil.rmtree(target)
+            staged.replace(target)
+        finally:
+            if staged.exists():
+                shutil.rmtree(staged)
+    selection = cache / (digest + ".lock.json")
+    pending = selection.with_suffix(".next")
+    if selection.is_symlink() or pending.is_symlink():
+        raise ValueError("Toolkit selection record cannot be a symlink")
+    pending.write_text(json.dumps(lock) + "\n")
+    pending.replace(selection)
     current = cache / "current"
     if current.exists() and not current.is_symlink():
         raise ValueError("Toolkit current pointer must be a symlink")
@@ -177,9 +218,53 @@ def _install_locked(root, download=False):
 
 if __name__ == "__main__":
     try:
+        root = Path(__file__).resolve().parent
+        selected_lock = None
+        maintenance = sys.argv[1:3] == ["toolkit", "sync"]
+        options = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+        options.add_argument("--base-ref")
+        base_options, _ = options.parse_known_args(sys.argv[3:] if maintenance else [])
+        if maintenance and base_options.base_ref:
+            revision = subprocess.check_output(
+                [
+                    "git",
+                    "-C",
+                    str(root),
+                    "rev-parse",
+                    "--verify",
+                    "--end-of-options",
+                    base_options.base_ref + "^{commit}",
+                ],
+                text=True,
+            ).strip()
+            selected_lock = json.loads(
+                subprocess.check_output(
+                    ["git", "-C", str(root), "show", revision + ":toolkit.lock.json"],
+                    text=True,
+                )
+            )
+        elif maintenance:
+            current = root / ".build/toolkit/current"
+            if current.is_symlink():
+                digest = os.readlink(current)
+                if not re.fullmatch(r"[a-f0-9]{64}", digest):
+                    raise ValueError("Invalid active toolkit pointer")
+                record = current.parent / (digest + ".lock.json")
+                if not record.is_file() or record.is_symlink():
+                    raise ValueError(
+                        "Active release predates safe maintenance; use --base-ref or perform an explicit initial migration"
+                    )
+                selected_lock = json.loads(record.read_text())
+                validate_lock(selected_lock)
+                if selected_lock["sha256"] != digest:
+                    raise ValueError(
+                        "Active toolkit selection record differs from its pointer"
+                    )
         install(
-            Path(__file__).resolve().parent,
-            len(sys.argv) > 1 and sys.argv[1] in {"bootstrap", "_install"},
+            root,
+            (maintenance and "--download" in sys.argv)
+            or (len(sys.argv) > 1 and sys.argv[1] in {"bootstrap", "_install"}),
+            selected_lock,
         )
         if len(sys.argv) > 1 and sys.argv[1] == "_install":
             if environment := os.environ.get("GITHUB_ENV"):
@@ -189,11 +274,23 @@ if __name__ == "__main__":
                         + os.environ["JELLYFIN_PLUGIN_TOOLKIT_ROOT"]
                         + "\n"
                     )
-                    for key in ("JELLYFIN_PLUGIN_ROOT", "JELLYFIN_PLUGIN_TOOLKIT_ROOT"):
-                        stream.write(key + "=" + os.environ[key] + "\n")
+                    stream.writelines(
+                        key + "=" + os.environ[key] + "\n"
+                        for key in (
+                            "JELLYFIN_PLUGIN_ROOT",
+                            "JELLYFIN_PLUGIN_TOOLKIT_ROOT",
+                            "PYTHONDONTWRITEBYTECODE",
+                        )
+                    )
         else:
-            from jellyfin_plugin_toolkit.cli import main
-
-            main()
-    except (ValueError, OSError) as error:
+            # The verified installation is added to sys.path by install().
+            result = importlib.import_module("jellyfin_plugin_toolkit.cli").main()
+            if isinstance(result, int):
+                raise SystemExit(result)
+    except (
+        ValueError,
+        OSError,
+        tarfile.TarError,
+        subprocess.CalledProcessError,
+    ) as error:
         raise SystemExit(str(error)) from error

@@ -132,7 +132,7 @@ def frontend_build(ctx):
     if ctx.config.get("frontend", {}).get("enabled", False):
         run(
             "node",
-            ctx.config["frontend"].get("build", "frontend/build.mjs"),
+            ctx.config["frontend"].get("build") or str(TOOLKIT_ROOT / "node/build.mjs"),
             cwd=ctx.root,
         )
 

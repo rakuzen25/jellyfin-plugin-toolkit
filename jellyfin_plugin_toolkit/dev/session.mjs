@@ -245,7 +245,11 @@ export async function session(argv = process.argv.slice(2)) {
     const config = JSON.parse(await readFile(path.join(root, ".build/generated/plugin.json"), "utf8"));
     let adapterPromise;
     async function frontendAdapter() {
-        adapterPromise ||= import(pathToFileURL(path.join(root, config.frontend.build || "frontend/build.mjs")).href).then((adapter) => {
+        adapterPromise ||= (
+            config.frontend.build
+                ? import(pathToFileURL(path.join(root, config.frontend.build)).href)
+                : import("../../node/build.mjs").then(({ createBuilder }) => createBuilder(root))
+        ).then((adapter) => {
             if (typeof adapter.compileWeb !== "function" || typeof adapter.writeGeneration !== "function")
                 throw new Error("The configured frontend build adapter must export compileWeb and writeGeneration");
             return adapter;

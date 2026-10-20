@@ -89,3 +89,20 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(".github/workflows/validate.yml", run.call_args.args[-1])
             self.assertIn(str(root) + ":/work:ro", run.call_args.args)
             self.assertNotIn("install", run.call_args.args)
+
+
+class OptionalSyncWorkflowTests(unittest.TestCase):
+    def test_consumer_caller_is_opt_in_and_handles_failed_validation(self):
+        from jellyfin_plugin_toolkit.workflows import render_sync
+
+        caller = render_sync(
+            "example/toolkit",
+            "a" * 40,
+            version="v1.0.0",
+            validation_workflow="Consumer checks",
+        )
+        self.assertIn('workflows: ["Consumer checks"]', caller)
+        self.assertIn("types: [completed]", caller)
+        self.assertNotIn("conclusion", caller)
+        self.assertIn("sync-bindings.yml@" + "a" * 40, caller)
+        self.assertNotIn("contents: write", caller)

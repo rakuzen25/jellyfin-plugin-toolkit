@@ -1,0 +1,12 @@
+{
+    "schema": 1,
+    "launcher": "bootstrap/plugin",
+    "integrations": {
+        "eslint": "configs/eslint.mjs",
+        "ruff": "configs/ruff.toml",
+        "prettier": "configs/prettier.mjs",
+        "typescript": "configs/tsconfig.json",
+        "msbuild": "msbuild/Plugin.props",
+        "frontend": "node/build.mjs"
+    }
+}

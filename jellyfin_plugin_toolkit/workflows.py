@@ -124,3 +124,43 @@ jobs:
         .replace("TOOLKIT_TAG", version)
         for name, text in contents.items()
     }
+
+
+def render_sync(
+    repository, revision, *, version, validation_workflow="Validate release candidate"
+):
+    """Optional consumer-owned caller; synchronization only maintains its toolkit pin."""
+    # Reuse the same validation as the standard workflow bindings.
+    render(repository, revision, version=version)
+    import json
+
+    return (
+        """name: Synchronize toolkit update
+on:
+  workflow_run:
+    workflows: [VALIDATION]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Renovate toolkit PR to synchronize
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+jobs:
+  synchronize:
+    uses: REPOSITORY/.github/workflows/sync-bindings.yml@REVISION # TOOLKIT_TAG
+    with:
+      run_id: ${{ github.event_name == 'workflow_run' && format('{0}', github.event.workflow_run.id) || '' }}
+      pr_number: ${{ inputs.pr_number || '' }}
+      app_client_id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
+    secrets:
+      PLUGIN_APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+""".replace("VALIDATION", json.dumps(validation_workflow))
+        .replace("REPOSITORY", repository)
+        .replace("REVISION", revision)
+        .replace("TOOLKIT_TAG", version)
+    )
