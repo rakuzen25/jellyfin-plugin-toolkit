@@ -1,4 +1,4 @@
-"""Synthetic consumer context for generic tooling tests; no pilot repository imports."""
+"""Independent synthetic consumer context for generic tooling tests."""
 
 import copy
 import json

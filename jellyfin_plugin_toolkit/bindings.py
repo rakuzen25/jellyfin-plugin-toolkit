@@ -40,13 +40,9 @@ def descriptor(files):
     try:
         actual = json.loads(data)
     except (ValueError, UnicodeError) as error:
-        raise ValueError(
-            "Release needs an explicit initial binding migration"
-        ) from error
+        raise ValueError("Missing or invalid toolkit binding descriptor") from error
     if actual != DESCRIPTOR or type(actual.get("schema")) is not int:
-        raise ValueError(
-            "Unsupported binding contract; use a documented intermediate release"
-        )
+        raise ValueError("Unsupported toolkit binding contract")
     if any(name not in files for name in [actual["launcher"], *INTEGRATIONS.values()]):
         raise ValueError(
             "Toolkit binding descriptor references missing integration files"
@@ -216,7 +212,7 @@ def change_for(root, name, after, mode=None):
     return Change(name, before, after, before_mode, mode)
 
 
-def plan(root, base_ref=None, *, repair=False, download=False, git_root=None):
+def plan(root, base_ref=None, *, download=False, git_root=None):
     if transaction_path(root).exists():
         raise ValueError(
             "Interrupted synchronization; run ./plugin toolkit sync --recover"
@@ -239,7 +235,7 @@ def plan(root, base_ref=None, *, repair=False, download=False, git_root=None):
             )
             old = json.loads(record.read_text())
     if old["repository"] != new["repository"]:
-        raise ValueError("Changing toolkit repositories requires an explicit migration")
+        raise ValueError("Base and target toolkit repositories must match")
     _, previous = api["load_archive"](root, old, download)
     descriptor(previous)
     old = {**old, "revision": json.loads(previous["toolkit-release.json"])["revision"]}
@@ -251,7 +247,7 @@ def plan(root, base_ref=None, *, repair=False, download=False, git_root=None):
         base_launcher = git(git_root, "show", revision + ":plugin")
         if base_launcher != previous["bootstrap/plugin"]:
             raise ValueError(
-                "Base launcher has drift; perform an explicit initial migration or repair first"
+                "Base launcher has drift; repair the base before upgrading"
             )
     if base_ref or upgrading:
         if current not in {previous["bootstrap/plugin"], canonical}:
@@ -467,7 +463,7 @@ def main(argv=None):
             )
         if args.repair and args.base_ref:
             raise ValueError("Repair the current release separately before upgrading")
-        changes = plan(root, args.base_ref, repair=args.repair, download=args.download)
+        changes = plan(root, args.base_ref, download=args.download)
         preview(changes)
         if args.check and changes:
             return 1

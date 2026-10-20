@@ -86,11 +86,17 @@ def archive_files(payload, lock):
         required = {
             "toolkit-release.json",
             "toolkit-files.json",
+            "toolkit-bindings.json",
+            "bootstrap/plugin",
             "jellyfin_plugin_toolkit/__init__.py",
             "jellyfin_plugin_toolkit/cli.py",
             "jellyfin_plugin_toolkit/context.py",
             "node/build.mjs",
             "msbuild/Plugin.props",
+            "configs/eslint.mjs",
+            "configs/ruff.toml",
+            "configs/prettier.mjs",
+            "configs/tsconfig.json",
             "ui/lifecycle.ts",
             "LICENSE",
             "NOTICE",
@@ -252,7 +258,7 @@ if __name__ == "__main__":
                 record = current.parent / (digest + ".lock.json")
                 if not record.is_file() or record.is_symlink():
                     raise ValueError(
-                        "Active release predates safe maintenance; use --base-ref or perform an explicit initial migration"
+                        "Active toolkit selection record is missing or unsafe; use --base-ref to select a verified base"
                     )
                 selected_lock = json.loads(record.read_text())
                 validate_lock(selected_lock)

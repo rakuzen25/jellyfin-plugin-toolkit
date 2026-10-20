@@ -350,8 +350,7 @@ def generate(
         / ("admin" if admin else "backend")
         / "pnpm-lock.yaml"
     )
-    if lock_template.exists():
-        shutil.copy2(lock_template, destination / "pnpm-lock.yaml")
+    shutil.copy2(lock_template, destination / "pnpm-lock.yaml")
     put(
         "pnpm-workspace.yaml",
         ("packages:\n  - frontend\n  - tests/browser\n" if admin else "packages: []\n")

@@ -44,7 +44,7 @@ def check_pins(root, release=False):
             prefix = "github>" + lock["repository"] + "#"
             if preset.startswith(prefix) and preset[len(prefix) :] != lock["version"]:
                 raise ValueError("Toolkit preset and archive versions differ")
-    if metadata and (TOOLKIT_ROOT / "toolkit-bindings.json").is_file():
+    if metadata:
         from jellyfin_plugin_toolkit.bindings import check_integrations, plan
 
         if plan(root):

@@ -49,7 +49,7 @@ Review the toolkit dependency PR, then preview and apply its binding changes aga
 ./plugin test
 ```
 
-The base branch must already use a release with binding synchronization. For the first migration, explicitly adopt the verified release's launcher and native preset imports, preserve consumer overrides, then run `./plugin toolkit sync --check`. Do not merge an adoption that points to a local or unpublished candidate. Publish and verify the release using the release procedure first.
+Both releases must provide the supported binding contract. Consumer pins must identify a published, verified release before merging; publish and verify it using the release procedure first.
 
 Compatible updates to consumer tools remain ordinary consumer dependency updates. If a fix or default should apply to other plugins using the same capability, prefer implementing it in the toolkit rather than maintaining copies or permanent consumer workarounds.
 

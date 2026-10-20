@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from test_bindings import release
+
+from jellyfin_plugin_toolkit import bindings
 from jellyfin_plugin_toolkit.checks import pins
 from jellyfin_plugin_toolkit.workflows import render
 
@@ -18,8 +21,13 @@ class WorkflowTests(unittest.TestCase):
             toolkit.mkdir()
             metadata = {"schema": 1, "version": "1.0.0", "revision": "a" * 40}
             (toolkit / "toolkit-release.json").write_text(json.dumps(metadata))
-            lock = {"repository": "example/toolkit", "version": "v1.0.0"}
+            lock = release(root, "1.0.0", "a" * 40)
             (root / "toolkit.lock.json").write_text(json.dumps(lock))
+            (root / "plugin").write_bytes(
+                (bindings.TOOLKIT_ROOT / "bootstrap/plugin").read_bytes()
+            )
+            (root / "plugin").chmod(0o755)
+            (root / "plugin.toml").write_text("# consumer configuration\n")
             workflows = root / ".github/workflows"
             workflows.mkdir(parents=True)
             for name, text in render(
@@ -30,8 +38,18 @@ class WorkflowTests(unittest.TestCase):
             preset.write_text(
                 json.dumps({"extends": ["github>example/toolkit#v1.0.0"]})
             )
-            with patch.object(pins, "TOOLKIT_ROOT", toolkit):
+            from types import SimpleNamespace
+
+            with (
+                patch.object(pins, "TOOLKIT_ROOT", toolkit),
+                patch.object(bindings, "check_integrations") as integrations,
+                patch(
+                    "jellyfin_plugin_toolkit.context.Context.load",
+                    return_value=SimpleNamespace(config={}),
+                ),
+            ):
                 self.assertEqual(metadata, pins.check_pins(root, release=True))
+                integrations.assert_called_once_with(root, {})
                 workflow = workflows / "validate.yml"
                 original = workflow.read_text()
                 workflow.write_text(original.replace("a" * 40, "b" * 40))

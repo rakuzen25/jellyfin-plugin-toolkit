@@ -186,7 +186,7 @@ class BindingTests(unittest.TestCase):
 
     def test_invalid_contract_and_archive_never_change_source(self):
         original = (self.root / "plugin").read_bytes()
-        with self.assertRaisesRegex(ValueError, "Unsupported binding"):
+        with self.assertRaisesRegex(ValueError, "Unsupported toolkit binding"):
             self.upgrade(contract={"schema": 2, "script": "execute-me.py"})
         self.assertEqual(original, (self.root / "plugin").read_bytes())
         archive = self.root / ".build/toolkit" / (self.new["sha256"] + ".tar.gz")

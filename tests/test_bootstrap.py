@@ -14,7 +14,7 @@ install = runpy.run_path(str(ROOT / "bootstrap/plugin"))["install"]
 
 
 class BootstrapTests(unittest.TestCase):
-    def archive(self, root, members):
+    def archive(self, root, members, *, exclude=()):
         archive = root / "candidate.tar.gz"
         with tarfile.open(archive, "w:gz") as package:
             required = [
@@ -23,6 +23,12 @@ class BootstrapTests(unittest.TestCase):
                 "jellyfin_plugin_toolkit/context.py",
                 "node/build.mjs",
                 "msbuild/Plugin.props",
+                "bootstrap/plugin",
+                "toolkit-bindings.json",
+                "configs/eslint.mjs",
+                "configs/ruff.toml",
+                "configs/prettier.mjs",
+                "configs/tsconfig.json",
                 "ui/lifecycle.ts",
                 "LICENSE",
                 "NOTICE",
@@ -36,6 +42,8 @@ class BootstrapTests(unittest.TestCase):
                     **members,
                 }
             )
+            for name in exclude:
+                del files[name]
             files["toolkit-files.json"] = json.dumps(
                 {
                     "schema": 1,
@@ -57,6 +65,25 @@ class BootstrapTests(unittest.TestCase):
         }
         (root / "toolkit.lock.json").write_text(json.dumps(lock))
         return archive, lock
+
+    def test_archives_must_include_the_binding_contract_and_presets(self):
+        for name in [
+            "toolkit-bindings.json",
+            "bootstrap/plugin",
+            "configs/eslint.mjs",
+            "configs/ruff.toml",
+            "configs/prettier.mjs",
+            "configs/tsconfig.json",
+        ]:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                archive, _ = self.archive(root, {}, exclude=[name])
+                with patch.dict(
+                    os.environ, {"JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE": str(archive)}
+                ):
+                    with self.assertRaisesRegex(ValueError, "incomplete"):
+                        install(root)
+                self.assertFalse((root / ".build/toolkit/current").exists())
 
     def test_rejects_corruption_and_preserves_current_installation(self):
         with tempfile.TemporaryDirectory() as directory:

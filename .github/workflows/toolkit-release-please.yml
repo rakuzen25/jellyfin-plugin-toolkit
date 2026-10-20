@@ -95,4 +95,4 @@ jobs:
           python3 -m jellyfin_plugin_toolkit.toolkit_release upload
           --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory dist
       - name: Record the publication handoff
-        run: echo 'Toolkit draft artifacts validated. Review both pilot consumers before manually publishing the draft.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'Toolkit draft artifacts validated. Review the validated archive before manually publishing the draft.' >> "$GITHUB_STEP_SUMMARY"

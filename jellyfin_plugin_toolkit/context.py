@@ -162,7 +162,7 @@ class Context:
         if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", host.get("abi", "")):
             raise ValueError("Invalid host ABI")
         if host.get("framework") != "net10.0" or host.get("platform") != "linux/amd64":
-            raise ValueError("The initial toolkit supports net10.0 on linux/amd64")
+            raise ValueError("The toolkit supports net10.0 on linux/amd64")
         if not re.fullmatch(
             r"jellyfin/jellyfin@sha256:[0-9a-f]{64}", host.get("image", "")
         ):
