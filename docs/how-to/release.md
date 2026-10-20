@@ -23,6 +23,59 @@ Consumers keep event triggers and explicit job permissions in their own small wo
 
 Release preparation uses release-please to create version changes and unpublished drafts. A repository-scoped App can be configured through `PLUGIN_APP_CLIENT_ID` and `PLUGIN_APP_PRIVATE_KEY`; manual release attachment can use the workflow token. Configure the catalog notification App only for the chosen catalog repository.
 
+### Maintain internal project update rules
+
+After adding or removing backend projects, lockfiles, or internal assemblies, regenerate the Release Please rules from your consumer checkout:
+
+```bash
+./plugin release config
+./plugin release config --apply
+./plugin release config --check
+# Validated Release Please internal project update rules
+```
+
+The first command previews a diff. `--apply` writes only `release-please-config.json`; `--check` exits with status 1 when rules are incomplete or stale. These commands use the maintained source inventory, `backend.project_assemblies`, and `plugin.assembly` from `plugin.toml`. Keep those assembly names complete. Generated starters already contain the required rules.
+
+The toolkit manages JSON selectors for internal dependency ranges in NuGet `Project` records under `packages["."].extra-files`. It preserves unrelated settings and extra-file entries, supports a single `.` package with release type `simple`, and does not change external package versions. Ordinary validation checks these rules before selecting jobs; release preparation checks them before invoking Release Please.
+
+If a custom rule overlaps a maintained NuGet lockfile, the command names the file and asks you to remove that extra-file entry. Remove the conflicting entry explicitly, then preview and apply the generated rules. The toolkit does not translate old selectors or evaluate arbitrary custom selectors for equivalence.
+
+### Repair an incomplete release PR
+
+Use this procedure when a release PR bumps `version.txt` but leaves internal project ranges at the previous version:
+
+1. Publish and adopt a toolkit release containing the rule generator, following the toolkit release and [foundation update](develop.md#adopt-a-foundation-update) procedures.
+2. Remove overlapping hand-written NuGet selectors, run the configuration commands above on the plugin's main branch, and merge the reviewed configuration change.
+3. Let Release Please refresh the release PR, then check out its updated branch.
+4. Generate the existing project identity and use the pinned SDK to regenerate maintained backend lockfiles:
+
+    ```bash
+    PYTHONPATH="$PWD/.build/toolkit/current" python3 - <<'PY'
+    import subprocess
+    from jellyfin_plugin_toolkit.build.backend import maintained_csharp
+    from jellyfin_plugin_toolkit.context import Context
+
+    ctx = Context.load()
+    ctx.generated()
+    for project in maintained_csharp(ctx, "*.csproj"):
+        subprocess.run(
+            ["dotnet", "restore", str(project), "--force-evaluate",
+             "-p:RestoreLockedMode=false", "-p:NuGetAudit=false", "-m:1"],
+            cwd=ctx.root, check=True,
+        )
+    PY
+    ./plugin release check
+    ./plugin release config --check
+    ```
+
+    Keep the existing pinned Jellyfin references available. Restore uses the committed lockfiles as its dependency baseline; review the diff and reject external dependency version changes.
+
+5. Commit the reviewed lockfiles and require complete release-candidate validation before merging. Publish the resulting draft manually after artifact review.
+
+`Project-version metadata is stale` identifies the lockfile, framework, project, dependency, actual range, and expected range. Fix the release configuration and regenerate lockfiles; rerunning unchanged CI cannot repair the metadata.
+
+### Review release artifacts
+
 The release workflow validates the exact tagged source, runs fresh package installation, reproducibility and advisory checks, then attaches the plugin ZIP, matching source ZIP, manifest, checksums, authenticated receipt and build provenance. A web ZIP is required only when the plugin declares standalone web distribution. Already validated bytes are retained on upload retries.
 
 Before manually publishing a plugin draft, verify the catalog accepts its configured signer, toolkit revision, identity, required checks and source inventory. Preserve configuration and state for rollback; installation into a production server is a separate explicit operation.

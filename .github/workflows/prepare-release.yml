@@ -34,6 +34,8 @@ jobs:
           python-version-file: .python-version
       - run: python3 plugin _install
       - uses: ./.build/toolkit/current/.github/actions/setup
+      - name: Check release update rules before Release Please
+        run: python3 plugin release config --check
       - name: Create repository-scoped release token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app

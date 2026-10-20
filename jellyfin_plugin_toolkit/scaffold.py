@@ -452,6 +452,9 @@ def generate(
         + "\n",
     )
     put(".release-please-manifest.json", json.dumps({".": "0.1.0"}, indent=4) + "\n")
+    from jellyfin_plugin_toolkit.release.configuration import configure
+
+    configure(destination, apply=True)
     put(
         ".prettierrc.mjs",
         'import preset from "./.build/toolkit/current/configs/prettier.mjs";\n/** @type {import("prettier").Config} */\nconst config = preset;\nexport default config;\n',

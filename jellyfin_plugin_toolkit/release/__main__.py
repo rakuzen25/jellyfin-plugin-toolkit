@@ -16,6 +16,13 @@ from pathlib import Path
 
 from jellyfin_plugin_toolkit.common.release_metadata import load_release
 from jellyfin_plugin_toolkit.context import Context
+from jellyfin_plugin_toolkit.release.configuration import (
+    check as check_config,
+)
+from jellyfin_plugin_toolkit.release.configuration import (
+    configure,
+    internal_references,
+)
 
 
 def check_identity(root: Path, tag: str = "") -> str:
@@ -26,21 +33,16 @@ def check_identity(root: Path, tag: str = "") -> str:
     if tag and tag != expected:
         raise ValueError("Release tag does not match plugin metadata")
     ctx = Context.load(root)
-    assemblies = set(ctx.config["backend"].get("project_assemblies", []))
-    from jellyfin_plugin_toolkit.common.source_inventory import source_files
-
-    for path in (
-        root / name for name in source_files(root) if name.name == "packages.lock.json"
-    ):
-        for framework in json.loads(path.read_text())["dependencies"].values():
-            for dependency in framework.values():
-                if dependency.get("type") != "Project":
-                    continue
-                for name, value in dependency.get("dependencies", {}).items():
-                    if name in assemblies and value != f"[{release.version}, )":
-                        raise ValueError(
-                            "Project-version metadata is stale in " + str(path)
-                        )
+    _, locks = internal_references(ctx)
+    for path, rows in locks.items():
+        for framework, project, dependency, value in rows:
+            expected_range = f"[{release.version}, )"
+            if value != expected_range:
+                raise ValueError(
+                    f"Project-version metadata is stale in {path}: "
+                    f"{framework}/{project} dependency {dependency} has {value!r}; "
+                    f"expected {expected_range!r}"
+                )
     return expected
 
 
@@ -52,6 +54,7 @@ def repository_name(value: str) -> str:
 
 def prepare(root: Path, repository: str, tag: str, environment: Path) -> None:
     repository = repository_name(repository)
+    check_config(root)
     tag = check_identity(root, tag)
     with environment.open("a") as output:
         output.write(
@@ -259,6 +262,10 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=None)
     subparsers = parser.add_subparsers(dest="command", required=True)
+    config = subparsers.add_parser("config")
+    mode = config.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument("--apply", action="store_true")
     check = subparsers.add_parser("check")
     check.add_argument("--tag", default="")
     prep = subparsers.add_parser("prepare")
@@ -276,7 +283,9 @@ def main(argv=None) -> None:
     ctx = Context.load(args.root)
     root = ctx.root
     try:
-        if args.command == "check":
+        if args.command == "config":
+            configure(root, apply=args.apply, verify=args.check)
+        elif args.command == "check":
             print("Validated release identity: " + check_identity(root, args.tag))
         elif args.command == "prepare":
             prepare(root, args.repository, args.tag, args.environment)

@@ -51,6 +51,12 @@ class ReleaseTests(unittest.TestCase):
                 }
             )
         )
+        from jellyfin_plugin_toolkit.release.configuration import configure
+
+        (root / "release-please-config.json").write_text(
+            json.dumps({"release-type": "simple", "packages": {".": {}}})
+        )
+        configure(root, apply=True)
 
     def artifacts(self, root: Path):
         directory = root / "dist"
