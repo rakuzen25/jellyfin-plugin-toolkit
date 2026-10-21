@@ -1,4 +1,3 @@
-import argparse
 import tempfile
 from pathlib import Path
 
@@ -6,7 +5,7 @@ from jellyfin_plugin_toolkit.build.backend import publish, reference_directory
 from jellyfin_plugin_toolkit.build.package_artifacts import assemble
 from jellyfin_plugin_toolkit.common.artifacts import verify_web
 from jellyfin_plugin_toolkit.common.process import executable, run
-from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, Context
+from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
 
 
 def package(ctx, release=False, prepared_web=False):
@@ -35,11 +34,3 @@ def package(ctx, release=False, prepared_web=False):
             references=reference_directory(ctx),
         )
         assemble(ctx, staging, release)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--release", action="store_true")
-    parser.add_argument("--prepared-web", action="store_true")
-    args = parser.parse_args()
-    package(Context.load(), args.release, args.prepared_web)

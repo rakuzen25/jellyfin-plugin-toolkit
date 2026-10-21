@@ -38,13 +38,7 @@ def check(root: Path) -> list[str]:
 def main(ctx) -> None:
     errors = check(ctx.root)
     if errors:
-        raise SystemExit("\n".join(errors))
+        raise ValueError("\n".join(errors))
     print(
         f"PASS: local links, anchors, and README reachability ({len(documents(ctx.root))} Markdown files)."
     )
-
-
-if __name__ == "__main__":
-    from jellyfin_plugin_toolkit.context import Context
-
-    main(Context.load())

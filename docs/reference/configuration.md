@@ -51,26 +51,26 @@ Planning builds the frontend before looking for reusable results. Result identit
 
 ## Commands
 
-| Command                             | Result                                                                    |
-| ----------------------------------- | ------------------------------------------------------------------------- |
-| `prepare`                           | Export wheel resources under `.build/jpt` without installing packages     |
-| `bootstrap`                         | Restore Node and .NET dependencies and prepare verified host references   |
-| `doctor`                            | Diagnose toolchain and configuration mismatches                           |
-| `dev`                               | Run the checkout-owned disposable server and supervisor                   |
-| `build frontend` / `build backend`  | Build one component                                                       |
-| `build`                             | Capture source and build all declared distribution artifacts              |
-| `check [target]`                    | Run maintained checks                                                     |
-| `format [target]`                   | Apply maintained formatting                                               |
-| `test [group]`                      | Run a group; defaults to configured unit groups                           |
-| `validate --full`                   | Run configured checks, unit groups, packaging and acceptance groups       |
-| `sync-bindings [--check / --apply]` | Preview, check or apply native lock and toolkit-reference synchronization |
-| `sync-bindings --base-ref <ref>`    | Use an authoritative Git baseline for a partial update                    |
-| `sync-bindings --recover`           | Restore an interrupted transaction while preserving newer edits           |
-| `paths`                             | Print stable consumer tool and toolkit paths as JSON                      |
-| `editor vscode [--apply]`           | Preview or apply VS Code settings while preserving unrelated settings     |
-| `new`                               | Generate an independent uv consumer using the installed toolkit version   |
+| Command                            | Result                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| `prepare`                          | Export wheel resources under `.build/jpt` without installing packages     |
+| `bootstrap`                        | Restore Node and .NET dependencies and prepare verified host references   |
+| `doctor`                           | Diagnose toolchain and configuration mismatches                           |
+| `dev`                              | Run the checkout-owned disposable server and supervisor                   |
+| `build frontend` / `build backend` | Build one component                                                       |
+| `build`                            | Capture source and build all declared distribution artifacts              |
+| `check [target]`                   | Run maintained checks                                                     |
+| `format [target]`                  | Apply maintained formatting                                               |
+| `test [group] [-- runner-args]`    | Run a group; defaults to configured unit groups                           |
+| `validate`                         | Run configured checks, unit groups, packaging and acceptance groups       |
+| `toolkit sync [--check / --apply]` | Preview, check or apply native lock and toolkit-reference synchronization |
+| `toolkit sync --base-ref <ref>`    | Use an authoritative Git baseline for a partial update                    |
+| `toolkit recover`                  | Restore an interrupted transaction while preserving newer edits           |
+| `paths`                            | Print stable consumer tool and toolkit paths as JSON                      |
+| `editor vscode [--apply]`          | Preview or apply VS Code settings while preserving unrelated settings     |
+| `new`                              | Generate an independent uv consumer using the installed toolkit version   |
 
-Prefix each command with `uv run jpt`. CI first runs `uv sync --locked`, then uses `uv run --no-sync jpt`.
+Prefix each command with `uv run jpt`. Global `--root PATH` and `--debug` precede the command. Root selection uses `--root`, then `JELLYFIN_PLUGIN_ROOT`, then the current directory. `--version` and help require no consumer checkout; `internal --help` lists workflow helpers. Shell completion is available through `--show-completion` and `--install-completion`; installation runs only when explicitly requested. CI first runs `uv sync --locked`, then uses `uv run --no-sync jpt`.
 Backend tests compile missing embedded frontend resources using already restored dependencies. Verified prebuilt browser assets can be supplied by CI without requiring a second frontend build.
 
 The toolkit dependency uses a canonical GitHub release wheel URL. uv verifies its locked SHA256 during installation. Local candidate wheels are supported only for isolated validation. Published builds require released URLs; source bundles include the exact wheel and matching source distribution.
@@ -85,7 +85,7 @@ Optional `validation.job_names` and `validation.aggregate_jobs` map enabled grou
 
 Keep native configuration entrypoints in the consumer so editors and tools discover them normally: `eslint.config.mjs` passes its native ESLint dependency imports to `createConfig({ js, defineConfig, prettier, globals, tseslint })` from `.build/jpt/configs/eslint.mjs`; `[tool.ruff]` extends `.build/jpt/configs/ruff.toml`; `.prettierrc.mjs` imports `.build/jpt/configs/prettier.mjs`; frontend TypeScript configuration extends `../.build/jpt/configs/tsconfig.json`. Keep file-selection paths, language-version selections, and plugin-specific overrides in those native files. Native dependency imports remain visible to editors and dependency analyzers; the factory contains the shared rules. Consumer dependency manifests and lockfiles remain authoritative.
 
-Synchronization preserves workflow triggers, permissions, schedules, extra jobs, Renovate policy and surrounding formatting. It updates the native toolkit dependency and lockfile, static toolkit `uses` references, their release-version comments and existing top-level toolkit presets. Ambiguous syntax, drift and unavailable releases stop without partial changes. Interrupted writes retain a recovery journal under `.build`; `--recover` refuses to discard newer edits.
+Synchronization preserves workflow triggers, permissions, schedules, extra jobs, Renovate policy and surrounding formatting. It updates the native toolkit dependency and lockfile, static toolkit `uses` references, their release-version comments and existing top-level toolkit presets. Ambiguous syntax, drift and unavailable releases stop without partial changes. Interrupted writes retain a recovery journal under `.build`; `toolkit recover` refuses to discard newer edits.
 
 Use `--base-ref REF` for an authoritative Git baseline or a partially updated PR. The trusted updater reads release metadata without importing proposed toolkit code and invokes uv with source builds disabled. Every target must be a published canonical wheel. Checks, CI and release builds reject mismatched wheel versions, workflow references and presets.
 

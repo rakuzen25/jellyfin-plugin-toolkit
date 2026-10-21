@@ -20,8 +20,12 @@ Run component checks before a complete acceptance run:
 ```sh
 uv run jpt check
 uv run jpt test
-uv run jpt validate --full
+uv run jpt validate
 ```
+
+Pass runner arguments after an explicit target and separator, for example `uv run jpt test browser -- --project workflow-chromium`. The first separator is consumed; the remaining arguments reach the runner unchanged.
+
+Use `uv run jpt --debug COMMAND` for failure tracebacks. Redirected output and CI help use plain formatting.
 
 uv synchronizes Python dependencies before local commands. Bootstrap prepares Node, .NET and Jellyfin dependencies. Full validation builds the complete distribution and executes the consumer's enabled acceptance operations, including installation and reproducibility.
 
@@ -34,6 +38,8 @@ uv run jpt new /tmp/example-plugin --id example-plugin --name 'Example Plugin' -
 ```
 
 Replace `example/example-plugin` with your destination repository. Omit `--admin` for a backend-only plugin. Use `--host-project server/Entry.csproj` for a different backend path. The destination must not exist. Keep its generated GUID stable after publication.
+
+Generation needs no App identity or credentials. After pushing the repository and configuring `PLUGIN_APP_CLIENT_ID` and `PLUGIN_APP_PRIVATE_KEY` in Actions settings, dispatch **Set up connected GitHub App**. Review and merge its configuration PR. Default-branch pushes also check this setup automatically.
 
 Generation uses `uv init` and `uv add` to create an independent project and lock the canonical released toolkit wheel. It works outside a consumer checkout. For an unpublished candidate, build the distribution pair first:
 
@@ -49,10 +55,10 @@ Replace the wheel filename with the version in `pyproject.toml`. Keep its matchi
 Review the grouped Renovate PR, then complete its native lockfile and immutable workflow references using the trusted base toolkit:
 
 ```sh
-uv run jpt sync-bindings --base-ref main
-uv run jpt sync-bindings --base-ref main --apply
+uv run jpt toolkit sync --base-ref main
+uv run jpt toolkit sync --base-ref main --apply
 uv run jpt bootstrap
-uv run jpt sync-bindings --check
+uv run jpt toolkit sync --check
 uv run jpt check
 uv run jpt test
 ```

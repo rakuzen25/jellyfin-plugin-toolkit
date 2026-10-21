@@ -276,7 +276,7 @@ def generate(
         "README.md",
         "# "
         + name
-        + "\n\nRun `uv run jpt bootstrap`, then `uv run jpt dev`.\n\nUse `uv run jpt check`, `uv run jpt test`, and `uv run jpt build` for validation and distribution. `uv run jpt check` includes linting and formatting verification; `uv run jpt format` applies formatting. Both commands accept a target. uv synchronizes Python dependencies automatically; run bootstrap to prepare Node, .NET and Jellyfin integrations first. Configuration is in `plugin.toml`; toolkit dependencies are recorded by uv in `pyproject.toml` and `uv.lock`.\n",
+        + "\n\nRun `uv run jpt bootstrap`, then `uv run jpt dev`.\n\nUse `uv run jpt check`, `uv run jpt test`, and `uv run jpt build` for validation and distribution. `uv run jpt check` includes linting and formatting verification; `uv run jpt format` applies formatting. Both commands accept a target. uv synchronizes Python dependencies automatically; run bootstrap to prepare Node, .NET and Jellyfin integrations first. Configuration is in `plugin.toml`; toolkit dependencies are recorded by uv in `pyproject.toml` and `uv.lock`.\n\nRepository writes require your existing GitHub App. Configure Actions variable `PLUGIN_APP_CLIENT_ID` and secret `PLUGIN_APP_PRIVATE_KEY`; there is no workflow-token fallback. After configuring those credentials, run the App setup workflow. It opens a reviewed PR configuring Renovate automatically.\n",
     )
     package = defaults["package"]
     package["name"] = identifier

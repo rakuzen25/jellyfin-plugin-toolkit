@@ -91,6 +91,7 @@ def verify_tools(ctx):
             "--root",
             str(ctx.root),
             cwd=ctx.root,
+            stdout=sys.stderr,
         )
     elif (ctx.root / ".node-version").exists():
         expected = (ctx.root / ".node-version").read_text().strip()

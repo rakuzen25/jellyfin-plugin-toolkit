@@ -95,9 +95,3 @@ def ensure(ctx, directory: Path | None = None) -> Path:
             shutil.rmtree(directory)
         shutil.move(str(cache), directory)
     return directory
-
-
-if __name__ == "__main__":
-    from jellyfin_plugin_toolkit.context import Context
-
-    ensure(Context.load())

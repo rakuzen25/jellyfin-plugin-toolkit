@@ -3,7 +3,6 @@
 Never creates/publishes releases, rewrites tags, overwrites assets, or changes catalogs.
 """
 
-import argparse
 import hashlib
 import json
 import os
@@ -20,7 +19,6 @@ from jellyfin_plugin_toolkit.release.configuration import (
     check as check_config,
 )
 from jellyfin_plugin_toolkit.release.configuration import (
-    configure,
     internal_references,
 )
 
@@ -256,51 +254,3 @@ def upload(root: Path, directory: Path, repository: str, tag: str) -> None:
     print(
         "Verified artifacts attached; release remains a draft. Publish it after reviewing the successful workflow."
     )
-
-
-def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    config = subparsers.add_parser("config")
-    mode = config.add_mutually_exclusive_group()
-    mode.add_argument("--check", action="store_true")
-    mode.add_argument("--apply", action="store_true")
-    check = subparsers.add_parser("check")
-    check.add_argument("--tag", default="")
-    prep = subparsers.add_parser("prepare")
-    prep.add_argument("--repository", required=True)
-    prep.add_argument("--tag", default="")
-    prep.add_argument("--environment", type=Path, required=True)
-    resume = subparsers.add_parser("resume-draft")
-    resume.add_argument("--repository", required=True)
-    resume.add_argument("--environment", type=Path, required=True)
-    attach = subparsers.add_parser("upload")
-    attach.add_argument("--repository", required=True)
-    attach.add_argument("--tag", required=True)
-    attach.add_argument("--directory", type=Path, default=Path("dist"))
-    args = parser.parse_args(argv)
-    ctx = Context.load(args.root)
-    root = ctx.root
-    try:
-        if args.command == "config":
-            configure(root, apply=args.apply, verify=args.check)
-        elif args.command == "check":
-            print("Validated release identity: " + check_identity(root, args.tag))
-        elif args.command == "prepare":
-            prepare(root, args.repository, args.tag, args.environment)
-        elif args.command == "resume-draft":
-            resume_draft(root, args.repository, args.environment)
-        else:
-            upload(root, args.directory, args.repository, args.tag)
-    except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
-        parser.exit(
-            1,
-            "Release verification failed: "
-            + (str(error) if isinstance(error, ValueError) else type(error).__name__)
-            + "\n",
-        )
-
-
-if __name__ == "__main__":
-    main()

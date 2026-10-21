@@ -85,7 +85,7 @@ jobs:
           if [ "$FULL" = true ]; then args+=(--full); fi
           if [ "$SCHEDULED" = true ]; then args+=(--scheduled); fi
           if [ "$RELEASE_MODE" = true ]; then args+=(--release); fi
-          uv run --no-sync jpt ci plan "${args[@]}"
+          uv run --no-sync jpt internal ci plan "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-plan
@@ -113,7 +113,7 @@ jobs:
         with:
           node: "true"
       - run: mkdir -p dist/evidence
-      - run: uv run --no-sync jpt ci metadata-check 2>&1 | tee dist/evidence/metadata.log
+      - run: uv run --no-sync jpt internal ci metadata-check 2>&1 | tee dist/evidence/metadata.log
       - name: Validate Renovate configuration with the upstream validator
         run: >-
           docker run --rm --network none --entrypoint renovate-config-validator
@@ -149,8 +149,8 @@ jobs:
       - name: Check affected frontend inputs
         if: needs.impact.outputs.frontend == 'true'
         run: (pnpm check frontend && pnpm test frontend) 2>&1 | tee dist/evidence/frontend-checks.log
-      - run: (uv run --no-sync jpt build frontend && uv run --no-sync jpt ci web-record) 2>&1 | tee dist/evidence/frontend-build.log
-      - run: uv run --no-sync jpt test web-installation --assets dist/web
+      - run: (uv run --no-sync jpt build frontend && uv run --no-sync jpt internal ci web-record) 2>&1 | tee dist/evidence/frontend-build.log
+      - run: uv run --no-sync jpt test web-installation -- --assets dist/web
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: browser-assets
@@ -195,8 +195,8 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: uv run --no-sync jpt ci web-verify
-      - run: uv run --no-sync jpt test backend --results-directory dist/evidence --report-xunit-trx 2>&1 | tee dist/evidence/backend.log
+        run: uv run --no-sync jpt internal ci web-verify
+      - run: uv run --no-sync jpt test backend -- --results-directory dist/evidence --report-xunit-trx 2>&1 | tee dist/evidence/backend.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
@@ -257,12 +257,12 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: uv run --no-sync jpt ci web-verify
+        run: uv run --no-sync jpt internal ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
           path: dist
-      - run: uv run --no-sync jpt ci browser-verify --group workflow --project "workflow-chromium" --workers 2
+      - run: uv run --no-sync jpt internal ci browser-verify --group workflow --project "workflow-chromium" --workers 2
       - run: CI_BROWSER_GROUP=workflow pnpm test browser --project workflow-chromium --workers=2 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
@@ -300,12 +300,12 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: uv run --no-sync jpt ci web-verify
+        run: uv run --no-sync jpt internal ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
           path: dist
-      - run: uv run --no-sync jpt ci browser-verify --group rendering --project "${{ matrix.project }}" --workers 2
+      - run: uv run --no-sync jpt internal ci browser-verify --group rendering --project "${{ matrix.project }}" --workers 2
       - run: CI_BROWSER_GROUP=rendering pnpm test browser --project "${{ matrix.project }}" --workers=2 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
@@ -343,12 +343,12 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: uv run --no-sync jpt ci web-verify
+        run: uv run --no-sync jpt internal ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
           path: dist
-      - run: uv run --no-sync jpt ci browser-verify --group performance --project "${{ matrix.project }}" --workers 1
+      - run: uv run --no-sync jpt internal ci browser-verify --group performance --project "${{ matrix.project }}" --workers 1
       - run: CI_BROWSER_GROUP=performance pnpm test browser --project "${{ matrix.project }}" --workers=1 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
@@ -384,7 +384,7 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: uv run --no-sync jpt ci web-verify
+        run: uv run --no-sync jpt internal ci web-verify
       - run: uv run --no-sync jpt release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
       - name: Build clean candidate with verified browser assets
         run: |
@@ -536,7 +536,7 @@ jobs:
       - name: Aggregate required validation and bind evidence to artifacts
         env:
           CI_JOB_RESULTS: ${{ toJSON(needs) }}
-        run: uv run --no-sync jpt ci finish
+        run: uv run --no-sync jpt internal ci finish
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

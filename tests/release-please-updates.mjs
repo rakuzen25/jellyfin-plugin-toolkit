@@ -61,7 +61,7 @@ configure(root, apply=True)
 import sys
 from pathlib import Path
 from jellyfin_plugin_toolkit.release.configuration import check
-from jellyfin_plugin_toolkit.release.__main__ import check_identity
+from jellyfin_plugin_toolkit.release.service import check_identity
 root = Path(sys.argv[1])
 check(root)
 assert check_identity(root) == 'v0.1.1'

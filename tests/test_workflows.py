@@ -15,6 +15,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
+    def test_app_setup_caller_is_always_generated_and_default_branch_only(self):
+        caller = render("example/toolkit", "a" * 40, version="v1.0.0")["app-setup.yml"]
+        self.assertIn("push:", caller)
+        self.assertIn("workflow_dispatch:", caller)
+        self.assertIn("github.event.repository.default_branch", caller)
+        self.assertIn("setup-automation.yml@" + "a" * 40, caller)
+        self.assertIn("retry_closed:", caller)
+        self.assertNotIn("app_slug", caller)
+        self.assertNotIn("contents: write", caller)
+
     def test_mutable_revision_and_invalid_catalog_rejected(self):
         with self.assertRaises(ValueError):
             render("example/toolkit", "main", version="v1.0.0")

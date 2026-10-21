@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scaffold_fixture import generate
 
@@ -12,6 +13,11 @@ class StarterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "plugin"
             generate(None, root, "example", "Example", "example/plugin")
+            import json
+
+            renovate = json.loads((root / "renovate.json").read_text())
+            self.assertNotIn("gitIgnoredAuthors", renovate)
+            self.assertFalse((root / ".github/jpt-automation.json").exists())
             context = Context.load(root)
             self.assertEqual({"Host"}, set(context.config.backend.projects))
             self.assertFalse((root / "frontend").exists())
@@ -29,11 +35,37 @@ class StarterTests(unittest.TestCase):
                 True,
                 "server/Entry.csproj",
             )
+            import json
+
+            renovate = json.loads((root / "renovate.json").read_text())
+            self.assertNotIn("gitIgnoredAuthors", renovate)
+            self.assertFalse((root / ".github/jpt-automation.json").exists())
             context = Context.load(root)
             self.assertTrue((root / "server/Entry.csproj").exists())
             self.assertTrue(context.config.frontend.enabled)
             self.assertTrue((root / "frontend/admin/config.ts").exists())
             self.assertFalse(context.config.distribution.web)
+
+    def test_both_variants_generate_without_github_identity_requests(self):
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch(
+                "jellyfin_plugin_toolkit.automation.resolve_bot",
+                side_effect=AssertionError(
+                    "Starter generation requested GitHub identity"
+                ),
+            ) as lookup,
+        ):
+            for admin in [False, True]:
+                generate(
+                    None,
+                    Path(folder) / str(admin),
+                    "example",
+                    "Example",
+                    "example/plugin",
+                    admin,
+                )
+            lookup.assert_not_called()
 
     def test_existing_destination_and_escaping_project_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -10,5 +10,6 @@ See licenses.spdx.json for the explicit file-level exception inventory.
 
 Python build dependencies are installed separately by uv. Pydantic, pydantic-core,
 annotated-types, typing-inspection and Tomli-W retain their upstream MIT licenses;
-typing_extensions retains PSF-2.0. Their licenses and distribution metadata remain
+typing_extensions retains PSF-2.0. Typer, Rich, annotated-doc, markdown-it-py,
+mdurl and Shellingham retain MIT licenses; Pygments retains BSD-2-Clause. Their licenses and distribution metadata remain
 with their installed packages.

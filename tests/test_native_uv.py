@@ -28,6 +28,7 @@ class NativeUvTests(unittest.TestCase):
         ):
             self.assertIn("jellyfin_plugin_toolkit/resources/" + name, names)
         self.assertIn("jellyfin_plugin_toolkit/py.typed", names)
+        self.assertIn("jellyfin_plugin_toolkit/automation_setup.py", names)
         self.assertFalse(
             any("_vendor/" in name or name.endswith("bootstrap.py") for name in names)
         )

@@ -38,6 +38,5 @@
             "labels": ["toolkit-major-review"]
         }
     ],
-    "description": ["Coordinated toolkit wheel, uv lockfile, workflow and preset updates."],
-    "gitIgnoredAuthors": ["jellyfin-plugin-toolkit-sync@users.noreply.github.com"]
+    "description": ["Coordinated toolkit wheel, uv lockfile, workflow and preset updates."]
 }

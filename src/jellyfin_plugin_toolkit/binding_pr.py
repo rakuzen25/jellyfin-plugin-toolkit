@@ -1,6 +1,5 @@
 """Prepare and commit bounded binding updates using trusted base-release code only."""
 
-import argparse
 import base64
 import copy
 import json
@@ -13,14 +12,12 @@ from pathlib import Path
 from urllib.parse import quote
 
 from jellyfin_plugin_toolkit import bindings
-
-AUTHOR = {
-    "name": "Jellyfin toolkit synchronization",
-    "email": "jellyfin-plugin-toolkit-sync@users.noreply.github.com",
-}
+from jellyfin_plugin_toolkit.automation import check_renovate, commit_identity
 
 
 def api(repository, endpoint, method="GET", body=None):
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise ValueError("Expected a repository in OWNER/REPO form")
     command = ["gh", "api", "--method", method, "repos/" + repository + "/" + endpoint]
     if body is not None:
         command += ["--input", "-"]
@@ -213,6 +210,8 @@ def commit(root, repository, proposal, bot):
         raise ValueError("PR changed or proposal was altered; rerun synchronization")
     if not proposal["changes"]:
         return
+    identity = commit_identity()
+    check_renovate(root, identity)
     tree = []
     for item in proposal["changes"]:
         blob = api(
@@ -244,7 +243,8 @@ def commit(root, repository, proposal, bot):
             "message": "chore: synchronize toolkit bindings",
             "tree": new_tree["sha"],
             "parents": [proposal["head"]],
-            "author": AUTHOR,
+            "author": identity,
+            "committer": identity,
         },
     )
     latest = api(repository, "pulls/" + str(proposal["number"]))
@@ -259,56 +259,3 @@ def commit(root, repository, proposal, bot):
         "PATCH",
         {"sha": created["sha"], "force": False},
     )
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["prepare", "commit"])
-    parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
-    parser.add_argument("--bot", default="renovate[bot]")
-    parser.add_argument("--run-id", type=int)
-    parser.add_argument("--pr", type=int)
-    parser.add_argument("--proposal", type=Path, required=True)
-    args = parser.parse_args(argv)
-    if args.command == "prepare" and not (args.pr or args.run_id):
-        parser.error("prepare requires --pr or --run-id")
-    if not re.fullmatch(r"[\w.-]+/[\w.-]+", args.repository):
-        parser.error("Expected repository owner/name")
-    try:
-        if args.command == "prepare":
-            pr = discover(args.repository, args.bot, args.run_id, args.pr)
-            proposal = prepare(args.root, args.repository, pr, args.bot) if pr else None
-            ready = proposal is not None and bool(proposal["changes"])
-            if proposal:
-                args.proposal.write_text(json.dumps(proposal, indent=2) + "\n")
-            if output := os.environ.get("GITHUB_OUTPUT"):
-                with open(output, "a") as stream:
-                    stream.write(f"ready={str(ready).lower()}\n")
-                    if proposal:
-                        stream.write("base=" + proposal["base"] + "\n")
-            print(
-                "Prepared toolkit binding update."
-                if ready
-                else "No eligible toolkit binding changes."
-            )
-        else:
-            commit(
-                args.root,
-                args.repository,
-                json.loads(args.proposal.read_text()),
-                args.bot,
-            )
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
-        message = f"Toolkit synchronization stopped: {error}. No partial binding update was committed."
-        if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
-            with open(summary, "a") as stream:
-                stream.write(
-                    message
-                    + "\n\nReview `uv run jpt sync-bindings --base-ref <base>`.\n"
-                )
-        parser.exit(1, message + "\n")
-
-
-if __name__ == "__main__":
-    main()

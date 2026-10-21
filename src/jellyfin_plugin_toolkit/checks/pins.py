@@ -38,7 +38,7 @@ def check_pins(root, release=False):
     if len(pins) > 1:
         raise ValueError("Toolkit workflows disagree about the source revision")
     if release and pins:
-        from jellyfin_plugin_toolkit.release.__main__ import tag_commit
+        from jellyfin_plugin_toolkit.release.service import tag_commit
 
         if pins != {tag_commit(REPOSITORY, "v" + selected["version"])}:
             raise ValueError("Workflow revision differs from the released toolkit tag")

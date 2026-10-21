@@ -1,6 +1,5 @@
 """Bounded, data-only synchronization of toolkit bindings in consumer checkouts."""
 
-import argparse
 import difflib
 import fcntl
 import json
@@ -203,7 +202,7 @@ def target(root):
 
 
 def plan(root, base_ref=None, *, download=False, git_root=None):
-    from jellyfin_plugin_toolkit.release.__main__ import (
+    from jellyfin_plugin_toolkit.release.service import (
         github_json,
         release_for_tag,
         tag_commit,
@@ -361,7 +360,7 @@ def apply(root, changes):
         folder = transaction_path(root)
         if folder.exists():
             raise ValueError(
-                "Interrupted synchronization; run uv run jpt sync-bindings --recover"
+                "Interrupted synchronization; run uv run jpt toolkit recover"
             )
         for item in changes:
             validate_original(root, item)
@@ -420,25 +419,6 @@ def preview(changes):
             print(f"{item.name}: mode {item.before_mode!r} -> {oct(item.mode)}")
     if not changes:
         print("Toolkit bindings are synchronized.")
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(prog="jpt sync-bindings")
-    parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--base-ref")
-    parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--check", action="store_true")
-    parser.add_argument("--recover", action="store_true")
-    args = parser.parse_args(argv)
-    if args.recover:
-        recover(args.root)
-        return
-    changes = plan(args.root, args.base_ref)
-    preview(changes)
-    if args.check and changes:
-        raise ValueError("Toolkit bindings are stale")
-    if args.apply:
-        apply(args.root, changes)
 
 
 def check_integrations(root, config):

@@ -86,12 +86,3 @@ def check_projects(root):
                         + str(source.relative_to(root))
                     )
     return graph
-
-
-def main():
-    check_projects(Context.load().root)
-    print("PASS: declared project graph and host-independent boundaries")
-
-
-if __name__ == "__main__":
-    main()

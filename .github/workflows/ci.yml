@@ -34,7 +34,7 @@ jobs:
             uv.lock
       - run: uv sync --locked
       - run: uv build
-      - run: uv run --no-sync python -m jellyfin_plugin_toolkit.toolkit_release manifest --sha "$(git rev-parse HEAD)"
+      - run: uv run --no-sync jpt internal toolkit-release manifest --sha "$(git rev-parse HEAD)"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         id: archive
         with:
@@ -149,4 +149,4 @@ jobs:
           uv run --no-sync python "$GITHUB_WORKSPACE/tests/dev_smoke.py" "$PWD" --edits
           uv run --no-sync jpt test installation
           uv run --no-sync jpt test reproducibility
-          if [ "$VARIANT" = administrator-override ]; then uv run --no-sync jpt test browser --project workflow-chromium; fi
+          if [ "$VARIANT" = administrator-override ]; then uv run --no-sync jpt test browser -- --project workflow-chromium; fi

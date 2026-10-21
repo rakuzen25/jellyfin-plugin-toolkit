@@ -66,15 +66,7 @@ def main():
     parser.add_argument("--edits", action="store_true")
     args = parser.parse_args()
     root = args.consumer.resolve()
-    from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT
-
-    toolkit = RESOURCE_ROOT
-    env = {
-        **os.environ,
-        "JELLYFIN_PLUGIN_ROOT": str(root),
-        "JELLYFIN_PLUGIN_TOOLKIT_ROOT": str(toolkit),
-        "JELLYFIN_PLUGIN_DEV_PYTHON": sys.executable,
-    }
+    env = {**os.environ, "JELLYFIN_PLUGIN_ROOT": str(root)}
     with socket.socket() as address:
         address.bind(("127.0.0.1", 0))
         port = address.getsockname()[1]
@@ -82,8 +74,11 @@ def main():
     with log.open("w") as output:
         child = subprocess.Popen(
             [
-                "node",
-                str(toolkit / "jellyfin_plugin_toolkit/dev/session.mjs"),
+                "uv",
+                "run",
+                "--no-sync",
+                "jpt",
+                "dev",
                 "--port",
                 str(port),
                 *([] if args.edits else ["--no-watch"]),
@@ -124,9 +119,12 @@ def main():
                 # The sandbox command verifies checkout ownership before removing anything.
                 subprocess.run(
                     [
-                        sys.executable,
-                        "-m",
-                        "jellyfin_plugin_toolkit.dev.local_jellyfin",
+                        "uv",
+                        "run",
+                        "--no-sync",
+                        "jpt",
+                        "internal",
+                        "sandbox",
                         "stop",
                     ],
                     cwd=root,

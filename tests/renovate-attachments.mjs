@@ -66,3 +66,36 @@ for (const name of ["validate", "release", "prepare-release", "catalog-notify"])
 console.log(
     "PASS: native GitHub Actions extraction and replacement update version comments and all reusable workflow digests with the toolkit release",
 );
+
+// Companion commits stay eligible for Renovate updates; human edits still stop them.
+const { execFileSync } = await import("node:child_process");
+const { tmpdir } = await import("node:os");
+const gitApi = await import("/usr/local/renovate/dist/util/git/index.js");
+const temporary = fs.mkdtempSync(path.join(tmpdir(), "jpt-app-identity-"));
+try {
+    const source = path.join(temporary, "source"),
+        checkout = path.join(temporary, "checkout");
+    fs.mkdirSync(source);
+    const git = (...args) => execFileSync("git", args, { cwd: source, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const commit = (name, email) => {
+        git("-c", "user.name=" + name, "-c", "user.email=" + email, "commit", "--allow-empty", "-m", "fixture");
+    };
+    git("init", "-b", "main");
+    commit("Fixture", "fixture@example.invalid");
+    git("checkout", "-b", "renovate/toolkit");
+    commit("Renovate", "renovate@example.invalid");
+    const appEmail = JSON.parse(fs.readFileSync(root + "/renovate.json", "utf8")).gitIgnoredAuthors[0];
+    commit("App bot", appEmail);
+    git("checkout", "-b", "human-edited");
+    commit("Human", "human@example.invalid");
+    git("checkout", "main");
+    execFileSync("git", ["clone", source, checkout], { stdio: "pipe" });
+    GlobalConfig.set({ localDir: checkout, platform: "github" });
+    await gitApi.initRepo({ url: source, currentBranch: "main", defaultBranch: "main", fullClone: true });
+    gitApi.setUserRepoConfig({ gitAuthor: "Renovate <renovate@example.invalid>", gitIgnoredAuthors: [appEmail] });
+    assert.equal(await gitApi.isBranchModified("renovate/toolkit", "main"), false);
+    assert.equal(await gitApi.isBranchModified("human-edited", "main"), true);
+    console.log("PASS: Renovate recognizes App companion commits and preserves human-edit protection");
+} finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+}

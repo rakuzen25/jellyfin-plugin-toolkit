@@ -4,10 +4,10 @@ on:
     inputs:
       app_client_id:
         type: string
-        default: ""
+        required: true
     secrets:
       PLUGIN_APP_PRIVATE_KEY:
-        required: false
+        required: true
 permissions:
   contents: read
   actions: read
@@ -15,9 +15,7 @@ jobs:
   release-please:
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
     concurrency:
       group: release-please-${{ github.repository }}
       cancel-in-progress: false
@@ -40,10 +38,15 @@ jobs:
       - uses: ./.build/jpt/actions/setup
       - name: Check release update rules before Release Please
         run: uv run --no-sync jpt release config --check
-      - name: Create repository-scoped release token
+      - name: Require GitHub App credentials
+        env:
+          APP_CLIENT_ID: ${{ inputs.app_client_id }}
+          APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$APP_CLIENT_ID" && test -n "$APP_PRIVATE_KEY" || { echo 'Configure PLUGIN_APP_CLIENT_ID and PLUGIN_APP_PRIVATE_KEY for the existing GitHub App'; exit 1; }
+      - name: Create repository-scoped App token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
-        if: inputs.app_client_id != ''
         with:
           client-id: ${{ inputs.app_client_id }}
           private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
@@ -53,7 +56,7 @@ jobs:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
-          token: ${{ steps.app.outputs.token || github.token }}
+          token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       - name: Resume an existing matching unpublished draft
@@ -74,7 +77,7 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     permissions:
-      contents: write
+      contents: read
       actions: read
       id-token: write
       attestations: write
@@ -82,3 +85,6 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag }}
       sha: ${{ needs.release-please.outputs.sha }}
+      app_client_id: ${{ inputs.app_client_id }}
+    secrets:
+      PLUGIN_APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}

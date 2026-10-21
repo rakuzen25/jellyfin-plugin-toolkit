@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from consumer_fixture import config
 
-import jellyfin_plugin_toolkit.release.__main__ as release
+import jellyfin_plugin_toolkit.release.service as release
 from jellyfin_plugin_toolkit.common.release_metadata import (
     changelog_for_version,
     load_release,

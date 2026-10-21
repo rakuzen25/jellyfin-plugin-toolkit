@@ -1,6 +1,5 @@
 """Owned Docker sandbox operations used by the persistent Node development session."""
 
-import argparse
 import fcntl
 import hashlib
 import http.client
@@ -18,7 +17,7 @@ from pathlib import Path
 from jellyfin_plugin_toolkit.build.backend import publish
 from jellyfin_plugin_toolkit.common.process import run
 from jellyfin_plugin_toolkit.common.release_metadata import load_identity
-from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, Context
+from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
 
 OWNER_LABEL = "jellyfin-plugin-toolkit.local-checkout"
 
@@ -49,7 +48,7 @@ def inspect(ctx) -> dict | None:
         subprocess.check_output(["docker", "inspect", container_name(ctx)], text=True)
     )[0]
     if container["Config"].get("Labels", {}).get(OWNER_LABEL) != str(ctx.root):
-        raise SystemExit(
+        raise ValueError(
             "Container name belongs to another installation; refusing to change it."
         )
     return container
@@ -67,21 +66,21 @@ def media_paths(ctx, requested: list[str] | None) -> list[str]:
     if not isinstance(values, list) or not all(
         isinstance(value, str) for value in values
     ):
-        raise SystemExit(
+        raise ValueError(
             "Invalid saved media mounts. Use --clear-media-mounts to clear them."
         )
     paths: list[str] = []
     for value in values:
         path = Path(value).expanduser()
         if not path.is_absolute():
-            raise SystemExit(
+            raise ValueError(
                 "--media-mount requires an absolute directory path: " + value
             )
         # Preserve the host path used by absolute symlinks, rather than resolving
         # it to a different target. Normalize only lexical path components.
         path = Path(os.path.abspath(path))
         if not path.is_dir():
-            raise SystemExit("Media mount directory not found: " + str(path))
+            raise ValueError("Media mount directory not found: " + str(path))
         if (
             "," in str(path)
             or path == Path("/")
@@ -90,7 +89,7 @@ def media_paths(ctx, requested: list[str] | None) -> list[str]:
                 for base in (Path("/config"), Path("/cache"), Path("/media"))
             )
         ):
-            raise SystemExit(
+            raise ValueError(
                 "Media mount conflicts with sandbox paths or Docker mount syntax: "
                 + str(path)
             )
@@ -225,7 +224,7 @@ def deploy(ctx, web: Path, requested_mounts: list[str] | None = None) -> None:
     )
 
 
-def dev(ctx, args: argparse.Namespace) -> None:
+def dev(ctx, *, port=18096, open_browser=False, watch=True, media_mounts=None) -> None:
     from jellyfin_plugin_toolkit.tasks import verify_tools
 
     (ctx.root / ".build/local-jellyfin").mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -236,7 +235,7 @@ def dev(ctx, args: argparse.Namespace) -> None:
             raise ValueError(
                 "A development session already owns this checkout"
             ) from None
-        media_paths(ctx, [] if args.clear_media_mounts else args.media_mount)
+        media_paths(ctx, media_mounts)
         verify_tools(ctx)
         if (
             ctx.config.frontend.enabled
@@ -254,15 +253,15 @@ def dev(ctx, args: argparse.Namespace) -> None:
             "node",
             str(TOOLKIT_ROOT / "jellyfin_plugin_toolkit/dev/session.mjs"),
             "--port",
-            str(args.port),
+            str(port),
         ]
-        if args.no_watch:
+        if not watch:
             command.append("--no-watch")
-        if args.open:
+        if open_browser:
             command.append("--open")
-        if args.clear_media_mounts:
+        if media_mounts == []:
             command.append("--clear-media-mounts")
-        for mount in args.media_mount or []:
+        for mount in media_mounts or []:
             command.extend(["--media-mount", mount])
         environment = {
             **os.environ,
@@ -280,31 +279,10 @@ def dev(ctx, args: argparse.Namespace) -> None:
         except KeyboardInterrupt:
             child.send_signal(signal.SIGINT)
             child.wait()
+            raise
         finally:
             signal.signal(signal.SIGTERM, previous_handler)
             if child.poll() is None:
                 child.terminate()
                 child.wait()
             stop(ctx)
-
-
-def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("operation", choices=["deploy", "stop"])
-    parser.add_argument("--web", type=Path)
-    parser.add_argument("--media-mount", action="append")
-    parser.add_argument("--clear-media-mounts", action="store_true")
-    args = parser.parse_args(argv)
-    ctx = Context.load()
-    if args.operation == "stop":
-        stop(ctx)
-    elif args.web:
-        deploy(
-            ctx, args.web.resolve(), [] if args.clear_media_mounts else args.media_mount
-        )
-    else:
-        parser.error("deploy requires --web")
-
-
-if __name__ == "__main__":
-    main()

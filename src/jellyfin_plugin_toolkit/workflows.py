@@ -55,7 +55,7 @@ on:
         description: Successful validation run whose immutable artifacts should be attached
         type: string
 permissions:
-  contents: write
+  contents: read
   actions: read
   id-token: write
   attestations: write
@@ -65,6 +65,9 @@ jobs:
     with:
       tag: ${{ inputs.tag }}
       validated_run_id: ${{ inputs.validated_run_id }}
+      app_client_id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
+    secrets:
+      PLUGIN_APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
 """
     prepare = """name: Prepare release
 on:
@@ -72,10 +75,8 @@ on:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
   actions: read
-  pull-requests: write
-  issues: write
   id-token: write
   attestations: write
 jobs:
@@ -86,7 +87,24 @@ jobs:
     secrets:
       PLUGIN_APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
 """
+    setup = """name: Set up connected GitHub App
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  configure:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    uses: PREFIXsetup-automation.yml@REVISION # TOOLKIT_TAG
+    with:
+      app_client_id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
+      retry_closed: ${{ github.event_name == 'workflow_dispatch' }}
+    secrets:
+      PLUGIN_APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+"""
     contents = {
+        "app-setup.yml": setup,
         "validate.yml": validate,
         "safety.yml": safety,
         "release.yml": release,

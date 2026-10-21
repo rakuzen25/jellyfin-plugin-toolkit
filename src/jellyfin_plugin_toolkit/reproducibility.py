@@ -8,7 +8,6 @@ from pathlib import Path
 
 from jellyfin_plugin_toolkit.build.backend import reference_directory
 from jellyfin_plugin_toolkit.common.artifacts import artifact_hashes
-from jellyfin_plugin_toolkit.context import Context
 
 
 def main(ctx):
@@ -44,7 +43,7 @@ def main(ctx):
                 check=True,
             )
             subprocess.run(
-                ["uv", "run", "--no-sync", "jpt", "_package"],
+                ["uv", "run", "--no-sync", "jpt", "internal", "package"],
                 cwd=root,
                 env=environment,
                 stdout=output,
@@ -58,7 +57,3 @@ def main(ctx):
     print(
         "PASS: independently rebuilt plugin, source, manifest and checksum bytes match"
     )
-
-
-if __name__ == "__main__":
-    main(Context.load())

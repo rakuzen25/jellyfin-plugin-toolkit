@@ -37,8 +37,8 @@ runs:
     - name: Verify official reference cache or bootstrap
       if: inputs.references == 'true'
       shell: bash
-      run: uv run --no-sync python -m jellyfin_plugin_toolkit.dev.references
+      run: uv run --no-sync jpt internal references
     - name: Restore locked backend dependencies
       if: inputs.dotnet == 'true' && inputs.references == 'true'
       shell: bash
-      run: uv run --no-sync python -m jellyfin_plugin_toolkit.build.backend
+      run: uv run --no-sync jpt internal restore-backend

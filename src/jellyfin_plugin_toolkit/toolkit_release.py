@@ -1,10 +1,8 @@
 """Resolve toolkit drafts and attach the exact distributions accepted by toolkit CI."""
 
-import argparse
 import email
 import hashlib
 import json
-import os
 import re
 import subprocess
 import tarfile
@@ -13,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 from jellyfin_plugin_toolkit.provenance import package_version, wheel_name
-from jellyfin_plugin_toolkit.release.__main__ import (
+from jellyfin_plugin_toolkit.release.service import (
     release_for_tag,
     repository_name,
     tag_commit,
@@ -139,39 +137,3 @@ def upload(directory: Path, repository: str, tag: str, sha: str) -> None:
             ["gh", "release", "upload", tag, *missing, "--repo", repository], check=True
         )
     print("Validated toolkit distributions attached; publication remains manual.")
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["resolve", "upload", "manifest"])
-    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
-    parser.add_argument("--tag")
-    parser.add_argument("--sha", default="")
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--directory", type=Path, default=Path("dist"))
-    args = parser.parse_args(argv)
-    try:
-        if args.command == "manifest":
-            manifest(args.directory, args.sha)
-        elif args.command == "resolve":
-            _, revision = resolve(args.repository, args.tag, args.sha)
-            if args.output is None:
-                parser.error("resolve requires --output")
-            with args.output.open("a") as output:
-                output.write(f"tag={args.tag}\nsha={revision}\n")
-        else:
-            if not args.sha:
-                parser.error("upload requires --sha")
-            upload(args.directory, args.repository, args.tag, args.sha)
-    except (
-        ValueError,
-        KeyError,
-        OSError,
-        tarfile.TarError,
-        subprocess.CalledProcessError,
-    ) as error:
-        parser.exit(1, f"Toolkit release verification failed: {error}\n")
-
-
-if __name__ == "__main__":
-    main()

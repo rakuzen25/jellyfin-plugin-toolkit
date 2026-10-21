@@ -1,8 +1,6 @@
 """Maintenance entrypoints that remain usable when consumer bindings are stale."""
 
-import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -42,27 +40,3 @@ def editor(root, write=False):
     if write and changes:
         path.parent.mkdir(exist_ok=True)
         bindings.apply(root, changes)
-
-
-def main(argv=None):
-    forwarded = list(sys.argv[1:] if argv is None else argv)
-    if forwarded and forwarded[0] == "sync":
-        return bindings.main(forwarded[1:])
-    parser = argparse.ArgumentParser(prog="jpt")
-    sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("paths")
-    setup = sub.add_parser("editor")
-    setup.add_argument("editor", choices=["vscode"])
-    setup.add_argument("--apply", action="store_true")
-    args = parser.parse_args(forwarded)
-    root = Path(os.environ.get("JELLYFIN_PLUGIN_ROOT", ".")).resolve()
-    if args.command == "paths":
-        print(json.dumps(paths(root), indent=2))
-    else:
-        try:
-            editor(root, args.apply)
-        except (ValueError, OSError) as error:
-            parser.exit(
-                1, f"Editor setup failed: {error}. Existing settings were preserved.\n"
-            )
-    return 0

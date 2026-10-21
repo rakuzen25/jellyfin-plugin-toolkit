@@ -8,5 +8,6 @@
             "matchManagers": ["github-actions"],
             "pinDigests": true
         }
-    ]
+    ],
+    "gitIgnoredAuthors": ["342669125+finchaser-3-0[bot]@users.noreply.github.com"]
 }

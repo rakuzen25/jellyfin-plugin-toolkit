@@ -47,6 +47,62 @@ class BindingPRTests(unittest.TestCase):
                 binding_pr.commit(None, "example/plugin", proposal, "renovate[bot]")
         self.assertTrue(all(len(call.args) < 3 for call in api.call_args_list))
 
+    def test_identity_failure_stops_before_any_write(self):
+        proposal = {
+            "schema": 1,
+            "repository": "example/plugin",
+            "number": 17,
+            "changes": [{"name": "uv.lock"}],
+        }
+        with (
+            patch.object(binding_pr, "api", return_value=self.fixture()) as api,
+            patch.object(binding_pr, "prepare", return_value=proposal),
+            patch.object(
+                binding_pr,
+                "commit_identity",
+                side_effect=ValueError("Invalid App identity"),
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "App identity"):
+                binding_pr.commit(None, "example/plugin", proposal, "renovate[bot]")
+        self.assertTrue(all(len(call.args) < 3 for call in api.call_args_list))
+
+    def test_app_is_both_author_and_committer(self):
+        pr = self.fixture()
+        proposal = {
+            "schema": 1,
+            "repository": "example/plugin",
+            "number": 17,
+            "head": pr["head"]["sha"],
+            "base": pr["base"]["sha"],
+            "changes": [{"name": "uv.lock", "after": "", "mode": 0o644}],
+        }
+        identity = {
+            "name": "fixture-app[bot]",
+            "email": "123+fixture-app[bot]@users.noreply.github.com",
+        }
+        writes = []
+
+        def api(repository, endpoint, method="GET", body=None):
+            if method != "GET":
+                writes.append((endpoint, body))
+                return {"sha": "c" * 40}
+            if endpoint.startswith("pulls/"):
+                return pr
+            return {"tree": {"sha": "d" * 40}}
+
+        with (
+            patch.object(binding_pr, "api", side_effect=api),
+            patch.object(binding_pr, "prepare", return_value=proposal),
+            patch.object(binding_pr, "commit_identity", return_value=identity),
+            patch.object(binding_pr, "check_renovate"),
+        ):
+            binding_pr.commit(None, "example/plugin", proposal, "renovate[bot]")
+        created = next(body for endpoint, body in writes if endpoint == "git/commits")
+        self.assertEqual(identity, created["author"])
+        self.assertEqual(identity, created["committer"])
+        self.assertFalse(writes[-1][1]["force"])
+
     def test_invalid_proposal_is_rejected_without_github_access(self):
         with patch.object(binding_pr, "api") as api:
             with self.assertRaises(ValueError):

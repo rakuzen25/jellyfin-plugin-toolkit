@@ -1,7 +1,7 @@
 """Sandbox replacement, rollback, mount, and ownership behavior without Docker."""
 
-import argparse
 import json
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -14,6 +14,23 @@ from jellyfin_plugin_toolkit.dev.references import inventory, verify
 
 
 class LocalSandboxTests(ConsumerTestCase):
+    def test_interruption_stops_child_and_cleans_up_before_propagating(self):
+        child = MagicMock()
+        child.wait.side_effect = [KeyboardInterrupt(), 0]
+        child.poll.return_value = 0
+        with (
+            patch.object(sandbox, "media_paths"),
+            patch("jellyfin_plugin_toolkit.tasks.verify_tools"),
+            patch("jellyfin_plugin_toolkit.dev.references.ensure"),
+            patch("pathlib.Path.exists", return_value=True),
+            patch.object(sandbox.subprocess, "Popen", return_value=child),
+            patch.object(sandbox, "stop") as stop,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            sandbox.dev(self.ctx)
+        child.send_signal.assert_called_once_with(signal.SIGINT)
+        stop.assert_called_once_with(self.ctx)
+
     def test_dev_forwards_no_watch_to_supervisor(self):
         for no_watch in (False, True):
             with (
@@ -38,13 +55,7 @@ class LocalSandboxTests(ConsumerTestCase):
                 ):
                     sandbox.dev(
                         self.ctx,
-                        argparse.Namespace(
-                            no_watch=no_watch,
-                            open=False,
-                            port=18096,
-                            clear_media_mounts=False,
-                            media_mount=None,
-                        ),
+                        watch=not no_watch,
                     )
                 self.assertEqual(no_watch, "--no-watch" in spawn.call_args.args[0])
 
@@ -69,7 +80,6 @@ class LocalSandboxTests(ConsumerTestCase):
         self.assertEqual(2, sleep.call_count)
 
     def test_another_session_cannot_take_the_checkout_lock(self):
-        import argparse
         import fcntl
 
         with tempfile.TemporaryDirectory() as directory:
@@ -84,7 +94,7 @@ class LocalSandboxTests(ConsumerTestCase):
             ):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 with self.assertRaisesRegex(ValueError, "already owns"):
-                    sandbox.dev(self.ctx, argparse.Namespace())
+                    sandbox.dev(self.ctx)
                 tools.assert_not_called()
 
     def test_media_mounts_are_deduplicated_and_retained(self):
@@ -104,12 +114,12 @@ class LocalSandboxTests(ConsumerTestCase):
                 )
                 self.assertEqual([], sandbox.media_paths(self.ctx, []))
                 for invalid in ["relative/path", "/", "/config"]:
-                    with self.assertRaises(SystemExit):
+                    with self.assertRaises(ValueError):
                         sandbox.media_paths(self.ctx, [invalid])
 
     def test_missing_media_fails_before_build(self):
         with patch.object(sandbox, "publish") as publish:
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(ValueError):
                 sandbox.deploy(
                     self.ctx, Path("unused"), ["/this-directory-does-not-exist"]
                 )
@@ -122,7 +132,7 @@ class LocalSandboxTests(ConsumerTestCase):
                 "check_output",
                 side_effect=["id", json.dumps([{"Config": {"Labels": {}}}])],
             ),
-            self.assertRaisesRegex(SystemExit, "another installation"),
+            self.assertRaisesRegex(ValueError, "another installation"),
         ):
             sandbox.inspect(self.ctx)
 

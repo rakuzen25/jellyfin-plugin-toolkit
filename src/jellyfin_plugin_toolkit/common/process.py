@@ -9,13 +9,13 @@ def executable(name):
     return os.environ.get("JELLYFIN_PLUGIN_" + name.upper(), name)
 
 
-def run(*args, cwd, env=None):
+def run(*args, cwd, env=None, stdout=None):
     display = args
     if "--include" in args:
         boundary = args.index("--include") + 1
         display = (*args[:boundary], f"[{len(args) - boundary} maintained files]")
-    print("$ " + " ".join(str(a) for a in display), flush=True)
-    subprocess.run([str(a) for a in args], cwd=cwd, env=env, check=True)
+    print("$ " + " ".join(str(a) for a in display), flush=True, file=sys.stderr)
+    subprocess.run([str(a) for a in args], cwd=cwd, env=env, stdout=stdout, check=True)
 
 
 def toolkit_environment(root, toolkit_root):

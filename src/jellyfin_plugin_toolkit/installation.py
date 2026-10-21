@@ -16,7 +16,6 @@ import zipfile
 from pathlib import Path
 
 from jellyfin_plugin_toolkit.acceptance import inventory, members
-from jellyfin_plugin_toolkit.context import Context
 
 OWNER_LABEL = "jellyfin-plugin-toolkit.acceptance-owner"
 
@@ -302,7 +301,3 @@ def main(ctx):
     print(
         "PASS: fresh official-image package installation and restart; fixture media unchanged"
     )
-
-
-if __name__ == "__main__":
-    main(Context.load())

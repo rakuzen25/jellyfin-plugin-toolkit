@@ -1,0 +1,318 @@
+"""Typed adapters for CI receipts, sandbox transport and release-bot helpers."""
+
+import json
+import os
+from pathlib import Path
+from typing import Annotated
+
+from jellyfin_plugin_toolkit.commands.runtime import (
+    application,
+    consumer,
+    exclusive,
+    state,
+    typer,
+)
+
+internal = application(
+    help="Implementation helpers used by trusted workflows and subprocesses."
+)
+ci = application(help="Plan and authenticate GitHub-based validation evidence.")
+binding_pr = application(
+    help="Complete bounded Renovate toolkit PRs with trusted code."
+)
+toolkit_release = application(
+    help="Build manifests and attach tested toolkit distributions."
+)
+sandbox = application(help="Transport operations for the Node development session.")
+internal.add_typer(ci, name="ci")
+internal.add_typer(binding_pr, name="binding-pr")
+internal.add_typer(toolkit_release, name="toolkit-release")
+internal.add_typer(sandbox, name="sandbox")
+
+
+@internal.command("package")
+def package(
+    ctx: typer.Context,
+    release: Annotated[bool, typer.Option("--release")] = False,
+    prepared_web: Annotated[bool, typer.Option("--prepared-web")] = False,
+):
+    """Assemble a package inside an already captured clean source checkout."""
+    from jellyfin_plugin_toolkit.build.package import package as assemble
+
+    assemble(consumer(ctx), release, prepared_web)
+
+
+@internal.command()
+def release_lock(
+    ctx: typer.Context,
+    repository: Annotated[str, typer.Option()],
+    pr: Annotated[int, typer.Option(min=1)],
+    bot: Annotated[str, typer.Option()],
+):
+    """Refresh the native lockfile on the configured release bot's PR."""
+    from jellyfin_plugin_toolkit.release_lock import refresh
+
+    refresh(state(ctx).root, repository, pr, bot)
+
+
+@sandbox.command()
+def deploy(
+    ctx: typer.Context,
+    web: Annotated[Path, typer.Option()],
+    media_mount: Annotated[list[str] | None, typer.Option()] = None,
+    clear_media_mounts: Annotated[bool, typer.Option("--clear-media-mounts")] = False,
+):
+    """Deploy a successful build into the owned sandbox."""
+    exclusive(
+        **{"--media-mount": media_mount, "--clear-media-mounts": clear_media_mounts}
+    )
+    from jellyfin_plugin_toolkit.context import Context
+    from jellyfin_plugin_toolkit.dev.local_jellyfin import deploy as install
+
+    root = state(ctx).root
+    install(
+        Context.load(root),
+        (root / web).resolve(),
+        [] if clear_media_mounts else media_mount,
+    )
+
+
+@sandbox.command()
+def stop(ctx: typer.Context):
+    """Stop the owned sandbox during session shutdown."""
+    from jellyfin_plugin_toolkit.context import Context
+    from jellyfin_plugin_toolkit.dev.local_jellyfin import stop as shutdown
+
+    shutdown(Context.load(state(ctx).root))
+
+
+@ci.command()
+def plan(
+    ctx: typer.Context,
+    base: str = "",
+    full: Annotated[bool, typer.Option("--full")] = False,
+    release: Annotated[bool, typer.Option("--release")] = False,
+    reuse: Annotated[bool, typer.Option("--reuse")] = False,
+    scheduled: Annotated[bool, typer.Option("--scheduled")] = False,
+):
+    """Select checks and reuse authenticated evidence where inputs match."""
+    from jellyfin_plugin_toolkit.ci.execution import plan as select
+
+    select(
+        consumer(ctx),
+        base=base,
+        full=full,
+        release=release,
+        reuse=reuse,
+        scheduled=scheduled,
+    )
+
+
+@ci.command()
+def finish(ctx: typer.Context):
+    """Write the aggregate validation receipt from completed job results."""
+    from jellyfin_plugin_toolkit.ci.execution import finish as aggregate
+
+    aggregate(consumer(ctx))
+
+
+@ci.command()
+def verify(ctx: typer.Context, run_id: Annotated[int, typer.Option(min=1)]):
+    """Verify the source run and authenticated release receipt."""
+    from jellyfin_plugin_toolkit.ci.execution import verify as authenticate
+
+    authenticate(consumer(ctx, release=True), str(run_id))
+
+
+@ci.command()
+def metadata_check(ctx: typer.Context):
+    """Validate automation metadata and immutable toolkit/workflow pins."""
+    from jellyfin_plugin_toolkit.ci.policy import metadata_check as inspect
+
+    inspect(consumer(ctx))
+
+
+@ci.command()
+def browser_verify(
+    ctx: typer.Context,
+    group: Annotated[str, typer.Option()],
+    project: Annotated[str, typer.Option()],
+    workers: Annotated[int, typer.Option(min=1)],
+):
+    """Verify that the browser invocation matches the consumed-input fingerprint."""
+    from jellyfin_plugin_toolkit.ci.browser import verify_execution
+
+    selected = consumer(ctx)
+    verify_execution(
+        selected,
+        json.loads((selected.root / "dist/plan.json").read_text()),
+        group,
+        project,
+        workers,
+    )
+
+
+@ci.command()
+def web_record(ctx: typer.Context):
+    """Record the exact emitted browser assets."""
+    from jellyfin_plugin_toolkit.ci.execution import web_record as record
+
+    record(consumer(ctx))
+
+
+@ci.command()
+def web_verify(ctx: typer.Context):
+    """Verify the prepared browser-asset inventory."""
+    from jellyfin_plugin_toolkit.common.artifacts import verify_web
+
+    verify_web(consumer(ctx).root)
+
+
+@binding_pr.command("prepare")
+def prepare_bindings(
+    ctx: typer.Context,
+    proposal: Annotated[Path, typer.Option()],
+    repository: Annotated[str, typer.Option(envvar="GITHUB_REPOSITORY")],
+    bot: str = "renovate[bot]",
+    run_id: Annotated[int | None, typer.Option(min=1)] = None,
+    pr: Annotated[int | None, typer.Option(min=1)] = None,
+):
+    """Prepare a data-only update proposal from trusted base code."""
+    exclusive(**{"--run-id": run_id, "--pr": pr})
+    if not (run_id or pr):
+        raise typer.BadParameter("Prepare requires --pr or --run-id")
+    from jellyfin_plugin_toolkit import binding_pr as service
+
+    root = state(ctx).root
+    request = service.discover(repository, bot, run_id, pr)
+    result = service.prepare(root, repository, request, bot) if request else None
+    ready = result is not None and bool(result["changes"])
+    if result:
+        (root / proposal).write_text(json.dumps(result, indent=2) + "\n")
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with open(output, "a") as stream:
+            stream.write(f"ready={str(ready).lower()}\n")
+            if result:
+                stream.write("base=" + result["base"] + "\n")
+    typer.echo(
+        "Prepared toolkit binding update."
+        if ready
+        else "No eligible toolkit binding changes."
+    )
+
+
+@binding_pr.command("commit")
+def commit_bindings(
+    ctx: typer.Context,
+    proposal: Annotated[Path, typer.Option()],
+    repository: Annotated[str, typer.Option(envvar="GITHUB_REPOSITORY")],
+    bot: str = "renovate[bot]",
+):
+    """Recompute and commit a bounded proposal using the existing App."""
+    from jellyfin_plugin_toolkit.binding_pr import commit
+
+    root = state(ctx).root
+    commit(root, repository, json.loads((root / proposal).read_text()), bot)
+
+
+@toolkit_release.command("manifest")
+def toolkit_manifest(
+    ctx: typer.Context,
+    sha: Annotated[str, typer.Option()],
+    directory: Path = Path("dist"),
+):
+    """Record distribution hashes and source provenance."""
+    from jellyfin_plugin_toolkit.toolkit_release import manifest
+
+    manifest(state(ctx).root / directory, sha)
+
+
+@toolkit_release.command("resolve")
+def toolkit_resolve(
+    ctx: typer.Context,
+    tag: Annotated[str, typer.Option()],
+    output: Annotated[Path, typer.Option()],
+    repository: Annotated[str, typer.Option(envvar="GITHUB_REPOSITORY")],
+    sha: str = "",
+):
+    """Resolve an existing toolkit draft without publishing it."""
+    from jellyfin_plugin_toolkit.toolkit_release import resolve
+
+    _, revision = resolve(repository, tag, sha)
+    with (state(ctx).root / output).open("a") as stream:
+        stream.write(f"tag={tag}\nsha={revision}\n")
+
+
+@toolkit_release.command("upload")
+def toolkit_upload(
+    ctx: typer.Context,
+    tag: Annotated[str, typer.Option()],
+    sha: Annotated[str, typer.Option()],
+    repository: Annotated[str, typer.Option(envvar="GITHUB_REPOSITORY")],
+    directory: Path = Path("dist"),
+):
+    """Attach the exact tested wheel and source distribution to the draft."""
+    from jellyfin_plugin_toolkit.toolkit_release import upload
+
+    upload(state(ctx).root / directory, repository, tag, sha)
+
+
+@internal.command()
+def references(ctx: typer.Context):
+    """Restore and verify the official Jellyfin reference assemblies."""
+    from jellyfin_plugin_toolkit.context import Context
+    from jellyfin_plugin_toolkit.dev.references import ensure
+
+    ensure(Context.load(state(ctx).root))
+
+
+@internal.command()
+def restore_backend(ctx: typer.Context):
+    """Restore the pinned backend dependencies."""
+    from jellyfin_plugin_toolkit.build.backend import prepare
+
+    prepare(consumer(ctx))
+
+
+@internal.command()
+def architecture(ctx: typer.Context):
+    """Check declared project boundaries."""
+    from jellyfin_plugin_toolkit.checks.architecture import check_projects
+
+    check_projects(consumer(ctx).root)
+    typer.echo("PASS: declared project graph and host-independent boundaries")
+
+
+@internal.command()
+def reproducibility(ctx: typer.Context):
+    """Independently rebuild the captured source distribution."""
+    from jellyfin_plugin_toolkit.reproducibility import main as verify
+
+    verify(consumer(ctx))
+
+
+@internal.command()
+def installation(ctx: typer.Context):
+    """Exercise package installation in the disposable acceptance environment."""
+    from jellyfin_plugin_toolkit.installation import main as verify
+
+    verify(consumer(ctx))
+
+
+@internal.command()
+def docs(ctx: typer.Context):
+    """Check documentation links and README reachability."""
+    from jellyfin_plugin_toolkit.checks.docs import main as inspect
+
+    inspect(consumer(ctx))
+
+
+@internal.command()
+def tooling(ctx: typer.Context):
+    """Check tooling quality and workflow consistency."""
+    from jellyfin_plugin_toolkit.checks.formatting import format_target
+    from jellyfin_plugin_toolkit.checks.tooling import main as inspect
+
+    selected = consumer(ctx)
+    format_target(selected, "tooling", False)
+    inspect(selected)

@@ -281,11 +281,15 @@ export async function session(argv = process.argv.slice(2)) {
         stopPromise;
     function python(operation, extra = []) {
         return new Promise((resolve, reject) => {
-            const child = spawn(process.env.JELLYFIN_PLUGIN_DEV_PYTHON, ["-m", "jellyfin_plugin_toolkit.dev.local_jellyfin", operation, ...extra], {
-                cwd: root,
-                stdio: "inherit",
-                detached: true,
-            });
+            const child = spawn(
+                process.env.JELLYFIN_PLUGIN_DEV_PYTHON,
+                ["-m", "jellyfin_plugin_toolkit", "internal", "sandbox", operation, ...extra],
+                {
+                    cwd: root,
+                    stdio: "inherit",
+                    detached: true,
+                },
+            );
             children.add(child);
             child.on("error", reject);
             child.on("exit", (code, signal) => {

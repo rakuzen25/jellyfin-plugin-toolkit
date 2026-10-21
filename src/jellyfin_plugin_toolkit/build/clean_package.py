@@ -50,7 +50,7 @@ def clean_package(ctx, release=False, prepared_web=False):
             ["uv", "sync", "--locked"], cwd=root, env=environment, check=True
         )
         subprocess.run(
-            ["uv", "run", "--no-sync", "jpt", "_package"]
+            ["uv", "run", "--no-sync", "jpt", "internal", "package"]
             + (["--release"] if release else [])
             + (["--prepared-web"] if prepared_web else []),
             cwd=root,

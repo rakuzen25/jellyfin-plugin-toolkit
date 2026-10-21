@@ -52,9 +52,8 @@ for info in pkgutil.walk_packages(jellyfin_plugin_toolkit.__path__, jellyfin_plu
         importlib.import_module(info.name)
 from jellyfin_plugin_toolkit.cli import main
 before = list(sys.argv)
-for args in (['--help'], ['ci', '--help'], ['release', '--help']):
-    try: main(args)
-    except SystemExit as error: assert error.code == 0
+for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
+    assert main(args) == 0
     assert sys.argv == before
 """
         env = dict(os.environ)

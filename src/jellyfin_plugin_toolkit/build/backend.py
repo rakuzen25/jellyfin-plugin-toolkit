@@ -6,7 +6,6 @@ from pathlib import Path
 
 from jellyfin_plugin_toolkit.common.binaries import HOST_LIBRARIES
 from jellyfin_plugin_toolkit.common.process import executable, run
-from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.dev.references import ensure
 
 
@@ -84,7 +83,3 @@ def prepare(ctx):
             "-p:NuGetAudit=false",
             cwd=ctx.root,
         )
-
-
-if __name__ == "__main__":
-    prepare(Context.load())

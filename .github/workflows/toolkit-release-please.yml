@@ -18,9 +18,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
     outputs:
       tag: ${{ steps.draft.outputs.tag }}
       sha: ${{ steps.draft.outputs.sha }}
@@ -36,14 +34,14 @@ jobs:
             uv.lock
       - run: uv sync --locked
       - name: Require GitHub App credentials
-        if: inputs.tag == ''
         env:
           APP_CLIENT_ID: ${{ vars.PLUGIN_APP_CLIENT_ID }}
           APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
-        run: test -n "$APP_CLIENT_ID" && test -n "$APP_PRIVATE_KEY"
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        run: |
+          test -n "$APP_CLIENT_ID" && test -n "$APP_PRIVATE_KEY" || { echo 'Configure PLUGIN_APP_CLIENT_ID and PLUGIN_APP_PRIVATE_KEY for the existing GitHub App'; exit 1; }
+      - name: Create repository-scoped App token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
-        if: inputs.tag == ''
         with:
           client-id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
           private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
@@ -62,11 +60,12 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           RELEASE_PR: ${{ steps.release.outputs.pr }}
+          JPT_APP_SLUG: ${{ steps.app.outputs.app-slug }}
           RELEASE_BOT: ${{ steps.app.outputs.app-slug }}[bot]
           REPOSITORY: ${{ github.repository }}
         run: |
           number=$(jq -r '.number' <<< "$RELEASE_PR")
-          uv run --no-sync python -m jellyfin_plugin_toolkit.release_lock --repository "$REPOSITORY" --pr "$number" --bot "$RELEASE_BOT"
+          uv run --no-sync jpt internal release-lock --repository "$REPOSITORY" --pr "$number" --bot "$RELEASE_BOT"
       - name: Resolve the matching unpublished draft
         id: draft
         if: inputs.tag != '' || steps.release.outputs.release_created == 'true'
@@ -75,7 +74,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || steps.release.outputs.tag_name }}
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
         run: >-
-          uv run --no-sync python -m jellyfin_plugin_toolkit.toolkit_release resolve
+          uv run --no-sync jpt internal toolkit-release resolve
           --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --output "$GITHUB_OUTPUT"
   validate:
     needs: prepare
@@ -87,7 +86,7 @@ jobs:
     needs: [prepare, validate]
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
       id-token: write
       attestations: write
     steps:
@@ -113,13 +112,26 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
             dist/build-provenance.json
+      - name: Require GitHub App credentials
+        env:
+          APP_CLIENT_ID: ${{ vars.PLUGIN_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$APP_CLIENT_ID" && test -n "$APP_PRIVATE_KEY" || { echo 'Configure PLUGIN_APP_CLIENT_ID and PLUGIN_APP_PRIVATE_KEY for the existing GitHub App'; exit 1; }
+      - name: Create repository-scoped App token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Attach the validated distributions to the draft
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
         run: >-
-          uv run --no-sync python -m jellyfin_plugin_toolkit.toolkit_release upload
+          uv run --no-sync jpt internal toolkit-release upload
           --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory dist
       - name: Record the publication handoff
         run: echo 'Toolkit draft artifacts validated. Review the validated wheel and source distribution before manually publishing the draft.' >> "$GITHUB_STEP_SUMMARY"

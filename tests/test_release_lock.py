@@ -90,6 +90,14 @@ class ReleaseLockTests(unittest.TestCase):
             with (
                 patch.object(release_lock, "api", side_effect=api),
                 patch.object(
+                    release_lock,
+                    "commit_identity",
+                    return_value={
+                        "name": "release[bot]",
+                        "email": "123+release[bot]@users.noreply.github.com",
+                    },
+                ),
+                patch.object(
                     release_lock.subprocess,
                     "check_output",
                     return_value=("a" * 40).encode(),
@@ -108,5 +116,7 @@ class ReleaseLockTests(unittest.TestCase):
             self.assertEqual(
                 ["uv.lock"], [item["path"] for item in writes[1][1]["tree"]]
             )
+            self.assertEqual(writes[2][1]["author"], writes[2][1]["committer"])
+            self.assertEqual("release[bot]", writes[2][1]["author"]["name"])
             self.assertFalse(writes[-1][1]["force"])
             self.assertEqual(trusted, (root / "pyproject.toml").read_text())

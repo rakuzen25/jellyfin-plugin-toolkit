@@ -12,9 +12,10 @@ from pathlib import Path
 from consumer_fixture import config
 from scaffold_fixture import generate
 
+from jellyfin_plugin_toolkit.cli import main
 from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.release import configuration
-from jellyfin_plugin_toolkit.release.__main__ import check_identity, main, prepare
+from jellyfin_plugin_toolkit.release.service import check_identity, prepare
 from jellyfin_plugin_toolkit.scaffold import toml
 
 
@@ -94,14 +95,14 @@ class ReleaseConfigurationTests(unittest.TestCase):
     def test_preview_check_apply_and_idempotency_preserve_other_settings(self):
         original = (self.root / configuration.FILENAME).read_bytes()
         with redirect_stdout(io.StringIO()) as output:
-            main(["--root", str(self.root), "config"])
+            main(["--root", str(self.root), "release", "config"])
         self.assertIn("+", output.getvalue())
         self.assertEqual(original, (self.root / configuration.FILENAME).read_bytes())
-        with self.assertRaises(SystemExit) as error:
-            main(["--root", str(self.root), "config", "--check"])
-        self.assertEqual(1, error.exception.code)
+        self.assertEqual(
+            1, main(["--root", str(self.root), "release", "config", "--check"])
+        )
         self.apply()
-        main(["--root", str(self.root), "config", "--check"])
+        main(["--root", str(self.root), "release", "config", "--check"])
         data = json.loads((self.root / configuration.FILENAME).read_text())
         self.assertTrue(data["draft"])
         self.assertEqual("other.txt", data["packages"]["."]["extra-files"][0])
@@ -113,8 +114,10 @@ class ReleaseConfigurationTests(unittest.TestCase):
         before = (self.root / configuration.FILENAME).read_bytes()
         self.apply()
         self.assertEqual(before, (self.root / configuration.FILENAME).read_bytes())
-        with self.assertRaises(SystemExit):
-            main(["--root", str(self.root), "config", "--check", "--apply"])
+        self.assertEqual(
+            2,
+            main(["--root", str(self.root), "release", "config", "--check", "--apply"]),
+        )
 
     def test_new_removed_locks_and_changed_assemblies_require_regeneration(self):
         self.apply()
@@ -247,5 +250,5 @@ class ReleaseConfigurationTests(unittest.TestCase):
         validation = (toolkit / ".github/workflows/validate.yml").read_text()
         self.assertLess(
             validation.index("jpt release prepare"),
-            validation.index("jpt ci plan"),
+            validation.index("jpt internal ci plan"),
         )

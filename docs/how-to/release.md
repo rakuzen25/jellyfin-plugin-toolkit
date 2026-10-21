@@ -4,7 +4,7 @@ Toolkit releases and plugin releases are independent. Public plugin publication 
 
 ## Toolkit
 
-Install the release GitHub App on the toolkit repository with Contents, Pull requests and Issues read/write access. Set Actions variable `PLUGIN_APP_CLIENT_ID` and secret `PLUGIN_APP_PRIVATE_KEY`. The toolkit release workflow requires App credentials so its release PRs trigger ordinary validation; it does not fall back to `GITHUB_TOKEN` for PR creation. Require the toolkit and both starter validation jobs before merging release PRs.
+Install the release GitHub App on the toolkit repository with Contents, Pull requests and Issues read/write access, plus Workflows write access where toolkit synchronization is enabled. Set Actions variable `PLUGIN_APP_CLIENT_ID` and secret `PLUGIN_APP_PRIVATE_KEY`. The toolkit release workflow requires App credentials so its release PRs trigger ordinary validation; it does not fall back to `GITHUB_TOKEN` for PR creation. Require the toolkit and both starter validation jobs before merging release PRs.
 
 Use Conventional Commits or conventional squash titles. Below 1.0, fixes and features bump the patch version and breaking changes bump the minor version. Release-please maintains `.release-please-manifest.json` from completed releases; preserve it when configuring subsequent releases.
 
@@ -21,7 +21,7 @@ Consumers extend the shared `default.json` preset as `github>rakuzen25/jellyfin-
 
 Consumers keep event triggers and explicit job permissions in their own small workflows. Shared workflow references use immutable commit SHAs matching the wheel release's source revision.
 
-Release preparation uses release-please to create version changes and unpublished drafts. A repository-scoped App can be configured through `PLUGIN_APP_CLIENT_ID` and `PLUGIN_APP_PRIVATE_KEY`; manual release attachment can use the workflow token. Configure the catalog notification App only for the chosen catalog repository.
+Release preparation uses release-please to create version changes and unpublished drafts. The existing repository App is required through `PLUGIN_APP_CLIENT_ID` and `PLUGIN_APP_PRIVATE_KEY` for all repository writes, including manual release attachment. `GITHUB_TOKEN` is used for reads, CI artifacts, and attestations. Configure the catalog notification App only for the chosen catalog repository.
 
 ### Maintain internal project update rules
 
@@ -86,4 +86,8 @@ Consumers may opt into `.github/workflows/sync-bindings.yml` through an immutabl
 
 The caller uses `workflow_run` after validation completes (including failed validation), plus manual dispatch with a Renovate PR number. Configure `PLUGIN_APP_CLIENT_ID` and `PLUGIN_APP_PRIVATE_KEY` for the existing repository App with Contents and Workflows write permissions and Pull requests read permission. Ordinary validation remains read-only. The updater accepts only the configured bot's open, same-repository toolkit PRs. It materializes binding files as data, runs the trusted base release's updater, and commits no partial update on conflicts or unsupported binding contracts.
 
-The shared Renovate preset includes `jellyfin-plugin-toolkit-sync@users.noreply.github.com` in `gitIgnoredAuthors`. Preserve that entry if overriding this array so Renovate can regenerate its branch and the companion can reapply synchronization. Human edits are not ignored. Toolkit adoption remains manually reviewed; synchronization never merges or publishes. Missing App permissions or unsupported upgrades require maintainer action, not a fallback write token.
+The **Set up connected GitHub App** workflow runs on default-branch pushes and manual dispatch. It uses the existing App credentials to discover the slug and bot account ID, then opens or updates one reviewed PR from `jpt/automation-setup`. Starter generation requires no identity input. The PR changes only `renovate.json` and `.github/jpt-automation.json`; the latter records the managed App slug and bot ID. On App changes, setup replaces only the previously managed email in `gitIgnoredAuthors`, preserving unrelated entries and configuration.
+
+Merge the setup PR to enable toolkit synchronization. Builds, ordinary PR checks, releases, uploads and catalog notifications continue while setup is pending. If you close an unmerged setup PR, automatic runs leave it closed; dispatch the workflow manually to retry. Human edits or unrelated changes on the setup branch stop automatic updates and require review.
+
+Write jobs resolve the bot from the token action’s App slug and use its canonical name and email for both author and committer. Human edits are not ignored. Toolkit adoption remains manually reviewed; setup and synchronization never merge or publish. Missing App permissions or unsupported upgrades require maintainer action, not a fallback write token.

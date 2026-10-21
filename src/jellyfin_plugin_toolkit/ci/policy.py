@@ -57,7 +57,7 @@ def git(root, *args):
 
 def metadata_path(path):
     return (
-        path == "renovate.json"
+        path in {"renovate.json", ".github/jpt-automation.json"}
         or path == ".github/CODEOWNERS"
         or path.startswith(
             (".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE/")
@@ -202,8 +202,17 @@ def metadata_check(ctx):
     for name in tracked_files(root):
         if metadata_path(name) and name.endswith(".json") and (root / name).exists():
             json.loads((root / name).read_text())
+    from jellyfin_plugin_toolkit.automation import (
+        STATE_PATH,
+        check_renovate,
+        record_identity,
+    )
     from jellyfin_plugin_toolkit.checks.pins import check_pins
     from jellyfin_plugin_toolkit.common.process import executable, run
+
+    state = root / STATE_PATH
+    if state.exists():
+        check_renovate(root, record_identity(json.loads(state.read_text())))
 
     check_pins(root)
     run(

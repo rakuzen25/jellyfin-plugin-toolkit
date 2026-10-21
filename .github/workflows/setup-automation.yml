@@ -1,0 +1,62 @@
+name: Configure connected GitHub App
+on:
+  workflow_call:
+    inputs:
+      app_client_id:
+        type: string
+        required: true
+      retry_closed:
+        type: boolean
+        default: false
+    secrets:
+      PLUGIN_APP_PRIVATE_KEY:
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: app-setup-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  configure:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
+        with:
+          node: "true"
+      - name: Require existing App credentials
+        env:
+          APP_CLIENT_ID: ${{ inputs.app_client_id }}
+          APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$APP_CLIENT_ID" && test -n "$APP_PRIVATE_KEY" || { echo 'Configure PLUGIN_APP_CLIENT_ID and PLUGIN_APP_PRIVATE_KEY for the existing GitHub App'; exit 1; }
+      - name: Create repository-scoped setup token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Open or update the reviewed setup PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          JPT_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          REPOSITORY: ${{ github.repository }}
+          RETRY_CLOSED: ${{ inputs.retry_closed && github.event_name == 'workflow_dispatch' }}
+        run: |
+          args=()
+          if [ "$RETRY_CLOSED" = true ]; then args+=(--retry-closed); fi
+          uv run --no-sync jpt automation setup --repository "$REPOSITORY" "${args[@]}"

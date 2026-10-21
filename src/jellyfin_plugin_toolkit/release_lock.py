@@ -1,6 +1,5 @@
 """Refresh only the lockfile on a bot-owned toolkit release PR using trusted code."""
 
-import argparse
 import base64
 import copy
 import re
@@ -10,7 +9,8 @@ import tomllib
 from pathlib import Path
 from urllib.parse import quote
 
-from jellyfin_plugin_toolkit.binding_pr import AUTHOR, api, eligible
+from jellyfin_plugin_toolkit.automation import commit_identity
+from jellyfin_plugin_toolkit.binding_pr import api, eligible
 
 
 def refresh(root, repository, number, bot):
@@ -50,6 +50,7 @@ def refresh(root, repository, number, bot):
     existing = api(repository, "contents/uv.lock?ref=" + pr["head"]["sha"])
     if base64.b64decode(existing["content"]) == locked:
         return
+    identity = commit_identity()
     blob = api(
         repository,
         "git/blobs",
@@ -81,7 +82,8 @@ def refresh(root, repository, number, bot):
             "message": "chore: lock release package version",
             "tree": tree["sha"],
             "parents": [pr["head"]["sha"]],
-            "author": AUTHOR,
+            "author": identity,
+            "committer": identity,
         },
     )
     latest = api(repository, f"pulls/{number}")
@@ -95,16 +97,3 @@ def refresh(root, repository, number, bot):
         "PATCH",
         {"sha": commit["sha"], "force": False},
     )
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository", required=True)
-    parser.add_argument("--pr", type=int, required=True)
-    parser.add_argument("--bot", required=True)
-    args = parser.parse_args()
-    refresh(Path.cwd(), args.repository, args.pr, args.bot)
-
-
-if __name__ == "__main__":
-    main()

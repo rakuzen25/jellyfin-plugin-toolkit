@@ -1,6 +1,9 @@
 """Public command defaults, argument forwarding and failure propagation."""
 
+import io
+import json
 import subprocess
+from contextlib import redirect_stdout
 from unittest.mock import call, patch
 
 from consumer_fixture import ConsumerTestCase
@@ -11,6 +14,44 @@ from jellyfin_plugin_toolkit.context import Context
 
 
 class CommandTests(ConsumerTestCase):
+    def test_doctor_stdout_is_json(self):
+        with (
+            patch.object(tasks, "verify_tools"),
+            redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual(0, main(["doctor"]))
+        self.assertEqual(self.ctx.identity.id, json.loads(output.getvalue())["plugin"])
+
+    def test_validate_runs_every_local_stage_in_order(self):
+        events = []
+        with (
+            patch.object(
+                tasks,
+                "check",
+                side_effect=lambda _, target: events.append(("check", target)),
+            ),
+            patch.object(
+                tasks,
+                "test",
+                side_effect=lambda _, target, extra: events.append(("test", target)),
+            ),
+            patch(
+                "jellyfin_plugin_toolkit.build.clean_package.clean_package",
+                side_effect=lambda _: events.append(("package", None)),
+            ),
+        ):
+            self.assertEqual(0, main(["validate"]))
+        self.assertEqual(
+            [("check", target) for target in self.ctx.config.validation.check_targets]
+            + [("test", target) for target in self.ctx.config.validation.unit_groups]
+            + [("package", None)]
+            + [
+                ("test", target)
+                for target in self.ctx.config.validation.acceptance_groups
+            ],
+            events,
+        )
+
     def test_default_tests_do_not_run_acceptance(self):
         with patch.object(tasks, "test") as test:
             main(["test"])
@@ -25,6 +66,7 @@ class CommandTests(ConsumerTestCase):
                 [
                     "test",
                     "browser",
+                    "--",
                     "--project",
                     "workflow-chromium",
                     "--grep",
@@ -42,9 +84,8 @@ class CommandTests(ConsumerTestCase):
             patch.object(
                 tasks, "check", side_effect=subprocess.CalledProcessError(1, "check")
             ) as check,
-            self.assertRaises(subprocess.CalledProcessError),
         ):
-            main(["check"])
+            self.assertEqual(1, main(["check"]))
         self.assertEqual(1, check.call_count)
 
     def test_docs_checks_format_before_links_without_installing(self):

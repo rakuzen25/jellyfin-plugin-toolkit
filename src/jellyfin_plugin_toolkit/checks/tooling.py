@@ -12,12 +12,3 @@ def main(ctx):
         run(python_checks(ctx), "-m", "ruff", "check", *roots, cwd=ctx.root)
     run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0", cwd=ctx.root)
     check_workflows(ctx.root)
-
-
-if __name__ == "__main__":
-    from jellyfin_plugin_toolkit.checks.formatting import format_target
-    from jellyfin_plugin_toolkit.context import Context
-
-    ctx = Context.load()
-    format_target(ctx, "tooling", False)
-    main(ctx)
