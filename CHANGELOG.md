@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.2.0...v0.3.0) (2026-10-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* refactor toolkit architecture
+* refactor tooling
+
+### Code Refactoring
+
+* refactor tooling ([4198dfb](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/4198dfb1779357f219e58b55d2ddeac35c990c9f))
+* refactor toolkit architecture ([bc2482f](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/bc2482fe040d199acffb2e56157c9e685051731d))
+
 ## [0.2.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.1.2...v0.2.0) (2026-10-20)
 
 
