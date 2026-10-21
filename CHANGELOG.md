@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.3.0...v0.4.0) (2026-10-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* refactor cli
+
+### Code Refactoring
+
+* refactor cli ([a12296a](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/a12296a48727d8170c8615f86bb2cb23ed3c9692))
+
 ## [0.3.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.2.0...v0.3.0) (2026-10-21)
 
 
