@@ -90,6 +90,11 @@ jobs:
     setup = """name: Set up connected GitHub App
 on:
   push:
+    branches: [main]
+    paths:
+      - .github/workflows/app-setup.yml
+      - renovate.json
+      - .github/jpt-automation.json
   workflow_dispatch:
 permissions:
   contents: read

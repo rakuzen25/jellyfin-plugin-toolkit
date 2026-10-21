@@ -39,7 +39,7 @@ uv run jpt new /tmp/example-plugin --id example-plugin --name 'Example Plugin' -
 
 Replace `example/example-plugin` with your destination repository. Omit `--admin` for a backend-only plugin. Use `--host-project server/Entry.csproj` for a different backend path. The destination must not exist. Keep its generated GUID stable after publication.
 
-Generation needs no App identity or credentials. After pushing the repository and configuring `PLUGIN_APP_CLIENT_ID` and `PLUGIN_APP_PRIVATE_KEY` in Actions settings, dispatch **Set up connected GitHub App**. Review and merge its configuration PR. Default-branch pushes also check this setup automatically.
+Generation needs no App identity or credentials. After pushing the repository and configuring `PLUGIN_APP_CLIENT_ID` and `PLUGIN_APP_PRIVATE_KEY` in Actions settings, dispatch **Set up connected GitHub App**. Review and merge its configuration PR. Pushes to `main` also check setup when `renovate.json`, `.github/jpt-automation.json`, or its workflow caller changes. After changing App credentials, dispatch the workflow manually.
 
 Generation uses `uv init` and `uv add` to create an independent project and lock the canonical released toolkit wheel. It works outside a consumer checkout. For an unpublished candidate, build the distribution pair first:
 

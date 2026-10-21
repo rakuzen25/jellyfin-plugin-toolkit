@@ -17,7 +17,13 @@ class WorkflowTests(unittest.TestCase):
 
     def test_app_setup_caller_is_always_generated_and_default_branch_only(self):
         caller = render("example/toolkit", "a" * 40, version="v1.0.0")["app-setup.yml"]
-        self.assertIn("push:", caller)
+        self.assertIn("push:\n    branches: [main]\n    paths:", caller)
+        for path in [
+            "renovate.json",
+            ".github/jpt-automation.json",
+            ".github/workflows/app-setup.yml",
+        ]:
+            self.assertIn("      - " + path, caller)
         self.assertIn("workflow_dispatch:", caller)
         self.assertIn("github.event.repository.default_branch", caller)
         self.assertIn("setup-automation.yml@" + "a" * 40, caller)
