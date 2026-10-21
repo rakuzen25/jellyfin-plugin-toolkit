@@ -18,7 +18,8 @@ from jellyfin_plugin_toolkit.automation import check_renovate, commit_identity
 def api(repository, endpoint, method="GET", body=None):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Expected a repository in OWNER/REPO form")
-    command = ["gh", "api", "--method", method, "repos/" + repository + "/" + endpoint]
+    resource = "repos/" + repository + ("/" + endpoint if endpoint else "")
+    command = ["gh", "api", "--method", method, resource]
     if body is not None:
         command += ["--input", "-"]
     output = subprocess.check_output(

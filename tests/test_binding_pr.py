@@ -5,6 +5,39 @@ from unittest.mock import patch
 from jellyfin_plugin_toolkit import binding_pr
 
 
+class GitHubApiTests(unittest.TestCase):
+    def test_repository_metadata_uses_the_root_endpoint_without_a_trailing_slash(self):
+        with patch.object(
+            binding_pr.subprocess,
+            "check_output",
+            return_value=b'{"default_branch":"main"}',
+        ) as request:
+            self.assertEqual(
+                {"default_branch": "main"}, binding_pr.api("example/plugin", "")
+            )
+        request.assert_called_once_with(
+            ["gh", "api", "--method", "GET", "repos/example/plugin"], input=None
+        )
+
+    def test_nested_endpoint_retains_method_and_write_body(self):
+        with patch.object(
+            binding_pr.subprocess, "check_output", return_value=b"{}"
+        ) as request:
+            binding_pr.api("example/plugin", "pulls/17", "PATCH", {"state": "open"})
+        request.assert_called_once_with(
+            [
+                "gh",
+                "api",
+                "--method",
+                "PATCH",
+                "repos/example/plugin/pulls/17",
+                "--input",
+                "-",
+            ],
+            input=b'{"state": "open"}',
+        )
+
+
 class BindingPRTests(unittest.TestCase):
     def fixture(self):
         repo = {"full_name": "example/plugin"}
