@@ -3,11 +3,6 @@
     "extends": ["config:recommended"],
     "automerge": false,
     "minimumReleaseAge": "1 day",
-    "packageRules": [
-        {
-            "matchManagers": ["github-actions"],
-            "pinDigests": true
-        }
-    ],
+    "packageRules": [{ "matchManagers": ["github-actions"], "pinDigests": true }],
     "gitIgnoredAuthors": ["342669125+finchaser-3-0[bot]@users.noreply.github.com"]
 }
