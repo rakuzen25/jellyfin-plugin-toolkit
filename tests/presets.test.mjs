@@ -10,21 +10,21 @@ const toolkit = fileURLToPath(new URL("../", import.meta.url));
 test("native consumer configuration discovers shared presets and retains overrides", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "toolkit-presets-"));
     try {
-        await cp(path.join(toolkit, "configs"), path.join(root, ".build/toolkit/current/configs"), { recursive: true });
+        await cp(path.join(toolkit, "src/jellyfin_plugin_toolkit/resources/configs"), path.join(root, ".build/jpt/configs"), { recursive: true });
         await symlink(path.join(toolkit, "node_modules"), path.join(root, "node_modules"), "dir");
         await writeFile(path.join(root, "package.json"), '{"private":true}');
         await writeFile(
             path.join(root, "eslint.config.mjs"),
-            'import js from "@eslint/js"; import {defineConfig} from "eslint/config"; import prettier from "eslint-config-prettier"; import globals from "globals"; import tseslint from "typescript-eslint"; import {createConfig} from "./.build/toolkit/current/configs/eslint.mjs"; export default [...createConfig({js,defineConfig,prettier,globals,tseslint}),{files:["app/**/*.ts"],rules:{"@typescript-eslint/no-unused-vars":"off"}}];',
+            'import js from "@eslint/js"; import {defineConfig} from "eslint/config"; import prettier from "eslint-config-prettier"; import globals from "globals"; import tseslint from "typescript-eslint"; import {createConfig} from "./.build/jpt/configs/eslint.mjs"; export default [...createConfig({js,defineConfig,prettier,globals,tseslint}),{files:["app/**/*.ts"],rules:{"@typescript-eslint/no-unused-vars":"off"}}];',
         );
         await writeFile(
             path.join(root, ".prettierrc.mjs"),
-            'import defaults from "./.build/toolkit/current/configs/prettier.mjs"; export default {...defaults,printWidth:88};',
+            'import defaults from "./.build/jpt/configs/prettier.mjs"; export default {...defaults,printWidth:88};',
         );
         await mkdir(path.join(root, "app"));
         await writeFile(
             path.join(root, "app/tsconfig.json"),
-            '{"extends":"../.build/toolkit/current/configs/tsconfig.json","compilerOptions":{"strict":false},"include":["**/*.ts"]}',
+            '{"extends":"../.build/jpt/configs/tsconfig.json","compilerOptions":{"strict":false},"include":["**/*.ts"]}',
         );
         await writeFile(path.join(root, "app/example.ts"), "export const answer = 42;\n");
         const require = createRequire(path.join(root, "package.json"));

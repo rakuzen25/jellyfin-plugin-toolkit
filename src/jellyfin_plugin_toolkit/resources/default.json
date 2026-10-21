@@ -1,0 +1,43 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "customManagers": [
+        {
+            "customType": "regex",
+            "managerFilePatterns": ["/^pyproject\\.toml$/"],
+            "matchStrings": [
+                "https://github\\.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)/jellyfin_plugin_toolkit-[0-9]+\\.[0-9]+\\.[0-9]+-py3-none-any\\.whl"
+            ],
+            "depNameTemplate": "rakuzen25/jellyfin-plugin-toolkit",
+            "datasourceTemplate": "github-releases",
+            "versioningTemplate": "semver",
+            "autoReplaceStringTemplate": "https://github.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/{{newValue}}/jellyfin_plugin_toolkit-{{replace \"v\" \"\" newValue}}-py3-none-any.whl"
+        },
+        {
+            "customType": "regex",
+            "managerFilePatterns": ["/^plugin\\.toml$/"],
+            "matchStrings": [
+                "\"(?<depName>mcr\\.microsoft\\.com/playwright|rhysd/actionlint):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+            ],
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker"
+        }
+    ],
+    "packageRules": [
+        {
+            "description": "Keep toolkit wheel, uv lockfile and immutable workflow references together.",
+            "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],
+            "groupName": "Jellyfin plugin toolkit",
+            "groupSlug": "jellyfin-plugin-toolkit",
+            "automerge": false,
+            "separateMajorMinor": false
+        },
+        {
+            "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],
+            "matchUpdateTypes": ["major"],
+            "dependencyDashboardApproval": true,
+            "labels": ["toolkit-major-review"]
+        }
+    ],
+    "description": ["Coordinated toolkit wheel, uv lockfile, workflow and preset updates."],
+    "gitIgnoredAuthors": ["jellyfin-plugin-toolkit-sync@users.noreply.github.com"]
+}

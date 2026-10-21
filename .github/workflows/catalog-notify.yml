@@ -29,17 +29,10 @@ jobs:
           DESTINATION: ${{ inputs.catalog_repository }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          python3 - <<'PY'
-          import os,re
-          destination=os.environ['DESTINATION']
-          if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',destination):
-              raise SystemExit('Invalid catalog repository')
-          if not re.fullmatch(r'v\d+\.\d+\.\d+',os.environ['RELEASE_TAG']):
-              raise SystemExit('Catalog notification requires a stable release tag')
-          owner,repository=destination.split('/')
-          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
-              output.write('owner='+owner+'\nrepository='+repository+'\n')
-          PY
+          [[ "$DESTINATION" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'Invalid catalog repository'; exit 1; }
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Catalog notification requires a stable release tag'; exit 1; }
+          echo "owner=${DESTINATION%%/*}" >> "$GITHUB_OUTPUT"
+          echo "repository=${DESTINATION#*/}" >> "$GITHUB_OUTPUT"
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
         with:

@@ -3,12 +3,14 @@
     "customManagers": [
         {
             "customType": "regex",
-            "managerFilePatterns": ["/^toolkit\\.lock\\.json$/"],
+            "managerFilePatterns": ["/^pyproject\\.toml$/"],
             "matchStrings": [
-                "\"repository\"\\s*:\\s*\"(?<depName>[^\"\\s]+)\"[\\s\\S]*?\"version\"\\s*:\\s*\"(?<currentValue>v[^\"\\s]+)\"[\\s\\S]*?\"sha256\"\\s*:\\s*\"(?<currentDigest>[a-f0-9]{64})\""
+                "https://github\\.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)/jellyfin_plugin_toolkit-[0-9]+\\.[0-9]+\\.[0-9]+-py3-none-any\\.whl"
             ],
-            "datasourceTemplate": "github-release-attachments",
-            "versioningTemplate": "semver"
+            "depNameTemplate": "rakuzen25/jellyfin-plugin-toolkit",
+            "datasourceTemplate": "github-releases",
+            "versioningTemplate": "semver",
+            "autoReplaceStringTemplate": "https://github.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/{{newValue}}/jellyfin_plugin_toolkit-{{replace \"v\" \"\" newValue}}-py3-none-any.whl"
         },
         {
             "customType": "regex",
@@ -22,12 +24,11 @@
     ],
     "packageRules": [
         {
-            "description": "Keep toolkit archive version, checksum and reusable workflow pins together.",
+            "description": "Keep toolkit wheel, uv lockfile and immutable workflow references together.",
             "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],
             "groupName": "Jellyfin plugin toolkit",
             "groupSlug": "jellyfin-plugin-toolkit",
             "automerge": false,
-            "pinDigests": true,
             "separateMajorMinor": false
         },
         {
@@ -37,6 +38,6 @@
             "labels": ["toolkit-major-review"]
         }
     ],
-    "description": ["Pinned toolkit archive, workflow and preset updates in one manually reviewed pull request."],
+    "description": ["Coordinated toolkit wheel, uv lockfile, workflow and preset updates."],
     "gitIgnoredAuthors": ["jellyfin-plugin-toolkit-sync@users.noreply.github.com"]
 }

@@ -2,8 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scaffold_fixture import generate
+
 from jellyfin_plugin_toolkit.context import Context
-from jellyfin_plugin_toolkit.scaffold import generate
 
 
 class StarterTests(unittest.TestCase):
@@ -86,7 +87,10 @@ class StarterTests(unittest.TestCase):
             generate(None, root, "example", "Example", "example/plugin", True)
             for filename in [
                 "eslint.config.mjs",
-                "requirements-check.txt",
+                ".node-version",
+                ".python-version",
+                "global.json",
+                "uv.lock",
                 "pyproject.toml",
             ]:
                 self.assertTrue((root / filename).is_file(), filename)

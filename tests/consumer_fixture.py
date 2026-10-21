@@ -9,10 +9,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit.context import Context
+from jellyfin_plugin_toolkit.provenance import package_version
 from jellyfin_plugin_toolkit.scaffold import toml
 
 defaults = json.loads(
-    (Path(__file__).resolve().parents[1] / "templates/defaults.json").read_text()
+    (
+        Path(__file__).resolve().parents[1]
+        / "src/jellyfin_plugin_toolkit/resources/templates/defaults.json"
+    ).read_text()
 )
 groups = [
     "metadata",
@@ -67,7 +71,7 @@ config["validation"]["rules"] = [
     {
         "patterns": [
             "plugin.toml",
-            "toolkit.lock.json",
+            "uv.lock",
             "version.txt",
             ".github/**",
             ".editorconfig",
@@ -87,14 +91,9 @@ def create_consumer(root, selected=None):
     selected = copy.deepcopy(config if selected is None else selected)
     (root / "plugin.toml").write_text(toml(selected))
     (root / "version.txt").write_text("0.1.0\n")
-    (root / "toolkit.lock.json").write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "repository": "example/toolkit",
-                "version": "v1.0.0",
-                "sha256": "a" * 64,
-            }
+    (root / "uv.lock").write_text(
+        'version = 1\nrevision = 5\nrequires-python = ">=3.15,<3.16"\n[[package]]\nname = "jellyfin-plugin-toolkit"\nversion = "0.2.0"\nsource = { url = "https://github.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/v0.2.0/jellyfin_plugin_toolkit-0.2.0-py3-none-any.whl" }\nwheels = [{ hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]\n'.replace(
+            "0.2.0", package_version()
         )
     )
     (root / "frontend/admin").mkdir(parents=True, exist_ok=True)

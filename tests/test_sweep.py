@@ -19,7 +19,7 @@ from jellyfin_plugin_toolkit.ci import evidence, planning
 from jellyfin_plugin_toolkit.ci.policy import ValidationPolicy
 from jellyfin_plugin_toolkit.common.artifacts import web_inputs
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, Context
+from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.scaffold import toml
 
 
@@ -48,7 +48,8 @@ class SweepTests(ConsumerTestCase):
         code = """
 import importlib, pkgutil, jellyfin_plugin_toolkit, sys
 for info in pkgutil.walk_packages(jellyfin_plugin_toolkit.__path__, jellyfin_plugin_toolkit.__name__ + '.'):
-    importlib.import_module(info.name)
+    if not info.name.endswith(".__main__"):
+        importlib.import_module(info.name)
 from jellyfin_plugin_toolkit.cli import main
 before = list(sys.argv)
 for args in (['--help'], ['ci', '--help'], ['release', '--help']):
@@ -56,7 +57,7 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
     except SystemExit as error: assert error.code == 0
     assert sys.argv == before
 """
-        env = dict(os.environ, PYTHONPATH=str(TOOLKIT_ROOT))
+        env = dict(os.environ)
         env.pop("JELLYFIN_PLUGIN_ROOT", None)
         with tempfile.TemporaryDirectory() as directory:
             subprocess.run(
@@ -69,7 +70,7 @@ for args in (['--help'], ['ci', '--help'], ['release', '--help']):
             )
 
     def test_dependencies_are_acyclic_including_local_imports(self):
-        graph = toolkit_graph(TOOLKIT_ROOT)
+        graph = toolkit_graph(Path(__file__).resolve().parents[1] / "src")
         self.assertIn(
             "jellyfin_plugin_toolkit.checks.formatting",
             graph["jellyfin_plugin_toolkit.tasks"],

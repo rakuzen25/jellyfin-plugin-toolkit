@@ -26,7 +26,10 @@ class ConfigurationTests(unittest.TestCase):
                 Configuration.model_validate({**config, "schema": value})
 
     def test_editor_schema_matches_runtime_models(self):
-        schema = Path(__file__).resolve().parents[1] / "configs/plugin.schema.json"
+        schema = (
+            Path(__file__).resolve().parents[1]
+            / "src/jellyfin_plugin_toolkit/resources/configs/plugin.schema.json"
+        )
         self.assertEqual(
             Configuration.model_json_schema(), json.loads(schema.read_text())
         )
@@ -51,7 +54,7 @@ class ConfigurationTests(unittest.TestCase):
                     relative(root, name)
 
     def test_consumer_root_is_not_the_toolkit_installation(self):
-        from jellyfin_plugin_toolkit.scaffold import generate
+        from scaffold_fixture import generate
 
         with tempfile.TemporaryDirectory() as directory:
             selected = Path(directory) / "consumer"

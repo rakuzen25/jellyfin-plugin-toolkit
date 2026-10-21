@@ -1,1 +1,1 @@
-export { default } from "./configs/prettier.mjs";
+export { default } from "./src/jellyfin_plugin_toolkit/resources/configs/prettier.mjs";

@@ -28,9 +28,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
       - name: Require GitHub App credentials
         if: inputs.tag == ''
         env:
@@ -53,6 +57,16 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Refresh the release PR's native uv lockfile
+        if: steps.release.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+          RELEASE_BOT: ${{ steps.app.outputs.app-slug }}[bot]
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          number=$(jq -r '.number' <<< "$RELEASE_PR")
+          uv run --no-sync python -m jellyfin_plugin_toolkit.release_lock --repository "$REPOSITORY" --pr "$number" --bot "$RELEASE_BOT"
       - name: Resolve the matching unpublished draft
         id: draft
         if: inputs.tag != '' || steps.release.outputs.release_created == 'true'
@@ -61,7 +75,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || steps.release.outputs.tag_name }}
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
         run: >-
-          python3 -m jellyfin_plugin_toolkit.toolkit_release resolve
+          uv run --no-sync python -m jellyfin_plugin_toolkit.toolkit_release resolve
           --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --output "$GITHUB_OUTPUT"
   validate:
     needs: prepare
@@ -74,25 +88,38 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.validate.outputs.artifact_id }}
           path: dist
           merge-multiple: true
-      - name: Attach the validated archive to the draft
+      - name: Attest the validated distributions
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/build-provenance.json
+      - name: Attach the validated distributions to the draft
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
         run: >-
-          python3 -m jellyfin_plugin_toolkit.toolkit_release upload
+          uv run --no-sync python -m jellyfin_plugin_toolkit.toolkit_release upload
           --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory dist
       - name: Record the publication handoff
-        run: echo 'Toolkit draft artifacts validated. Review the validated archive before manually publishing the draft.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'Toolkit draft artifacts validated. Review the validated wheel and source distribution before manually publishing the draft.' >> "$GITHUB_STEP_SUMMARY"

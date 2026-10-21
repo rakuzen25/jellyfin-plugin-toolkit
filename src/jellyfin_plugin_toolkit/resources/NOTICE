@@ -1,0 +1,14 @@
+Original toolkit code: Copyright 2026 rakuzen25 and contributors; Apache-2.0.
+The optional src/jellyfin_plugin_toolkit/resources/ui/lifecycle.ts and its test retain MPL-2.0.
+Build/release machinery extracted from LyricBridge; upstream component notices remain with their respective plugins.
+
+The lifecycle module was extracted from LyricBridge's MPL-2.0 renderer.
+LyricMotion (ThisIsTeddyBear/Jellyfin-LyricMotion), version 3.3, is licensed
+under the Mozilla Public License 2.0. Its applicable attribution is retained.
+The corresponding editable lifecycle source and MPL-2.0.txt accompany these distributions.
+See licenses.spdx.json for the explicit file-level exception inventory.
+
+Python build dependencies are installed separately by uv. Pydantic, pydantic-core,
+annotated-types, typing-inspection and Tomli-W retain their upstream MIT licenses;
+typing_extensions retains PSF-2.0. Their licenses and distribution metadata remain
+with their installed packages.

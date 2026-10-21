@@ -3,48 +3,12 @@
     "default": "Apache-2.0",
     "exceptions": [
         {
-            "paths": ["ui/lifecycle.ts", "ui/lifecycle.test.ts"],
+            "paths": ["src/jellyfin_plugin_toolkit/resources/ui/lifecycle.ts", "src/jellyfin_plugin_toolkit/resources/ui/lifecycle.test.ts"],
             "license": "MPL-2.0",
             "origin": "LyricBridge renderer resource lifecycle, retaining MPL-2.0 from the LyricMotion-derived renderer",
             "upstream": "https://github.com/ThisIsTeddyBear/Jellyfin-LyricMotion",
             "notice": "NOTICE",
             "licenseText": "MPL-2.0.txt"
-        },
-        {
-            "paths": ["_vendor/pydantic/**", "_vendor/pydantic-*.dist-info/**"],
-            "license": "MIT",
-            "origin": "Bundled upstream Python distribution; see its .dist-info metadata and license files",
-            "notice": "NOTICE"
-        },
-        {
-            "paths": ["_vendor/pydantic_core/**", "_vendor/pydantic_core-*.dist-info/**"],
-            "license": "MIT",
-            "origin": "Bundled upstream Python distribution; see its .dist-info metadata and license files",
-            "notice": "NOTICE"
-        },
-        {
-            "paths": ["_vendor/annotated_types/**", "_vendor/annotated_types-*.dist-info/**"],
-            "license": "MIT",
-            "origin": "Bundled upstream Python distribution; see its .dist-info metadata and license files",
-            "notice": "NOTICE"
-        },
-        {
-            "paths": ["_vendor/typing_inspection/**", "_vendor/typing_inspection-*.dist-info/**"],
-            "license": "MIT",
-            "origin": "Bundled upstream Python distribution; see its .dist-info metadata and license files",
-            "notice": "NOTICE"
-        },
-        {
-            "paths": ["_vendor/typing_extensions.py", "_vendor/typing_extensions-*.dist-info/**"],
-            "license": "PSF-2.0",
-            "origin": "Bundled upstream Python distribution; see its .dist-info metadata and license files",
-            "notice": "NOTICE"
-        },
-        {
-            "paths": ["_vendor/tomli_w/**", "_vendor/tomli_w-*.dist-info/**"],
-            "license": "MIT",
-            "origin": "Bundled upstream Python distribution; see its .dist-info metadata and license files",
-            "notice": "NOTICE"
         }
     ]
 }

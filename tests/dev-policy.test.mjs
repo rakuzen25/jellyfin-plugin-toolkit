@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sourcePolicy, classifyChange } from "../jellyfin_plugin_toolkit/dev/session.mjs";
+import { sourcePolicy, classifyChange } from "../src/jellyfin_plugin_toolkit/resources/jellyfin_plugin_toolkit/dev/session.mjs";
 
 test("backend-only plugins watch declared project directories without requiring optional layers", () => {
     const config = { backend: { projects: { Host: "server/Entry.csproj" } }, frontend: { enabled: false } };

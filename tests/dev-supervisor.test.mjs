@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { rebuildQueue, classifyChange, proxyServer, session } from "../jellyfin_plugin_toolkit/dev/session.mjs";
+import { rebuildQueue, classifyChange, proxyServer, session } from "../src/jellyfin_plugin_toolkit/resources/jellyfin_plugin_toolkit/dev/session.mjs";
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function listen(server) {
     server.listen(0, "127.0.0.1");

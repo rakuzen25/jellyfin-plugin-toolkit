@@ -16,11 +16,9 @@ const { Version } = require("release-please/build/src/version.js");
 const locked = JSON.parse(readFileSync(path.resolve(runtime, "package-lock.json")));
 assert.equal(require("release-please/package.json").version, locked.packages["node_modules/release-please"].version);
 const root = mkdtempSync(path.join(tmpdir(), "toolkit-release-update-"));
-const python = process.env.JELLYFIN_PLUGIN_PYTHON || "python3";
 function runPython(code) {
-    execFileSync(python, ["-c", code, root], {
-        cwd: toolkit,
-        env: { ...process.env, PYTHONPATH: [toolkit, path.join(toolkit, "tests")].join(path.delimiter) },
+    execFileSync("uv", ["run", "--project", toolkit, "--no-sync", "python", "-c", code, root], {
+        cwd: path.join(toolkit, "tests"),
         stdio: "inherit",
     });
 }

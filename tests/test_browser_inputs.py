@@ -58,6 +58,19 @@ class BrowserInputTests(ConsumerTestCase):
                 self.assertEqual(original, self.key())
                 self.assertEqual(before_policy, policy.policy_fingerprint(self.ctx))
 
+    def test_python_dev_lock_changes_do_not_invalidate_stress_or_policy(self):
+        original = self.key()
+        before_policy = policy.policy_fingerprint(self.ctx)
+        lock = self.root / "uv.lock"
+        # A different development package changes the complete lock digest, while
+        # the toolkit source/version/hash and consumed browser inputs stay fixed.
+        lock.write_text(
+            lock.read_text()
+            + '\n[[package]]\nname="ruff"\nversion="0.17.2"\nsource={registry="https://pypi.org/simple"}\n'
+        )
+        self.assertEqual(original, self.key())
+        self.assertEqual(before_policy, policy.policy_fingerprint(self.ctx))
+
     def test_behavior_fixtures_tests_and_execution_settings_invalidate_stress(self):
         for name in [
             "dist/web/renderer.js",

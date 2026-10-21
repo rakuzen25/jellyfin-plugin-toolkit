@@ -1,16 +1,17 @@
 # Consumer configuration reference
 
-Each consumer has three primary inputs:
+Each consumer has four primary inputs:
 
-| Input               | Contract                                                                    |
-| ------------------- | --------------------------------------------------------------------------- |
-| `plugin.toml`       | Schema 1 identity, capabilities, paths, operations, and distribution policy |
-| `version.txt`       | Authoritative plugin version; conflicting MSBuild versions are rejected     |
-| `toolkit.lock.json` | Schema 1 repository, `v`-prefixed release version, and archive SHA-256      |
+| Input            | Contract                                                                    |
+| ---------------- | --------------------------------------------------------------------------- |
+| `plugin.toml`    | Schema 1 identity, capabilities, paths, operations, and distribution policy |
+| `version.txt`    | Authoritative plugin version; conflicting MSBuild versions are rejected     |
+| `pyproject.toml` | Native Python tooling environment, dependency ranges and uv settings        |
+| `uv.lock`        | uv-resolved toolkit source, version, wheel hash and transitive dependencies |
 
 Native `.python-version`, `.node-version`, `global.json`, `package.json`, and dependency lockfiles remain authoritative for their tools. Generated MSBuild properties and frontend bindings live under the ignored `.build` directory.
 
-Configuration is strictly typed: unknown fields and incorrect value types fail loading. Add `#:schema .build/toolkit/current/configs/plugin.schema.json` to `plugin.toml` for editor validation. Python adapters use model attributes; use `ctx.config.data()` when a plain dictionary is required.
+Configuration is strictly typed: unknown fields and incorrect value types fail loading. Add `#:schema .build/jpt/configs/plugin.schema.json` to `plugin.toml` for editor validation. Python adapters use model attributes; use `ctx.config.data()` when a plain dictionary is required.
 
 ## Configuration sections
 
@@ -40,7 +41,7 @@ after = [["{python}", "-m", "mypy"]]
 
 The optional repository-relative `cwd` applies only to declared commands. Supported placeholders are `{python}`, `{root}`, `{toolkit}`, `{pnpm}`, and `{dotnet}`. Arguments are passed directly without a shell. Operation names include `check-frontend`, `test-tooling`, `test-installation`, and the corresponding command/target names. Extra test arguments reach the standard operation or replacement commands, never the `after` commands. Standard tooling tests discover Python tests under `tests/tooling` when that directory exists; consumers without tooling tests do not need a synthetic framework test.
 
-Unknown maintained inputs fail CI classification until a rule covers them. A toolkit update changes evidence fingerprints. Archive metadata, immutable reusable-workflow revisions and their release-version comments, and the versioned Renovate preset must agree; partial updates fail validation.
+Unknown maintained inputs fail CI classification until a rule covers them. A toolkit update changes evidence fingerprints. The locked wheel version, immutable reusable-workflow revisions and their release-version comments, and the versioned Renovate preset must agree; partial updates fail validation.
 
 ### Fixture-only browser result reuse
 
@@ -50,28 +51,29 @@ Planning builds the frontend before looking for reusable results. Result identit
 
 ## Commands
 
-| Command                            | Result                                                                           |
-| ---------------------------------- | -------------------------------------------------------------------------------- |
-| `bootstrap`                        | Verify tools/archive, restore dependencies, prepare verified host references     |
-| `doctor`                           | Diagnose toolchain and configuration mismatches                                  |
-| `dev`                              | Run the checkout-owned disposable server and supervisor                          |
-| `build frontend` / `build backend` | Build one component                                                              |
-| `build`                            | Capture source and build all declared distribution artifacts                     |
-| `check [target]`                   | Run maintained checks without dependency installation                            |
-| `format [target]`                  | Apply maintained formatting                                                      |
-| `test [group]`                     | Run a group; defaults to configured unit groups                                  |
-| `validate --full`                  | Run configured checks, unit groups, complete packaging and acceptance groups     |
-| `toolkit sync [--check / --apply]` | Preview, check, or apply launcher and toolkit-reference synchronization          |
-| `toolkit sync --base-ref <ref>`    | Upgrade using the verified base release; repair partial pin updates              |
-| `toolkit sync --apply --repair`    | Explicitly restore the launcher at the current locked release                    |
-| `toolkit sync --recover`           | Restore bindings after an interrupted transaction; preserve newer edits          |
-| `toolkit paths`                    | Print stable consumer tool and toolkit paths as JSON                             |
-| `toolkit editor vscode [--apply]`  | Preview or explicitly apply VS Code settings while preserving unrelated settings |
-| `new`                              | Generate a consumer using the installed toolkit lock                             |
+| Command                             | Result                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------- |
+| `prepare`                           | Export wheel resources under `.build/jpt` without installing packages     |
+| `bootstrap`                         | Restore Node and .NET dependencies and prepare verified host references   |
+| `doctor`                            | Diagnose toolchain and configuration mismatches                           |
+| `dev`                               | Run the checkout-owned disposable server and supervisor                   |
+| `build frontend` / `build backend`  | Build one component                                                       |
+| `build`                             | Capture source and build all declared distribution artifacts              |
+| `check [target]`                    | Run maintained checks                                                     |
+| `format [target]`                   | Apply maintained formatting                                               |
+| `test [group]`                      | Run a group; defaults to configured unit groups                           |
+| `validate --full`                   | Run configured checks, unit groups, packaging and acceptance groups       |
+| `sync-bindings [--check / --apply]` | Preview, check or apply native lock and toolkit-reference synchronization |
+| `sync-bindings --base-ref <ref>`    | Use an authoritative Git baseline for a partial update                    |
+| `sync-bindings --recover`           | Restore an interrupted transaction while preserving newer edits           |
+| `paths`                             | Print stable consumer tool and toolkit paths as JSON                      |
+| `editor vscode [--apply]`           | Preview or apply VS Code settings while preserving unrelated settings     |
+| `new`                               | Generate an independent uv consumer using the installed toolkit version   |
 
+Prefix each command with `uv run jpt`. CI first runs `uv sync --locked`, then uses `uv run --no-sync jpt`.
 Backend tests compile missing embedded frontend resources using already restored dependencies. Verified prebuilt browser assets can be supplied by CI without requiring a second frontend build.
 
-The launcher accepts verified archives from the source bundle, cache, or explicit `JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE` path. Only bootstrap installs a missing toolkit automatically; other commands diagnose a missing installation. Corrupt, incomplete, linked, or escaping archives are rejected before replacing the active installation.
+The toolkit dependency uses a canonical GitHub release wheel URL. uv verifies its locked SHA256 during installation. Local candidate wheels are supported only for isolated validation. Published builds require released URLs; source bundles include the exact wheel and matching source distribution.
 
 ## Source and evidence boundaries
 
@@ -81,10 +83,10 @@ Optional `validation.job_names` and `validation.aggregate_jobs` map enabled grou
 
 ## Shared presets and synchronization
 
-Keep native configuration entrypoints in the consumer so editors and tools discover them normally: `eslint.config.mjs` passes its native ESLint dependency imports to `createConfig({ js, defineConfig, prettier, globals, tseslint })` from `.build/toolkit/current/configs/eslint.mjs`; `[tool.ruff]` extends `.build/toolkit/current/configs/ruff.toml`; `.prettierrc.mjs` imports `.build/toolkit/current/configs/prettier.mjs`; frontend TypeScript configuration extends `../.build/toolkit/current/configs/tsconfig.json`. Keep file-selection paths, language-version selections, and plugin-specific overrides in those native files. Native dependency imports remain visible to editors and dependency analyzers; the factory contains the shared rules. Consumer dependency manifests and lockfiles remain authoritative.
+Keep native configuration entrypoints in the consumer so editors and tools discover them normally: `eslint.config.mjs` passes its native ESLint dependency imports to `createConfig({ js, defineConfig, prettier, globals, tseslint })` from `.build/jpt/configs/eslint.mjs`; `[tool.ruff]` extends `.build/jpt/configs/ruff.toml`; `.prettierrc.mjs` imports `.build/jpt/configs/prettier.mjs`; frontend TypeScript configuration extends `../.build/jpt/configs/tsconfig.json`. Keep file-selection paths, language-version selections, and plugin-specific overrides in those native files. Native dependency imports remain visible to editors and dependency analyzers; the factory contains the shared rules. Consumer dependency manifests and lockfiles remain authoritative.
 
-Synchronization preserves workflow triggers, permissions, schedules, extra jobs, Renovate policy, and surrounding formatting. It only updates static toolkit `uses` references, their release-version comments, existing top-level toolkit presets, and canonical launcher bytes/permissions. Unknown binding contracts, existing base drift, ambiguous syntax, or unsupported upgrades stop without partial changes. Every release must include the binding descriptor and shared integration files. Skipped releases are supported when the base updater understands the proposed binding contract.
+Synchronization preserves workflow triggers, permissions, schedules, extra jobs, Renovate policy and surrounding formatting. It updates the native toolkit dependency and lockfile, static toolkit `uses` references, their release-version comments and existing top-level toolkit presets. Ambiguous syntax, drift and unavailable releases stop without partial changes. Interrupted writes retain a recovery journal under `.build`; `--recover` refuses to discard newer edits.
 
-Without `--base-ref`, synchronization uses the last verified active release as its base, even if the working-tree lock has changed. A fresh checkout without an active installation must supply `--base-ref REF`. Use `--base-ref` for an authoritative Git baseline or a partially updated PR; the launcher selects and verifies that base release before importing the updater. The base and target must belong to the same toolkit repository. Keep their exact archives in `.build/toolkit/<sha256>.tar.gz`, or use `--download` to fetch missing archives. The proposed release is never imported by synchronization. Same-release launcher edits require the explicit `--apply --repair` command after reviewing the preview. Interrupted writes retain a recovery journal under `.build`; `--recover` rolls them back and refuses to discard newer edits.
+Use `--base-ref REF` for an authoritative Git baseline or a partially updated PR. The trusted updater reads release metadata without importing proposed toolkit code and invokes uv with source builds disabled. Every target must be a published canonical wheel. Checks, CI and release builds reject mismatched wheel versions, workflow references and presets.
 
-Checks, CI, and release builds reject binding drift. Bootstrap, doctor, and development report drift while remaining usable if otherwise compatible. None of these commands silently rewrites tracked configuration. Bootstrap never edits editor settings. Optional editor setup accepts JSON settings; if an existing settings file uses JSON with comments, it is preserved and `toolkit paths` provides the values for manual setup.
+Bootstrap never edits editor settings. Optional editor setup accepts JSON settings; existing JSON-with-comments settings remain intact, and `paths` provides values for manual setup.

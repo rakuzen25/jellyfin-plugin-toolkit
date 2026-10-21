@@ -53,15 +53,19 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
       - run: pnpm check docs
-      - run: python3 plugin release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
+      - run: uv run --no-sync jpt release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -81,7 +85,7 @@ jobs:
           if [ "$FULL" = true ]; then args+=(--full); fi
           if [ "$SCHEDULED" = true ]; then args+=(--scheduled); fi
           if [ "$RELEASE_MODE" = true ]; then args+=(--release); fi
-          python3 plugin ci plan "${args[@]}"
+          uv run --no-sync jpt ci plan "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-plan
@@ -97,22 +101,26 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
       - run: mkdir -p dist/evidence
-      - run: python3 plugin ci metadata-check 2>&1 | tee dist/evidence/metadata.log
+      - run: uv run --no-sync jpt ci metadata-check 2>&1 | tee dist/evidence/metadata.log
       - name: Validate Renovate configuration with the upstream validator
         run: >-
           docker run --rm --network none --entrypoint renovate-config-validator
           -v "$PWD/renovate.json:/tmp/renovate.json:ro"
           ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21
           --strict /tmp/renovate.json 2>&1 | tee -a dist/evidence/metadata.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-metadata
@@ -126,19 +134,23 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
       - run: mkdir -p dist/evidence
       - name: Check affected frontend inputs
         if: needs.impact.outputs.frontend == 'true'
         run: (pnpm check frontend && pnpm test frontend) 2>&1 | tee dist/evidence/frontend-checks.log
-      - run: (pnpm build frontend && python3 plugin ci web-record) 2>&1 | tee dist/evidence/frontend-build.log
-      - run: python3 plugin test web-installation --assets dist/web
+      - run: (uv run --no-sync jpt build frontend && uv run --no-sync jpt ci web-record) 2>&1 | tee dist/evidence/frontend-build.log
+      - run: uv run --no-sync jpt test web-installation --assets dist/web
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: browser-assets
@@ -146,7 +158,7 @@ jobs:
             dist/web/
             dist/web-build.json
           if-no-files-found: error
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-frontend
@@ -162,26 +174,30 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           dotnet: "true"
           references: "true"
       - run: mkdir -p dist/evidence
       - name: Check .NET formatting
-        run: python3 plugin check backend 2>&1 | tee dist/evidence/dotnet-format.log
+        run: uv run --no-sync jpt check backend 2>&1 | tee dist/evidence/dotnet-format.log
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.impact.outputs.web == 'true'
         with:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: python3 plugin ci web-verify
-      - run: python3 plugin test backend --results-directory dist/evidence --report-xunit-trx 2>&1 | tee dist/evidence/backend.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+        run: uv run --no-sync jpt ci web-verify
+      - run: uv run --no-sync jpt test backend --results-directory dist/evidence --report-xunit-trx 2>&1 | tee dist/evidence/backend.log
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-backend
@@ -195,18 +211,21 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
-          python: "true"
           node: "true"
       - run: mkdir -p dist/evidence
-      - run: JELLYFIN_PLUGIN_PYTHON=python python3 plugin check tooling 2>&1 | tee dist/evidence/tooling.log
-      - run: python3 plugin test tooling 2>&1 | tee -a dist/evidence/tooling.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - run: uv run --no-sync jpt check tooling 2>&1 | tee dist/evidence/tooling.log
+      - run: uv run --no-sync jpt test tooling 2>&1 | tee -a dist/evidence/tooling.log
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-tooling
@@ -220,11 +239,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
       - run: mkdir -p dist/evidence
@@ -234,14 +257,14 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: python3 plugin ci web-verify
+        run: uv run --no-sync jpt ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
           path: dist
-      - run: python3 plugin ci browser-verify --group workflow --project "workflow-chromium" --workers 2
+      - run: uv run --no-sync jpt ci browser-verify --group workflow --project "workflow-chromium" --workers 2
       - run: CI_BROWSER_GROUP=workflow pnpm test browser --project workflow-chromium --workers=2 2>&1 | tee dist/evidence/browser.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-workflow
@@ -259,11 +282,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
       - run: mkdir -p dist/evidence
@@ -273,14 +300,14 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: python3 plugin ci web-verify
+        run: uv run --no-sync jpt ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
           path: dist
-      - run: python3 plugin ci browser-verify --group rendering --project "${{ matrix.project }}" --workers 2
+      - run: uv run --no-sync jpt ci browser-verify --group rendering --project "${{ matrix.project }}" --workers 2
       - run: CI_BROWSER_GROUP=rendering pnpm test browser --project "${{ matrix.project }}" --workers=2 2>&1 | tee dist/evidence/browser.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-rendering${{ matrix.project }}
@@ -298,11 +325,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
       - run: mkdir -p dist/evidence
@@ -312,14 +343,14 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: python3 plugin ci web-verify
+        run: uv run --no-sync jpt ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
           path: dist
-      - run: python3 plugin ci browser-verify --group performance --project "${{ matrix.project }}" --workers 1
+      - run: uv run --no-sync jpt ci browser-verify --group performance --project "${{ matrix.project }}" --workers 1
       - run: CI_BROWSER_GROUP=performance pnpm test browser --project "${{ matrix.project }}" --workers=1 2>&1 | tee dist/evidence/browser.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-performance${{ matrix.project }}
@@ -333,11 +364,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
           dotnet: "true"
@@ -349,15 +384,15 @@ jobs:
           name: browser-assets
           path: dist
       - if: needs.impact.outputs.web == 'true'
-        run: python3 plugin ci web-verify
-      - run: python3 plugin release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
+        run: uv run --no-sync jpt ci web-verify
+      - run: uv run --no-sync jpt release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
       - name: Build clean candidate with verified browser assets
         run: |
           args=()
           if [ "${{ needs.impact.outputs.web }}" = true ]; then args+=(--prepared-web); fi
           if [ "$RELEASE_MODE" = true ]; then args+=(--release); fi
-          python3 plugin build "${args[@]}" 2>&1 | tee dist/evidence/package.log
-      - run: python3 plugin test artifact-inventory
+          uv run --no-sync jpt build "${args[@]}" 2>&1 | tee dist/evidence/package.log
+      - run: uv run --no-sync jpt test artifact-inventory
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-unverified
@@ -367,7 +402,7 @@ jobs:
             dist/SHA256SUMS
             dist/clean-build.json
           if-no-files-found: error
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-package
@@ -381,13 +416,16 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
-          python: "true"
           dotnet: "true"
           references: "true"
       - run: mkdir -p dist/evidence
@@ -395,8 +433,8 @@ jobs:
         with:
           name: candidate-unverified
           path: dist
-      - run: python3 plugin test installation 2>&1 | tee dist/evidence/installation.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - run: uv run --no-sync jpt test installation 2>&1 | tee dist/evidence/installation.log
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-installation
@@ -410,11 +448,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
           dotnet: "true"
@@ -424,9 +466,9 @@ jobs:
         with:
           name: candidate-unverified
           path: dist
-      - run: python3 plugin release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
-      - run: python3 plugin test reproducibility 2>&1 | tee dist/evidence/reproducibility.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - run: uv run --no-sync jpt release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
+      - run: uv run --no-sync jpt test reproducibility 2>&1 | tee dist/evidence/reproducibility.log
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-reproducibility
@@ -440,18 +482,22 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
           dotnet: "true"
           references: "true"
       - run: mkdir -p dist/evidence
-      - run: python3 plugin test advisories 2>&1 | tee dist/evidence/advisories.log
-      - uses: ./.build/toolkit/current/.github/actions/evidence
+      - run: uv run --no-sync jpt test advisories 2>&1 | tee dist/evidence/advisories.log
+      - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
           name: evidence-advisories
@@ -469,11 +515,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
@@ -486,7 +536,7 @@ jobs:
       - name: Aggregate required validation and bind evidence to artifacts
         env:
           CI_JOB_RESULTS: ${{ toJSON(needs) }}
-        run: python3 plugin ci finish
+        run: uv run --no-sync jpt ci finish
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

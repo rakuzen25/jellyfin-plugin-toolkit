@@ -29,13 +29,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          python-version-file: .python-version
-      - run: python3 plugin _install
-      - uses: ./.build/toolkit/current/.github/actions/setup
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked
+      - run: uv run --no-sync jpt prepare
+      - uses: ./.build/jpt/actions/setup
       - name: Check release update rules before Release Please
-        run: python3 plugin release config --check
+        run: uv run --no-sync jpt release config --check
       - name: Create repository-scoped release token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
@@ -58,7 +62,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-        run: python3 plugin release resume-draft --repository "$REPOSITORY" --environment "$GITHUB_OUTPUT"
+        run: uv run --no-sync jpt release resume-draft --repository "$REPOSITORY" --environment "$GITHUB_OUTPUT"
   validate:
     needs: release-please
     if: needs.release-please.outputs.release_created != 'true'

@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createBuilder } from "../node/build.mjs";
+import { createBuilder } from "../src/jellyfin_plugin_toolkit/resources/node/build.mjs";
 
 test("asset compilation preserves nested files and rejects collisions and escaping outputs", async (t) => {
     const root = await mkdtemp(path.join(os.tmpdir(), "toolkit-assets-"));

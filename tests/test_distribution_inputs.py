@@ -17,7 +17,7 @@ class DistributionInputTests(unittest.TestCase):
         selected["backend"]["project_assemblies"] = ["Example.Core"]
         create_consumer(root, selected)
         (root / "version.txt").write_text("0.1.0\n")
-        (root / "toolkit.lock.json").write_text("{}")
+        (root / "uv.lock").write_text("{}")
 
     def test_nested_asset_mutation_invalidates_web_evidence(self):
         with tempfile.TemporaryDirectory() as directory:

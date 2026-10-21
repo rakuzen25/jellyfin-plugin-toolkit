@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { verifyVersions } from "../node/check-toolchain.mjs";
+import { verifyVersions } from "../src/jellyfin_plugin_toolkit/resources/node/check-toolchain.mjs";
 
 const manifest = { packageManager: "pnpm@12.11.2", engines: { pnpm: "12.11.2", node: "26.12.0" } };
 test("matching pinned tools pass; wrong executables and inconsistent declarations fail", () => {

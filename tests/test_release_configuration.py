@@ -10,11 +10,12 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from consumer_fixture import config
+from scaffold_fixture import generate
 
 from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.release import configuration
 from jellyfin_plugin_toolkit.release.__main__ import check_identity, main, prepare
-from jellyfin_plugin_toolkit.scaffold import generate, toml
+from jellyfin_plugin_toolkit.scaffold import toml
 
 
 def fixture(root):
@@ -237,7 +238,7 @@ class ReleaseConfigurationTests(unittest.TestCase):
         toolkit = Path(__file__).resolve().parents[1]
         workflow = (toolkit / ".github/workflows/prepare-release.yml").read_text()
         self.assertLess(
-            workflow.index("plugin release config --check"),
+            workflow.index("jpt release config --check"),
             workflow.index("uses: googleapis/release-please-action"),
         )
         action = re.search(r"release-please-action@([a-f0-9]{40})", workflow)[1]
@@ -245,6 +246,6 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn("ref: " + action, ci)
         validation = (toolkit / ".github/workflows/validate.yml").read_text()
         self.assertLess(
-            validation.index("plugin release prepare"),
-            validation.index("plugin ci plan"),
+            validation.index("jpt release prepare"),
+            validation.index("jpt ci plan"),
         )

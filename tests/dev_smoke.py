@@ -66,12 +66,14 @@ def main():
     parser.add_argument("--edits", action="store_true")
     args = parser.parse_args()
     root = args.consumer.resolve()
-    toolkit = (root / ".build/toolkit/current").resolve()
+    from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT
+
+    toolkit = RESOURCE_ROOT
     env = {
         **os.environ,
         "JELLYFIN_PLUGIN_ROOT": str(root),
         "JELLYFIN_PLUGIN_TOOLKIT_ROOT": str(toolkit),
-        "PYTHONPATH": str(toolkit) + os.pathsep + str(root),
+        "JELLYFIN_PLUGIN_DEV_PYTHON": sys.executable,
     }
     with socket.socket() as address:
         address.bind(("127.0.0.1", 0))

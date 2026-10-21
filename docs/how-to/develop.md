@@ -1,63 +1,78 @@
 # Develop a plugin
 
-Install the versions of Python, Node, pnpm, and the .NET SDK declared by the plugin's native pin files. Docker must be available to your user. The supported host is Linux x64.
+Install uv at the version required by `pyproject.toml`, plus Node, pnpm and the .NET SDK declared by the plugin's native pin files. Docker must be available to your user. The supported host is Linux x64; uv downloads and selects the pinned Python 3.15.0.
 
 From an existing consumer checkout:
 
 ```sh
-./plugin bootstrap
-./plugin doctor
-./plugin dev --port 18096
+uv sync --locked
+uv run jpt bootstrap
+uv run jpt doctor
+uv run jpt dev --port 18096
 ```
 
-Bootstrap verifies the locked toolkit archive, restores frozen pnpm and NuGet dependencies, and extracts references from the pinned official Jellyfin image. The server owns a disposable configuration directory for this checkout. Its endpoint binds to loopback. Optional `--media-mount /absolute/media/path:/media` mounts are read-only.
+Bootstrap restores frozen pnpm and NuGet dependencies and extracts references from the pinned official Jellyfin image. uv manages the Python environment and enforces the project's 24-hour dependency release-age cutoff. The development server owns a disposable configuration directory and binds to loopback. Optional `--media-mount /absolute/media/path:/media` mounts are read-only.
 
-Use the interactive supervisor's rebuild and pause controls during development. Backend replacements compile before the working server stops; failed replacements restore the previous plugin. Pending changes survive pause/resume.
+Use the supervisor's rebuild and pause controls during development. Backend replacements compile before the working server stops; failed replacements restore the previous plugin. Successful builds trigger ordinary page reloads, and pending changes survive pause/resume.
 
 Run component checks before a complete acceptance run:
 
 ```sh
-./plugin check
-./plugin test
-./plugin validate --full
+uv run jpt check
+uv run jpt test
+uv run jpt validate --full
 ```
 
-Checks require prepared dependencies and never install them. Full validation builds the complete distribution and executes the consumer's enabled acceptance operations, including installation and reproducibility.
+uv synchronizes Python dependencies before local commands. Bootstrap prepares Node, .NET and Jellyfin dependencies. Full validation builds the complete distribution and executes the consumer's enabled acceptance operations, including installation and reproducibility.
 
 ## Generate a repository
 
-From a toolkit source checkout with its pinned Python available, prepare the bundled runtime before generating consumers or packing a candidate:
+From a toolkit source checkout:
 
 ```sh
-python3 scripts/runtime.py
-./toolkit new /tmp/example-plugin --id example-plugin --name 'Example Plugin' --repository example/example-plugin --admin
+uv run jpt new /tmp/example-plugin --id example-plugin --name 'Example Plugin' --repository example/example-plugin --admin
 ```
 
-Replace `example/example-plugin` with your destination repository. Omit `--admin` for a backend-only plugin. Use `--host-project server/Entry.csproj` to exercise a different backend path. The destination must not exist. The generated GUID is unique and must remain stable after publication.
+Replace `example/example-plugin` with your destination repository. Omit `--admin` for a backend-only plugin. Use `--host-project server/Entry.csproj` for a different backend path. The destination must not exist. Keep its generated GUID stable after publication.
 
-The generated consumer obtains its locked release on `./plugin bootstrap`. For an unpublished candidate, supply the exact candidate archive through `JELLYFIN_PLUGIN_TOOLKIT_ARCHIVE`; its checksum must still match `toolkit.lock.json`. A source distribution includes that archive at `build-support/toolkit.tar.gz`.
+Generation uses `uv init` and `uv add` to create an independent project and lock the canonical released toolkit wheel. It works outside a consumer checkout. For an unpublished candidate, build the distribution pair first:
+
+```sh
+uv build
+uv run jpt new /tmp/candidate-plugin --id candidate-plugin --name Candidate --repository example/candidate-plugin --toolkit-wheel dist/jellyfin_plugin_toolkit-0.2.0-py3-none-any.whl --toolkit-revision "$(git rev-parse HEAD)"
+```
+
+Replace the wheel filename with the version in `pyproject.toml`. Keep its matching source distribution beside it. Local candidate projects retain the wheel under `build-support` with its native filename, so the locked path remains valid in source bundles; generation prepares this layout automatically. Candidate dependencies remain local wheels inside the generated checkout; publish and adopt the canonical release URL before merging production adoption changes.
 
 ## Adopt a foundation update
 
-Review the toolkit dependency PR, then preview and apply its binding changes against the base branch:
+Review the grouped Renovate PR, then complete its native lockfile and immutable workflow references using the trusted base toolkit:
 
 ```sh
-./plugin toolkit sync --base-ref main --download
-./plugin toolkit sync --base-ref main --download --apply
-./plugin bootstrap
-./plugin toolkit sync --check
-./plugin check
-./plugin test
+uv run jpt sync-bindings --base-ref main
+uv run jpt sync-bindings --base-ref main --apply
+uv run jpt bootstrap
+uv run jpt sync-bindings --check
+uv run jpt check
+uv run jpt test
 ```
 
-Both releases must provide the supported binding contract. Consumer pins must identify a published, verified release before merging; publish and verify it using the release procedure first.
+Set `GH_TOKEN` to a repository read token for local binding synchronization; GitHub workflows supply scoped tokens.
 
-Compatible updates to consumer tools remain ordinary consumer dependency updates. If a fix or default should apply to other plugins using the same capability, prefer implementing it in the toolkit rather than maintaining copies or permanent consumer workarounds.
+For a manual update, use `uv add 'jellyfin-plugin-toolkit @ RELEASE_WHEEL_URL'`, replacing `RELEASE_WHEEL_URL` with the versioned GitHub wheel URL. Synchronization invokes uv to update the lockfile and coordinates workflow SHAs and the Renovate preset. Publish and verify the toolkit release before merging consumer adoption PRs.
 
-Editors continue reading consumer-native configuration files, which inherit the shared defaults after bootstrap. To inspect tool paths or opt into VS Code setup:
+For toolkit development alongside a consumer, use uv's native editable override:
 
 ```sh
-./plugin toolkit paths
-./plugin toolkit editor vscode
-./plugin toolkit editor vscode --apply
+uv run --with-editable ../jellyfin-plugin-toolkit jpt check
+```
+
+The checkout's committed released-wheel dependency stays authoritative for packaging. Integration and reproducibility tests use candidate wheels in isolated consumer copies so they exercise distributable bytes.
+
+Editors read consumer-native configurations, which import resources exported by `jpt prepare` under `.build/jpt`. Toolkit operations prepare these resources automatically. Inspect paths or opt into VS Code setup with:
+
+```sh
+uv run jpt paths
+uv run jpt editor vscode
+uv run jpt editor vscode --apply
 ```

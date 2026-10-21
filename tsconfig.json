@@ -1,5 +1,5 @@
 {
-    "extends": "./configs/tsconfig.json",
-    "include": ["ui/**/*.ts"],
-    "exclude": ["ui/**/*.test.ts"]
+    "extends": "./src/jellyfin_plugin_toolkit/resources/configs/tsconfig.json",
+    "include": ["src/jellyfin_plugin_toolkit/resources/ui/**/*.ts"],
+    "exclude": ["src/jellyfin_plugin_toolkit/resources/ui/**/*.test.ts"]
 }

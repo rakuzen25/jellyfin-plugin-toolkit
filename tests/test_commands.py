@@ -89,7 +89,7 @@ class CommandTests(ConsumerTestCase):
         )
         self.assertEqual(self.root, run.call_args.kwargs["cwd"])
 
-    def test_bootstrap_venv_can_resolve_the_verified_toolkit(self):
+    def test_bootstrap_leaves_python_environment_to_uv(self):
         with (
             patch.object(tasks, "verify_tools"),
             patch.object(Context, "generated"),
@@ -98,15 +98,13 @@ class CommandTests(ConsumerTestCase):
             patch.object(tasks, "run") as run,
         ):
             tasks.bootstrap(self.ctx)
-        pip = next(
-            invocation
-            for invocation in run.call_args_list
-            if "jellyfin_plugin_toolkit.checks.check_pip" in invocation.args
+        self.assertTrue(
+            all(
+                "pip" not in call.args and "venv" not in call.args
+                for call in run.call_args_list
+            )
         )
-        self.assertIn(
-            str(tasks.TOOLKIT_ROOT),
-            pip.kwargs["env"]["PYTHONPATH"].split(__import__("os").pathsep),
-        )
+        self.assertEqual("pnpm", run.call_args.args[0])
 
     def test_backend_tests_prepare_missing_embedded_resources_without_installing(self):
         import tempfile

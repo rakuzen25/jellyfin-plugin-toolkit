@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { verifyBrowserImage } from "../node/check-browser-image.mjs";
+import { verifyBrowserImage } from "../src/jellyfin_plugin_toolkit/resources/node/check-browser-image.mjs";
 
 const image = `mcr.microsoft.com/playwright:v1.64.0-noble@sha256:${"a".repeat(64)}`;
 test("browser package, installed version, distribution and immutable image must agree", () => {

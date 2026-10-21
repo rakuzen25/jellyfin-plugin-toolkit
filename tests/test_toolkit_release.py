@@ -1,14 +1,11 @@
 """Toolkit releases bind immutable source, archive inventory and retry bytes."""
 
-import hashlib
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit import toolkit_release as release
-from jellyfin_plugin_toolkit.archive import pack
 
 
 class ToolkitReleaseTests(unittest.TestCase):
@@ -16,32 +13,27 @@ class ToolkitReleaseTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        (self.root / "version.txt").write_text("0.1.0\n")
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        (self.root / ".git/info/exclude").write_text("dist/\n")
-        subprocess.run(["git", "-C", str(self.root), "add", "version.txt"], check=True)
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(self.root),
-                "-c",
-                "user.name=Fixture",
-                "-c",
-                "user.email=fixture@example.invalid",
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "-qm",
-                "fixture",
-            ],
-            check=True,
-        )
-        self.sha = subprocess.check_output(
-            ["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True
-        ).strip()
+        import io
+        import tarfile
+        import zipfile
+
+        self.sha = "a" * 40
         self.directory = self.root / "dist"
-        self.archive, _ = pack(self.root, self.directory, release=True)
+        self.directory.mkdir()
+        self.archive = self.directory / "jellyfin_plugin_toolkit-0.1.0-py3-none-any.whl"
+        metadata = (
+            b"Metadata-Version: 2.3\nName: jellyfin-plugin-toolkit\nVersion: 0.1.0\n"
+        )
+        with zipfile.ZipFile(self.archive, "w") as wheel:
+            wheel.writestr("jellyfin_plugin_toolkit-0.1.0.dist-info/METADATA", metadata)
+        with tarfile.open(
+            self.directory / "jellyfin_plugin_toolkit-0.1.0.tar.gz", "w:gz"
+        ) as source:
+            item = tarfile.TarInfo("jellyfin_plugin_toolkit-0.1.0/PKG-INFO")
+            item.size = len(metadata)
+            source.addfile(item, io.BytesIO(metadata))
+        with patch.object(release, "package_version", return_value="0.1.0"):
+            release.manifest(self.directory, self.sha)
         self.draft = {"id": 123, "draft": True, "tag_name": "v0.1.0", "assets": []}
 
     def resolve(self, **kwargs):
@@ -66,32 +58,31 @@ class ToolkitReleaseTests(unittest.TestCase):
 
     def test_archive_must_match_version_revision_and_checksum(self):
         hashes = release.artifact_hashes(self.directory, "v0.1.0", self.sha)
-        self.assertEqual({self.archive.name, "SHA256SUMS"}, set(hashes))
-        with self.assertRaisesRegex(ValueError, "revision mismatch"):
+        self.assertEqual(
+            {
+                self.archive.name,
+                "jellyfin_plugin_toolkit-0.1.0.tar.gz",
+                "SHA256SUMS",
+                "build-provenance.json",
+            },
+            set(hashes),
+        )
+        with self.assertRaisesRegex(ValueError, "provenance"):
             release.artifact_hashes(self.directory, "v0.1.0", "f" * 40)
         with self.assertRaises(FileNotFoundError):
             release.artifact_hashes(self.directory, "v0.2.0", self.sha)
         self.archive.write_bytes(self.archive.read_bytes() + b"tamper")
-        with self.assertRaisesRegex(ValueError, "checksum"):
+        with self.assertRaisesRegex(ValueError, "checksums"):
             release.artifact_hashes(self.directory, "v0.1.0", self.sha)
 
-    def test_inventory_tampering_is_rejected_even_with_updated_outer_checksum(self):
-        import io
-        import tarfile
+    def test_source_provenance_tampering_is_rejected(self):
+        import json
 
-        with tarfile.open(self.archive, "r:gz") as archive:
-            files = {
-                m.name: archive.extractfile(m).read() for m in archive.getmembers()
-            }
-        files["version.txt"] += b"\n"
-        with tarfile.open(self.archive, "w:gz") as archive:
-            for name, contents in files.items():
-                entry = tarfile.TarInfo(name)
-                entry.size = len(contents)
-                archive.addfile(entry, io.BytesIO(contents))
-        digest = hashlib.sha256(self.archive.read_bytes()).hexdigest()
-        (self.directory / "SHA256SUMS").write_text(f"{digest}  {self.archive.name}\n")
-        with self.assertRaisesRegex(ValueError, "inventory checksum mismatch"):
+        path = self.directory / "build-provenance.json"
+        data = json.loads(path.read_text())
+        data["revision"] = "f" * 40
+        path.write_text(json.dumps(data))
+        with self.assertRaises(ValueError):
             release.artifact_hashes(self.directory, "v0.1.0", self.sha)
 
     def test_upload_retry_preserves_identical_assets_and_uploads_only_missing_bytes(
@@ -117,7 +108,13 @@ class ToolkitReleaseTests(unittest.TestCase):
 
     def test_complete_retry_does_not_upload_and_conflicts_never_overwrite(self):
         self.draft["assets"] = [
-            {"name": name} for name in [self.archive.name, "SHA256SUMS"]
+            {"name": name}
+            for name in [
+                self.archive.name,
+                "jellyfin_plugin_toolkit-0.1.0.tar.gz",
+                "SHA256SUMS",
+                "build-provenance.json",
+            ]
         ]
         for corrupt in [False, True]:
             with self.subTest(corrupt=corrupt):

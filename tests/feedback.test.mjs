@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { confirmFeedback } from "../ui/feedback.ts";
+import { confirmFeedback } from "../src/jellyfin_plugin_toolkit/resources/ui/feedback.ts";
 
 test("confirmations close only on success and report failures without closing", async () => {
     let closed = 0;

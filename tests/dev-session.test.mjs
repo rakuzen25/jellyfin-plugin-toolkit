@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
-import { rebuildQueue, proxyServer } from "../jellyfin_plugin_toolkit/dev/session.mjs";
+import { rebuildQueue, proxyServer } from "../src/jellyfin_plugin_toolkit/resources/jellyfin_plugin_toolkit/dev/session.mjs";
 
 function deferred() {
     let resolve;
