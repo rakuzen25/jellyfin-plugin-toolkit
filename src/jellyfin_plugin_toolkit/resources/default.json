@@ -24,12 +24,23 @@
     ],
     "packageRules": [
         {
-            "description": "Keep toolkit wheel, uv lockfile and immutable workflow references together.",
+            "description": ["Toolkit references are derived by trusted synchronization, never updated independently."],
             "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],
             "groupName": "Jellyfin plugin toolkit",
             "groupSlug": "jellyfin-plugin-toolkit",
             "automerge": false,
-            "separateMajorMinor": false
+            "separateMajorMinor": false,
+            "enabled": false
+        },
+        {
+            "description": ["Only the canonical toolkit wheel URL may select a new published release."],
+            "matchManagers": ["custom.regex"],
+            "matchDatasources": ["github-releases"],
+            "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit"],
+            "matchFileNames": ["pyproject.toml"],
+            "enabled": true,
+            "minimumReleaseAge": "1 day",
+            "minimumReleaseAgeBehaviour": "timestamp-required"
         },
         {
             "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],
@@ -38,5 +49,5 @@
             "labels": ["toolkit-major-review"]
         }
     ],
-    "description": ["Coordinated toolkit wheel, uv lockfile, workflow and preset updates."]
+    "description": ["The published toolkit wheel selects the version; trusted synchronization derives the uv lockfile, workflow and preset updates."]
 }

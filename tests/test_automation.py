@@ -105,6 +105,19 @@ class AutomationTests(unittest.TestCase):
 
 
 class WorkflowIdentityTests(unittest.TestCase):
+    def test_draft_inspection_uses_the_app_token_with_push_access(self):
+        root = Path(__file__).resolve().parents[1]
+        for filename, step in [
+            ("toolkit-release-please.yml", "Resolve the matching unpublished draft"),
+            ("prepare-release.yml", "Resume an existing matching unpublished draft"),
+        ]:
+            with self.subTest(workflow=filename):
+                workflow = (root / ".github/workflows" / filename).read_text()
+                inspection = workflow.split("- name: " + step, 1)[1].split("run:", 1)[0]
+                self.assertIn("GH_TOKEN: ${{ steps.app.outputs.token }}", inspection)
+                self.assertNotIn("github.token", inspection)
+                self.assertIn("permission-contents: write", workflow)
+
     def test_writers_require_app_tokens(self):
         root = Path(__file__).resolve().parents[1]
         for filename in [

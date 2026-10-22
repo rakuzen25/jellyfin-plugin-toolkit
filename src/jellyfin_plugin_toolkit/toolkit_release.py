@@ -25,7 +25,12 @@ def resolve(repository: str, tag: str, sha: str = "") -> tuple[dict, str]:
     if sha and not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Expected an immutable toolkit source revision")
     release = release_for_tag(repository, tag)
-    if not release or release.get("draft") is not True:
+    if not release:
+        raise ValueError(
+            f"Toolkit release {tag} is not visible; confirm the draft exists and "
+            "use the repository App token with Contents: write to inspect drafts"
+        )
+    if release.get("draft") is not True:
         raise ValueError("Only an existing unpublished toolkit draft is supported")
     revision = tag_commit(repository, tag)
     if not re.fullmatch(r"[0-9a-f]{40}", revision) or (sha and revision != sha):

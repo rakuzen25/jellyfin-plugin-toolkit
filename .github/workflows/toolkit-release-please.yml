@@ -70,7 +70,7 @@ jobs:
         id: draft
         if: inputs.tag != '' || steps.release.outputs.release_created == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           RELEASE_TAG: ${{ inputs.tag || steps.release.outputs.tag_name }}
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
         run: >-

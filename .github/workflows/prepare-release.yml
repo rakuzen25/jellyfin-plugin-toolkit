@@ -63,7 +63,7 @@ jobs:
         id: resume
         if: steps.release.outputs.release_created != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           REPOSITORY: ${{ github.repository }}
         run: uv run --no-sync jpt release resume-draft --repository "$REPOSITORY" --environment "$GITHUB_OUTPUT"
   validate:

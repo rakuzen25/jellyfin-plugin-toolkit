@@ -49,12 +49,16 @@ class ToolkitReleaseTests(unittest.TestCase):
             self.resolve(sha="f" * 40)
         with self.assertRaisesRegex(ValueError, "immutable"):
             self.resolve(sha="main")
-        for draft in [None, {"draft": False}]:
-            with (
-                patch.object(release, "release_for_tag", return_value=draft),
-                self.assertRaisesRegex(ValueError, "unpublished"),
-            ):
-                release.resolve("example/toolkit", "v0.1.0")
+        with (
+            patch.object(release, "release_for_tag", return_value=None),
+            self.assertRaisesRegex(ValueError, "not visible.*App token"),
+        ):
+            release.resolve("example/toolkit", "v0.1.0")
+        with (
+            patch.object(release, "release_for_tag", return_value={"draft": False}),
+            self.assertRaisesRegex(ValueError, "unpublished"),
+        ):
+            release.resolve("example/toolkit", "v0.1.0")
 
     def test_archive_must_match_version_revision_and_checksum(self):
         hashes = release.artifact_hashes(self.directory, "v0.1.0", self.sha)

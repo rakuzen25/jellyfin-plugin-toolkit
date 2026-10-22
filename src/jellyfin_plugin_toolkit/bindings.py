@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jellyfin_plugin_toolkit.operations import replaces
-from jellyfin_plugin_toolkit.provenance import REPOSITORY, record
+from jellyfin_plugin_toolkit.provenance import REPOSITORY, record, wheel_name
 
 
 def safe_path(root, name):
@@ -212,8 +212,14 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
     url, selected = target(root)
     tag = "v" + selected
     release = release_for_tag(REPOSITORY, tag)
-    if not release or release.get("draft"):
+    if not release or release.get("draft") is not False:
         raise ValueError("Toolkit binding updates require a published release")
+    assets = [asset["name"] for asset in release.get("assets", [])]
+    required = {wheel_name(selected), f"jellyfin_plugin_toolkit-{selected}.tar.gz"}
+    if len(assets) != len(set(assets)) or not required.issubset(assets):
+        raise ValueError(
+            "Toolkit release must contain an unambiguous matching wheel and source distribution"
+        )
     revision = tag_commit(REPOSITORY, tag)
     if not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise ValueError("Toolkit release has no immutable source revision")

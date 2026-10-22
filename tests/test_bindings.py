@@ -75,3 +75,114 @@ class BindingTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             bindings.target(self.root)
+
+
+class ReleaseBindingPlanTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.url = "https://github.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/v0.3.0/jellyfin_plugin_toolkit-0.3.0-py3-none-any.whl"
+        (self.root / "pyproject.toml").write_text(
+            '[project]\nname="fixture"\ndependencies=["jellyfin-plugin-toolkit"]\n'
+            '[tool.uv.sources]\njellyfin-plugin-toolkit={url="' + self.url + '"}\n'
+        )
+        self.old_lock = (
+            'version=1\n[[package]]\nname="jellyfin-plugin-toolkit"\nversion="0.2.0"\n'
+            'source={url="' + self.url.replace("0.3.0", "0.2.0") + '"}\n'
+            'wheels=[{hash="sha256:' + "a" * 64 + '"}]\n'
+        )
+        (self.root / "uv.lock").write_text(self.old_lock)
+        workflow = self.root / ".github/workflows/validate.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(
+            "jobs:\n  validate:\n    uses: rakuzen25/jellyfin-plugin-toolkit/.github/workflows/validate.yml@"
+            + "a" * 40
+            + " # v0.2.0\n"
+        )
+        (self.root / "renovate.json").write_text(
+            '{"extends":["config:recommended","github>rakuzen25/jellyfin-plugin-toolkit#v0.2.0"],"automerge":false}\n'
+        )
+        self.assets = [
+            {"name": "jellyfin_plugin_toolkit-0.3.0-py3-none-any.whl"},
+            {"name": "jellyfin_plugin_toolkit-0.3.0.tar.gz"},
+        ]
+
+    def test_draft_or_incomplete_release_stops_before_resolution_and_writes(self):
+        original = (self.root / "uv.lock").read_bytes()
+        for release in [
+            None,
+            {"draft": True, "assets": self.assets},
+            {"draft": False, "assets": []},
+            {"draft": False, "assets": self.assets[:1]},
+            {"draft": False, "assets": self.assets * 2},
+        ]:
+            with (
+                self.subTest(release=release),
+                patch(
+                    "jellyfin_plugin_toolkit.release.service.release_for_tag",
+                    return_value=release,
+                ),
+                patch.object(bindings.subprocess, "run") as uv,
+                self.assertRaises(ValueError),
+            ):
+                bindings.plan(self.root)
+            uv.assert_not_called()
+            self.assertEqual(original, (self.root / "uv.lock").read_bytes())
+
+    def test_wheel_only_proposal_derives_lock_workflows_and_preset_atomically(self):
+        from jellyfin_plugin_toolkit.checks.pins import check_pins
+
+        original = {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+
+        def resolve(command, *, cwd, check):
+            self.assertEqual(
+                [
+                    "uv",
+                    "add",
+                    "--no-sync",
+                    "--no-build",
+                    "jellyfin-plugin-toolkit @ " + self.url,
+                ],
+                command,
+            )
+            self.assertTrue(check)
+            (cwd / "uv.lock").write_text(self.old_lock.replace("0.2.0", "0.3.0"))
+
+        with (
+            patch(
+                "jellyfin_plugin_toolkit.release.service.release_for_tag",
+                return_value={"draft": False, "assets": self.assets},
+            ),
+            patch(
+                "jellyfin_plugin_toolkit.release.service.tag_commit",
+                side_effect=lambda _, tag: ("b" if tag == "v0.3.0" else "a") * 40,
+            ),
+            patch(
+                "jellyfin_plugin_toolkit.release.service.github_json",
+                return_value=[
+                    {"type": "file", "path": ".github/workflows/validate.yml"}
+                ],
+            ),
+            patch.object(bindings.subprocess, "run", side_effect=resolve),
+        ):
+            changes = bindings.plan(self.root)
+        self.assertEqual(original, {p: p.read_bytes() for p in original})
+        self.assertEqual(
+            {"uv.lock", "renovate.json", ".github/workflows/validate.yml"},
+            {item.name for item in changes},
+        )
+        bindings.apply(self.root, changes)
+        with patch(
+            "jellyfin_plugin_toolkit.checks.pins.package_version", return_value="0.3.0"
+        ):
+            self.assertEqual("0.3.0", check_pins(self.root)["version"])
+            self.assertIn(
+                "b" * 40, (self.root / ".github/workflows/validate.yml").read_text()
+            )
+            configuration = self.root / "renovate.json"
+            configuration.write_text(
+                configuration.read_text().replace("v0.3.0", "v0.4.0")
+            )
+            with self.assertRaisesRegex(ValueError, "preset differs"):
+                check_pins(self.root)

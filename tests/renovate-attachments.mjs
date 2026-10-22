@@ -4,11 +4,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { extractPackageFile } from "/usr/local/renovate/dist/modules/manager/custom/regex/index.js";
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const { applyPackageRules } = await import("/usr/local/renovate/dist/util/package-rules/index.js");
+const { validateConfig } = await import("/usr/local/renovate/dist/config/validation.js");
 const preset = JSON.parse(fs.readFileSync(root + "/default.json", "utf8"));
 assert.deepEqual(preset, JSON.parse(fs.readFileSync(root + "/src/jellyfin_plugin_toolkit/resources/default.json", "utf8")));
+const validation = await validateConfig("preset", preset);
+assert.deepEqual(validation.errors, []);
+const policy = (dep, manager, packageFile, packageRules = preset.packageRules) =>
+    applyPackageRules({ enabled: true, ...dep, packageName: dep.packageName ?? dep.depName, manager, packageFile, packageRules });
+
 const { extractPackageFile: extractConfig } = await import("/usr/local/renovate/dist/modules/manager/renovate-config/index.js");
 const configured = await extractConfig(JSON.stringify({ extends: ["github>rakuzen25/jellyfin-plugin-toolkit#v0.2.0"] }), "renovate.json", {});
-assert.ok(configured.deps.some((dependency) => dependency.currentValue === "v0.2.0" && dependency.depName === "rakuzen25/jellyfin-plugin-toolkit"));
+const toolkitPreset = configured.deps.find((dependency) => dependency.depName === "rakuzen25/jellyfin-plugin-toolkit");
+assert.equal(toolkitPreset.currentValue, "v0.2.0");
+assert.equal((await policy(toolkitPreset, "renovate-config", "renovate.json")).enabled, false);
 const before = { tag_name: "v0.2.0" },
     after = { tag_name: "v0.3.0" };
 const manifest =
@@ -16,6 +25,14 @@ const manifest =
 const dependency = (await extractPackageFile(manifest, "pyproject.toml", preset.customManagers[0])).deps[0];
 assert.equal(dependency.currentValue, before.tag_name);
 assert.equal(dependency.datasource, "github-releases");
+const wheelPolicy = await policy(dependency, "regex", "pyproject.toml");
+assert.equal(wheelPolicy.enabled, true);
+assert.equal(wheelPolicy.minimumReleaseAge, "1 day");
+assert.equal(wheelPolicy.minimumReleaseAgeBehaviour, "timestamp-required");
+// A custom tag lookup or a URL outside pyproject.toml cannot select another version.
+assert.equal((await policy({ ...dependency, datasource: "github-tags" }, "regex", "pyproject.toml")).enabled, false);
+assert.equal((await policy(dependency, "regex", "other.toml")).enabled, false);
+
 const { compile: render } = await import("/usr/local/renovate/dist/util/template/index.js");
 const replacement = render(preset.customManagers[0].autoReplaceStringTemplate, { ...dependency, newValue: after.tag_name });
 const updated = manifest.replace(dependency.replaceString, replacement);
@@ -27,7 +44,7 @@ assert.equal(rules.length, 1);
 assert.equal(rules[0].automerge, false);
 assert.ok(rules[0].matchPackageNames.includes("rakuzen25/jellyfin-plugin-toolkit/**"));
 assert.ok(preset.packageRules.some((rule) => rule.matchUpdateTypes?.includes("major") && rule.dependencyDashboardApproval));
-console.log("PASS: native Renovate extraction and replacement coordinate canonical wheel URL and preset updates");
+console.log("PASS: only the canonical wheel selects a published release, with the 24-hour cutoff");
 
 // Reusable workflows need version comments: SHA-only references are disabled by Renovate.
 const { GlobalConfig } = await import("/usr/local/renovate/dist/config/global.js");
@@ -42,7 +59,6 @@ assert.equal(nativePython.deps.find((dep) => dep.depName === "jellyfin-plugin-to
 console.log("PASS: native Python extraction leaves the GitHub wheel to the grouped release manager");
 
 const { extractPackageFile: extractActions } = await import("/usr/local/renovate/dist/modules/manager/github-actions/index.js");
-const { compile } = await import("/usr/local/renovate/dist/util/template/index.js");
 for (const name of ["validate", "release", "prepare-release", "catalog-notify"]) {
     const workflow =
         "name: Fixture\non: push\njobs:\n  call:\n    uses: rakuzen25/jellyfin-plugin-toolkit/.github/workflows/" +
@@ -56,17 +72,33 @@ for (const name of ["validate", "release", "prepare-release", "catalog-notify"])
     assert.notEqual(dep.enabled, false);
     assert.equal(dep.currentValue, before.tag_name);
     assert.equal(dep.currentDigest, "a".repeat(40));
-    const replacement = compile(dep.autoReplaceStringTemplate, { ...dep, newValue: after.tag_name, newDigest: "b".repeat(40) });
-    const updated = workflow.replace(dep.replaceString, replacement);
-    const next = (await extractActions(updated, ".github/workflows/" + name + ".yml", {})).deps[0];
-    assert.equal(next.currentValue, after.tag_name);
-    assert.equal(next.currentDigest, "b".repeat(40));
-    assert.equal(next.depName, dependency.depName);
+    assert.equal((await policy(dep, "github-actions", ".github/workflows/" + name + ".yml")).enabled, false);
 }
-console.log(
-    "PASS: native GitHub Actions extraction and replacement update version comments and all reusable workflow digests with the toolkit release",
-);
+const unrelatedAction = (
+    await extractActions(
+        "name: Fixture\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n",
+        ".github/workflows/check.yml",
+        {},
+    )
+).deps[0];
+assert.equal((await policy(unrelatedAction, "github-actions", ".github/workflows/check.yml")).enabled, true);
+const unrelatedPreset = (await extractConfig(JSON.stringify({ extends: ["github>example/preset#v1.0.0"] }), "renovate.json", {})).deps[0];
+assert.equal((await policy(unrelatedPreset, "renovate-config", "renovate.json")).enabled, true);
+console.log("PASS: independent toolkit tag updates are disabled; unrelated actions and presets remain enabled");
 
+// Exercise consumer rules after the inherited preset: they must not re-enable tags
+// or allow the toolkit to join routine automerge groups.
+for (const name of ["jellyfin-lyricbridge", "jellyfin-plugin-music-metadata-manager"]) {
+    const filename = root + "/.build/native-rollout/" + name + "/renovate.json";
+    if (!fs.existsSync(filename)) continue;
+    const consumer = JSON.parse(fs.readFileSync(filename, "utf8"));
+    const rules = [...preset.packageRules, ...(consumer.packageRules ?? [])];
+    const wheel = await policy(dependency, "regex", "pyproject.toml", rules);
+    assert.equal(wheel.enabled, true);
+    assert.equal(wheel.automerge, false);
+    assert.equal(wheel.groupSlug, "jellyfin-plugin-toolkit");
+    assert.equal((await policy(toolkitPreset, "renovate-config", "renovate.json", rules)).enabled, false);
+}
 // Companion commits stay eligible for Renovate updates; human edits still stop them.
 const { execFileSync } = await import("node:child_process");
 const { tmpdir } = await import("node:os");
