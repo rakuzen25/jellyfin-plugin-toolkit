@@ -11,7 +11,16 @@ assert.deepEqual(preset, JSON.parse(fs.readFileSync(root + "/src/jellyfin_plugin
 const validation = await validateConfig("preset", preset);
 assert.deepEqual(validation.errors, []);
 const policy = (dep, manager, packageFile, packageRules = preset.packageRules) =>
-    applyPackageRules({ enabled: true, ...dep, packageName: dep.packageName ?? dep.depName, manager, packageFile, packageRules });
+    applyPackageRules({
+        enabled: true,
+        minimumReleaseAge: "1 day",
+        minimumReleaseAgeBuffer: "30 minutes",
+        ...dep,
+        packageName: dep.packageName ?? dep.depName,
+        manager,
+        packageFile,
+        packageRules,
+    });
 
 const { extractPackageFile: extractConfig } = await import("/usr/local/renovate/dist/modules/manager/renovate-config/index.js");
 const configured = await extractConfig(JSON.stringify({ extends: ["github>rakuzen25/jellyfin-plugin-toolkit#v0.2.0"] }), "renovate.json", {});
@@ -27,8 +36,8 @@ assert.equal(dependency.currentValue, before.tag_name);
 assert.equal(dependency.datasource, "github-releases");
 const wheelPolicy = await policy(dependency, "regex", "pyproject.toml");
 assert.equal(wheelPolicy.enabled, true);
-assert.equal(wheelPolicy.minimumReleaseAge, "1 day");
-assert.equal(wheelPolicy.minimumReleaseAgeBehaviour, "timestamp-required");
+assert.equal(wheelPolicy.minimumReleaseAge, null);
+assert.equal(wheelPolicy.minimumReleaseAgeBuffer, null);
 // A custom tag lookup or a URL outside pyproject.toml cannot select another version.
 assert.equal((await policy({ ...dependency, datasource: "github-tags" }, "regex", "pyproject.toml")).enabled, false);
 assert.equal((await policy(dependency, "regex", "other.toml")).enabled, false);
@@ -44,7 +53,7 @@ assert.equal(rules.length, 1);
 assert.equal(rules[0].automerge, false);
 assert.ok(rules[0].matchPackageNames.includes("rakuzen25/jellyfin-plugin-toolkit/**"));
 assert.ok(preset.packageRules.some((rule) => rule.matchUpdateTypes?.includes("major") && rule.dependencyDashboardApproval));
-console.log("PASS: only the canonical wheel selects a published release, with the 24-hour cutoff");
+console.log("PASS: only the canonical wheel selects a published release, without a release-age delay");
 
 // Reusable workflows need version comments: SHA-only references are disabled by Renovate.
 const { GlobalConfig } = await import("/usr/local/renovate/dist/config/global.js");
@@ -82,6 +91,7 @@ const unrelatedAction = (
     )
 ).deps[0];
 assert.equal((await policy(unrelatedAction, "github-actions", ".github/workflows/check.yml")).enabled, true);
+assert.equal((await policy(unrelatedAction, "github-actions", ".github/workflows/check.yml")).minimumReleaseAge, "1 day");
 const unrelatedPreset = (await extractConfig(JSON.stringify({ extends: ["github>example/preset#v1.0.0"] }), "renovate.json", {})).deps[0];
 assert.equal((await policy(unrelatedPreset, "renovate-config", "renovate.json")).enabled, true);
 console.log("PASS: independent toolkit tag updates are disabled; unrelated actions and presets remain enabled");
@@ -89,13 +99,16 @@ console.log("PASS: independent toolkit tag updates are disabled; unrelated actio
 // Exercise consumer rules after the inherited preset: they must not re-enable tags
 // or allow the toolkit to join routine automerge groups.
 for (const name of ["jellyfin-lyricbridge", "jellyfin-plugin-music-metadata-manager"]) {
-    const filename = root + "/.build/native-rollout/" + name + "/renovate.json";
+    const adoption = root + "/.build/released-0.4.0-adoption/" + name + "/renovate.json";
+    const filename = fs.existsSync(adoption) ? adoption : root + "/.build/native-rollout/" + name + "/renovate.json";
     if (!fs.existsSync(filename)) continue;
     const consumer = JSON.parse(fs.readFileSync(filename, "utf8"));
     const rules = [...preset.packageRules, ...(consumer.packageRules ?? [])];
     const wheel = await policy(dependency, "regex", "pyproject.toml", rules);
     assert.equal(wheel.enabled, true);
     assert.equal(wheel.automerge, false);
+    assert.equal(wheel.minimumReleaseAge, null);
+    assert.equal(wheel.minimumReleaseAgeBuffer, null);
     assert.equal(wheel.groupSlug, "jellyfin-plugin-toolkit");
     assert.equal((await policy(toolkitPreset, "renovate-config", "renovate.json", rules)).enabled, false);
 }

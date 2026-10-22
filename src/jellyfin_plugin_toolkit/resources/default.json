@@ -39,8 +39,8 @@
             "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit"],
             "matchFileNames": ["pyproject.toml"],
             "enabled": true,
-            "minimumReleaseAge": "1 day",
-            "minimumReleaseAgeBehaviour": "timestamp-required"
+            "minimumReleaseAge": null,
+            "minimumReleaseAgeBuffer": null
         },
         {
             "matchPackageNames": ["rakuzen25/jellyfin-plugin-toolkit", "rakuzen25/jellyfin-plugin-toolkit/**"],

@@ -52,7 +52,7 @@ Replace the wheel filename with the version in `pyproject.toml`. Keep its matchi
 
 ## Adopt a foundation update
 
-Renovate proposes only the published toolkit wheel URL, after the 24-hour release-age cutoff. Workflow references and the Renovate preset do not select versions independently. Enable the optional toolkit synchronization workflow for App-authored companion commits, or complete the lockfile and references locally using the trusted base toolkit:
+Renovate proposes only the published toolkit wheel URL. Toolkit releases have no Renovate release-age delay because publication is maintained here; third-party dependencies retain their configured cutoff. Workflow references and the Renovate preset do not select versions independently. Enable the optional toolkit synchronization workflow for App-authored companion commits, or complete the lockfile and references locally using the trusted base toolkit:
 
 ```sh
 uv run jpt toolkit sync --base-ref main
