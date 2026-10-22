@@ -83,4 +83,4 @@ uv run jpt editor vscode
 uv run jpt editor vscode --apply
 ```
 
-`uv run jpt test advisories` blocks validation on critical vulnerabilities. Lower-severity findings are nonblocking; pnpm reports severity counts and NuGet emits warnings. Audit service or configuration failures still fail validation.
+`uv run jpt test advisories` blocks validation when an advisory reports a published upstream fix, regardless of severity or current dependency constraints. Findings explicitly lacking a published fix remain warnings. Incomplete metadata and audit service/configuration failures fail validation. The fresh report is saved to `dist/evidence/advisories.json`; CI runs it on every validation and daily safety check. See [advisory waivers](../reference/configuration.md#advisory-waivers) for reviewed, temporary exceptions.

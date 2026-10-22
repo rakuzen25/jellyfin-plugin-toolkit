@@ -15,6 +15,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
+    def test_advisory_job_is_fresh_even_when_artifacts_are_not_selected(self):
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
+        ).read_text()
+        advisory = workflow.split("  advisories:\n", 1)[1].split("  validate:\n", 1)[0]
+        self.assertNotIn("outputs.artifacts", advisory)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", advisory)
+        self.assertIn("jpt test advisories", advisory)
+        self.assertIn("if: always()", advisory)
+        self.assertNotIn("reuse", advisory)
+
     def test_browser_jobs_forward_runner_options_after_separator(self):
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"

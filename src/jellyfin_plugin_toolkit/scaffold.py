@@ -60,6 +60,7 @@ def generate(
     test = "tests/backend/Host/Plugin.Tests.csproj"
     config = {
         "schema": 1,
+        "advisories": {"waivers": []},
         "plugin": {
             "id": identifier,
             "name": name,

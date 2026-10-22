@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
   workflow_call:
     inputs:
       ref:
@@ -18,6 +20,7 @@ permissions:
   contents: read
 jobs:
   candidate:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     outputs:
       artifact_id: ${{ steps.archive.outputs.artifact-id }}
@@ -47,6 +50,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   toolkit:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -93,6 +97,7 @@ jobs:
           docker run --rm --network none -v "$PWD:/work:ro" -w /work
           rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
   starter:
+    if: github.event_name != 'schedule'
     needs: candidate
     runs-on: ubuntu-24.04
     strategy:
@@ -137,6 +142,7 @@ jobs:
           uv run --project "$RUNNER_TEMP/generator" --no-sync jpt new "$RUNNER_TEMP/starter" --id fixture-third --name 'Fixture Third' --repository fixture/third "${args[@]}" --toolkit-wheel "$GITHUB_WORKSPACE"/dist/jellyfin_plugin_toolkit-*.whl --toolkit-revision "$(git rev-parse HEAD)"
       - name: Bootstrap and exercise the generated consumer
         env:
+          GH_TOKEN: ${{ github.token }}
           VARIANT: ${{ matrix.variant }}
         run: |
           cd "$RUNNER_TEMP/starter"
@@ -145,8 +151,38 @@ jobs:
           uv run --no-sync jpt format
           uv run --no-sync jpt check
           uv run --no-sync jpt test
+          uv run --no-sync jpt test advisories
           uv run --no-sync jpt build
           uv run --no-sync python "$GITHUB_WORKSPACE/tests/dev_smoke.py" "$PWD" --edits
           uv run --no-sync jpt test installation
           uv run --no-sync jpt test reproducibility
           if [ "$VARIANT" = administrator-override ]; then uv run --no-sync jpt test browser -- --project workflow-chromium; fi
+
+  advisories:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+        with:
+          install: false
+          node-version-file: .node-version
+      - run: uv sync --locked
+      - run: pnpm install --frozen-lockfile
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-sync python -c "from jellyfin_plugin_toolkit.advisories import audit_toolkit; audit_toolkit()"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: toolkit-advisories
+          path: dist/evidence/advisories.json
+          if-no-files-found: warn

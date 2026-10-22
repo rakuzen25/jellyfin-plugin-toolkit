@@ -1,6 +1,8 @@
 """Strict consumer inputs and their editor-facing JSON Schema."""
 
+import re
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Self
 
 from pydantic import (
@@ -238,6 +240,70 @@ class Distribution(Model):
     web_exclude: list[str] = Field(default_factory=lambda: ["demo.html", "demo.wav"])
 
 
+class AdvisoryWaiver(Model):
+    ecosystem: Literal["npm", "nuget"]
+    package: Text
+    version: Text
+    ghsa: Annotated[
+        str, StringConstraints(pattern=r"^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$")
+    ]
+    reason: Text
+    issue: Annotated[str, StringConstraints(pattern=r"^https://[^/\s]+/[^\s]+$")]
+    issued_at: Text
+    expires_at: Text
+
+    @field_validator("package", "version", "reason")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip() or value != value.strip():
+            raise ValueError("Waiver values must be nonblank and trimmed")
+        return value
+
+    @staticmethod
+    def timestamp(value):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if "T" not in value or parsed.utcoffset() != timedelta(0):
+            raise ValueError("Waiver timestamps must include a UTC timezone")
+        return parsed
+
+    @property
+    def scope(self):
+        package = self.package.casefold() if self.ecosystem == "nuget" else self.package
+        return self.ecosystem, package, self.version, self.ghsa
+
+    @model_validator(mode="after")
+    def lifetime(self) -> Self:
+        if not re.fullmatch(
+            r"[0-9]+(?:\.[0-9]+){0,3}(?:[-+][0-9A-Za-z.-]+)*", self.version
+        ):
+            raise ValueError("Waivers require an exact installed package version")
+        pattern = (
+            r"(?:@[a-z0-9._-]+/)?[a-z0-9._-]+"
+            if self.ecosystem == "npm"
+            else r"[A-Za-z0-9._-]+"
+        )
+        if not re.fullmatch(pattern, self.package):
+            raise ValueError("Waivers require an exact package name")
+        issued = self.timestamp(self.issued_at)
+        expires = self.timestamp(self.expires_at)
+        if issued > datetime.now(UTC):
+            raise ValueError("Waiver issuance cannot be in the future")
+        if not issued < expires <= issued + timedelta(days=30):
+            raise ValueError("Waiver lifetime must be positive and at most 30 days")
+        return self
+
+
+class Advisories(Model):
+    waivers: list[AdvisoryWaiver] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def unique(self) -> Self:
+        scopes = [waiver.scope for waiver in self.waivers]
+        if len(scopes) != len(set(scopes)):
+            raise ValueError("Duplicate advisory waiver scope")
+        return self
+
+
 class Configuration(Model):
     schema_version: Literal[1] = Field(alias="schema")
     plugin: Plugin
@@ -251,6 +317,7 @@ class Configuration(Model):
     sandbox: Sandbox = Field(default_factory=Sandbox)
     source: Source = Field(default_factory=Source)
     distribution: Distribution = Field(default_factory=Distribution)
+    advisories: Advisories = Field(default_factory=Advisories)
     operations: dict[str, Operation] = Field(default_factory=dict)
 
     @field_validator("schema_version", mode="before")

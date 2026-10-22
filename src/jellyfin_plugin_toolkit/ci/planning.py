@@ -177,12 +177,16 @@ def finish(ctx: Context, selection: dict, jobs: dict) -> dict:
     receipt = dict(
         selection,
         groups=results,
+        advisories={"result": jobs.get("advisories", {}).get("result", "missing")},
         validated_at=datetime.now(UTC).isoformat(),
         artifacts=artifacts.artifact_hashes(root)
         if results.get("artifacts") == "success"
         else {},
     )
-    successful = all(value == "success" for value in results.values())
+    successful = (
+        all(value == "success" for value in results.values())
+        and receipt["advisories"]["result"] == "success"
+    )
     cumulative = selection.get("comparison", {}).get("mode") == "push-baseline"
     complete = successful and (
         set(selection["required"]) == set(validation.groups)

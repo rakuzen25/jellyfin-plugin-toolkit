@@ -12,7 +12,7 @@ from jellyfin_plugin_toolkit.common.artifacts import digest
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.provenance import identity
 
-SCHEMA = 6
+SCHEMA = 7
 POLICY = ("plugin.toml", "uv.lock", "version.txt")
 ARTIFACT_JOBS = ("package", "installation", "reproducibility", "advisories")
 

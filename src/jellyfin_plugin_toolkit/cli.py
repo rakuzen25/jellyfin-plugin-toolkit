@@ -213,6 +213,9 @@ def validate(ctx: typer.Context):
     for target in selected.config.validation.acceptance_groups:
         tasks.test(selected, target, [])
 
+    if "advisories" not in selected.config.validation.acceptance_groups:
+        tasks.test(selected, "advisories", [])
+
 
 @app.command()
 def new(

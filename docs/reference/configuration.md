@@ -90,3 +90,13 @@ Synchronization preserves workflow triggers, permissions, schedules, extra jobs,
 Use `--base-ref REF` for an authoritative Git baseline or a partially updated PR. The trusted updater reads release metadata without importing proposed toolkit code and invokes uv with source builds disabled. Every target must be a published canonical wheel. Checks, CI and release builds reject mismatched wheel versions, workflow references and presets.
 
 Bootstrap never edits editor settings. Optional editor setup accepts JSON settings; existing JSON-with-comments settings remain intact, and `paths` provides values for manual setup.
+
+## Advisory waivers
+
+Optional `[[advisories.waivers]]` entries waive a fixable finding for one ecosystem, package, exact installed version, and GHSA. Use `ecosystem = "npm"` or `"nuget"`, `package`, `version`, `ghsa`, a nonblank `reason`, an HTTPS tracking `issue` URL, and UTC `issued_at` and `expires_at` timestamp strings. Expiry must follow issuance by no more than 30 days. NuGet package names match without case sensitivity.
+
+Review waiver changes through ordinary PRs. Expired waivers cannot suppress findings; unused and expired entries produce cleanup warnings. Renewals require reviewed timestamp changes. Waivers cannot suppress unknown fix status or audit failures. Native pnpm audit exclusions and NuGet audit suppressions are rejected so this configuration remains the sole exception mechanism.
+
+A published fix counts even when it is a major upgrade, prerelease, or requires a transitive override. Dependency release-age restrictions still apply when installing that fix. No-fix findings need no waiver; a subsequent fresh audit blocks once upstream reports a published fix. The daily check evaluates expiry even without repository changes.
+
+The toolkit repository has no consumer `plugin.toml`; its own Node audit uses the same waiver fields under `[[tool.jpt.advisories.waivers]]` in `pyproject.toml`.

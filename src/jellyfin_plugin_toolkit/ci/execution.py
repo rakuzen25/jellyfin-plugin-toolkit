@@ -82,7 +82,10 @@ def finish(ctx):
         json.loads(os.environ["CI_JOB_RESULTS"]),
     )
     (root / "dist/validation.json").write_text(json.dumps(result, indent=2) + "\n")
-    if any(value != "success" for value in result["groups"].values()):
+    if (
+        any(value != "success" for value in result["groups"].values())
+        or result["advisories"]["result"] != "success"
+    ):
         raise ValueError("Required validation groups failed")
 
 

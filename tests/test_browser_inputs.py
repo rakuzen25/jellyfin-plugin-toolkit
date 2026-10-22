@@ -58,6 +58,38 @@ class BrowserInputTests(ConsumerTestCase):
                 self.assertEqual(original, self.key())
                 self.assertEqual(before_policy, policy.policy_fingerprint(self.ctx))
 
+    def test_waiver_changes_affect_validation_inputs_but_not_stress_reuse(self):
+        from datetime import UTC, datetime, timedelta
+
+        from jellyfin_plugin_toolkit.configuration import AdvisoryWaiver
+        from jellyfin_plugin_toolkit.scaffold import toml
+
+        original = self.key()
+        before_policy = policy.policy_fingerprint(self.ctx)
+        before_artifacts = policy.fingerprints(self.ctx, browser.capture(self.ctx))[
+            "artifacts"
+        ]
+        now = datetime.now(UTC)
+        self.ctx.config.advisories.waivers.append(
+            AdvisoryWaiver(
+                ecosystem="npm",
+                package="example",
+                version="1.0.0",
+                ghsa="GHSA-abcd-efgh-ijkl",
+                reason="Upgrade integration",
+                issue="https://github.com/example/plugin/issues/1",
+                issued_at=(now - timedelta(days=1)).isoformat(),
+                expires_at=(now + timedelta(days=7)).isoformat(),
+            )
+        )
+        (self.root / "plugin.toml").write_text(toml(self.ctx.config.data()))
+        self.assertEqual(original, self.key())
+        self.assertEqual(before_policy, policy.policy_fingerprint(self.ctx))
+        self.assertNotEqual(
+            before_artifacts,
+            policy.fingerprints(self.ctx, browser.capture(self.ctx))["artifacts"],
+        )
+
     def test_python_dev_lock_changes_do_not_invalidate_stress_or_policy(self):
         original = self.key()
         before_policy = policy.policy_fingerprint(self.ctx)

@@ -831,12 +831,25 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
         self.assertNotIn("backend", proofs)
         self.assertEqual(proofs["frontend"]["run_id"], "101")
 
+    def test_advisory_result_is_required_independently_of_selected_groups(self):
+        selection = self.selected(["README.md"])
+        for status in ("failure", "skipped", "cancelled", "missing"):
+            receipt = ci_planning.finish(
+                self.ctx, selection, {"advisories": {"result": status}}
+            )
+            self.assertFalse(receipt["coverage"]["complete"])
+            self.assertEqual(status, receipt["advisories"]["result"])
+
     def test_success_extends_coverage_failure_does_not(self):
         selection = self.selected(["README.md"])
         self.assertTrue(
-            ci_planning.finish(self.ctx, selection, {})["coverage"]["complete"]
+            ci_planning.finish(
+                self.ctx, selection, {"advisories": {"result": "success"}}
+            )["coverage"]["complete"]
         )
         selection = self.selected(["src/Core/Lyrics/Models.cs"])
         self.assertFalse(
-            ci_planning.finish(self.ctx, selection, {})["coverage"]["complete"]
+            ci_planning.finish(
+                self.ctx, selection, {"advisories": {"result": "success"}}
+            )["coverage"]["complete"]
         )

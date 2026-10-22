@@ -1,5 +1,67 @@
 {
     "$defs": {
+        "Advisories": {
+            "additionalProperties": false,
+            "properties": {
+                "waivers": {
+                    "items": {
+                        "$ref": "#/$defs/AdvisoryWaiver"
+                    },
+                    "title": "Waivers",
+                    "type": "array"
+                }
+            },
+            "title": "Advisories",
+            "type": "object"
+        },
+        "AdvisoryWaiver": {
+            "additionalProperties": false,
+            "properties": {
+                "ecosystem": {
+                    "enum": ["npm", "nuget"],
+                    "title": "Ecosystem",
+                    "type": "string"
+                },
+                "package": {
+                    "minLength": 1,
+                    "title": "Package",
+                    "type": "string"
+                },
+                "version": {
+                    "minLength": 1,
+                    "title": "Version",
+                    "type": "string"
+                },
+                "ghsa": {
+                    "pattern": "^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$",
+                    "title": "Ghsa",
+                    "type": "string"
+                },
+                "reason": {
+                    "minLength": 1,
+                    "title": "Reason",
+                    "type": "string"
+                },
+                "issue": {
+                    "pattern": "^https://[^/\\s]+/[^\\s]+$",
+                    "title": "Issue",
+                    "type": "string"
+                },
+                "issued_at": {
+                    "minLength": 1,
+                    "title": "Issued At",
+                    "type": "string"
+                },
+                "expires_at": {
+                    "minLength": 1,
+                    "title": "Expires At",
+                    "type": "string"
+                }
+            },
+            "required": ["ecosystem", "package", "version", "ghsa", "reason", "issue", "issued_at", "expires_at"],
+            "title": "AdvisoryWaiver",
+            "type": "object"
+        },
         "Architecture": {
             "additionalProperties": false,
             "properties": {
@@ -815,6 +877,9 @@
         },
         "distribution": {
             "$ref": "#/$defs/Distribution"
+        },
+        "advisories": {
+            "$ref": "#/$defs/Advisories"
         },
         "operations": {
             "additionalProperties": {

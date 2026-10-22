@@ -474,7 +474,7 @@ jobs:
           name: evidence-reproducibility
   advisories:
     needs: impact
-    if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
+    if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -496,7 +496,9 @@ jobs:
           dotnet: "true"
           references: "true"
       - run: mkdir -p dist/evidence
-      - run: uv run --no-sync jpt test advisories 2>&1 | tee dist/evidence/advisories.log
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-sync jpt test advisories 2>&1 | tee dist/evidence/advisories.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
         with:

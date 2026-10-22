@@ -14,29 +14,12 @@ from jellyfin_plugin_toolkit.context import Context
 
 
 class CommandTests(ConsumerTestCase):
-    def test_advisories_only_block_critical_findings_and_audit_failures(self):
-        from types import SimpleNamespace
+    def test_advisories_use_shared_evaluator(self):
+        with patch("jellyfin_plugin_toolkit.advisories.audit") as audit:
+            tasks.test_default(self.ctx, "advisories", [])
+        audit.assert_called_once_with(self.ctx)
 
-        context = SimpleNamespace(
-            root=self.root,
-            config=SimpleNamespace(
-                backend=SimpleNamespace(tests=["tests/Test.csproj"])
-            ),
-        )
-        (self.root / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
-        with patch.object(tasks, "run") as run:
-            tasks.test_default(context, "advisories", [])
-        node, nuget = run.call_args_list
-        self.assertEqual(node.args[1:], ("audit", "--audit-level", "critical"))
-        self.assertIn("-p:NuGetAuditLevel=low", nuget.args)
-        self.assertIn("-p:WarningsNotAsErrors=NU1901%3BNU1902%3BNU1903", nuget.args)
-        self.assertIn("-p:WarningsAsErrors=NU1900%3BNU1904%3BNU1905", nuget.args)
-        failure = subprocess.CalledProcessError(1, ["pnpm", "audit"])
-        with patch.object(tasks, "run", side_effect=failure):
-            with self.assertRaises(subprocess.CalledProcessError):
-                tasks.test_default(context, "advisories", [])
-
-    def test_builds_keep_noncritical_nuget_advisories_as_warnings(self):
+    def test_builds_leave_advisory_decisions_to_the_audit_gate(self):
         import xml.etree.ElementTree as ET
 
         from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
@@ -44,7 +27,7 @@ class CommandTests(ConsumerTestCase):
         properties = ET.parse(TOOLKIT_ROOT / "msbuild/Plugin.props").getroot()
         self.assertEqual(
             properties.findtext("PropertyGroup/WarningsNotAsErrors"),
-            "$(WarningsNotAsErrors);NU1901;NU1902;NU1903",
+            "$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904",
         )
         self.assertEqual(properties.findtext(".//TreatWarningsAsErrors"), "true")
 
@@ -82,7 +65,8 @@ class CommandTests(ConsumerTestCase):
             + [
                 ("test", target)
                 for target in self.ctx.config.validation.acceptance_groups
-            ],
+            ]
+            + [("test", "advisories")],
             events,
         )
 
