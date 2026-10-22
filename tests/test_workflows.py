@@ -15,6 +15,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
+    def test_browser_jobs_forward_runner_options_after_separator(self):
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
+        ).read_text()
+        commands = [
+            line.strip()
+            for line in workflow.splitlines()
+            if "CI_BROWSER_GROUP=" in line and "browser" in line
+        ]
+        self.assertEqual(len(commands), 3)
+        for command in commands:
+            self.assertIn("uv run --no-sync jpt test browser -- --project", command)
+            self.assertIn("--workers=", command)
+
     def test_app_setup_caller_is_always_generated_and_default_branch_only(self):
         caller = render("example/toolkit", "a" * 40, version="v1.0.0")["app-setup.yml"]
         self.assertIn("push:\n    branches: [main]\n    paths:", caller)

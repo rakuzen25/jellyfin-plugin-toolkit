@@ -263,7 +263,7 @@ jobs:
           name: validation-plan
           path: dist
       - run: uv run --no-sync jpt internal ci browser-verify --group workflow --project "workflow-chromium" --workers 2
-      - run: CI_BROWSER_GROUP=workflow pnpm test browser --project workflow-chromium --workers=2 2>&1 | tee dist/evidence/browser.log
+      - run: CI_BROWSER_GROUP=workflow uv run --no-sync jpt test browser -- --project workflow-chromium --workers=2 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
@@ -306,7 +306,7 @@ jobs:
           name: validation-plan
           path: dist
       - run: uv run --no-sync jpt internal ci browser-verify --group rendering --project "${{ matrix.project }}" --workers 2
-      - run: CI_BROWSER_GROUP=rendering pnpm test browser --project "${{ matrix.project }}" --workers=2 2>&1 | tee dist/evidence/browser.log
+      - run: CI_BROWSER_GROUP=rendering uv run --no-sync jpt test browser -- --project "${{ matrix.project }}" --workers=2 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
@@ -349,7 +349,7 @@ jobs:
           name: validation-plan
           path: dist
       - run: uv run --no-sync jpt internal ci browser-verify --group performance --project "${{ matrix.project }}" --workers 1
-      - run: CI_BROWSER_GROUP=performance pnpm test browser --project "${{ matrix.project }}" --workers=1 2>&1 | tee dist/evidence/browser.log
+      - run: CI_BROWSER_GROUP=performance uv run --no-sync jpt test browser -- --project "${{ matrix.project }}" --workers=1 2>&1 | tee dist/evidence/browser.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
         with:

@@ -82,3 +82,5 @@ uv run jpt paths
 uv run jpt editor vscode
 uv run jpt editor vscode --apply
 ```
+
+`uv run jpt test advisories` blocks validation on critical vulnerabilities. Lower-severity findings are nonblocking; pnpm reports severity counts and NuGet emits warnings. Audit service or configuration failures still fail validation.

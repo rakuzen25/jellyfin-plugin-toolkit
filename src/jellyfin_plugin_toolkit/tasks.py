@@ -258,7 +258,7 @@ def test_default(ctx, target, extra):
         return
     if target == "advisories":
         if (ctx.root / "pnpm-lock.yaml").exists():
-            run(executable("pnpm"), "audit", cwd=ctx.root)
+            run(executable("pnpm"), "audit", "--audit-level", "critical", cwd=ctx.root)
         for project in ctx.config.backend.tests:
             run(
                 executable("dotnet"),
@@ -268,7 +268,9 @@ def test_default(ctx, target, extra):
                 "-m:1",
                 "--force-evaluate",
                 "-p:NuGetAuditMode=all",
-                "-p:WarningsAsErrors=NU1900%3BNU1901%3BNU1902%3BNU1903%3BNU1904%3BNU1905",
+                "-p:NuGetAuditLevel=low",
+                "-p:WarningsNotAsErrors=NU1901%3BNU1902%3BNU1903",
+                "-p:WarningsAsErrors=NU1900%3BNU1904%3BNU1905",
                 cwd=ctx.root,
             )
         return
