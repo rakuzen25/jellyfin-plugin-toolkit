@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.0...v0.4.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* update ci ([83829d5](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/83829d5caad6c750b617eb80e8a610c4d70bf0cf))
+
 ## [0.4.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.3.0...v0.4.0) (2026-10-21)
 
 
