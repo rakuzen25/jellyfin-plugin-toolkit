@@ -116,7 +116,7 @@ def distributions(root):
     directory = root / "build-support"
     wheel = directory / wheel_name(selected["version"])
     sdist = directory / f"jellyfin_plugin_toolkit-{selected['version']}.tar.gz"
-    checksums = directory / "toolkit-SHA256SUMS"
+    checksums = directory / f"toolkit-{selected['version']}-SHA256SUMS"
     if directory.is_symlink() or any(
         path.is_symlink() or path.exists() and not path.is_file()
         for path in [wheel, sdist, checksums]
@@ -138,7 +138,6 @@ def distributions(root):
     if not selected["source"].startswith("build-support/") and selected[
         "source"
     ].startswith("https://"):
-        checksums = directory / "toolkit-SHA256SUMS"
         if not checksums.exists():
             with urllib.request.urlopen(
                 release_url(selected["version"], "SHA256SUMS"), timeout=60
