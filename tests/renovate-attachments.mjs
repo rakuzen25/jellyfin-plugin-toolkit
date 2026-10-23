@@ -138,6 +138,25 @@ for (const name of ["jellyfin-lyricbridge", "jellyfin-plugin-music-metadata-mana
     const consumer = JSON.parse(fs.readFileSync(filename, "utf8"));
     if (fs.existsSync(modern)) assert.deepEqual((await validateConfig("consumer", consumer)).errors, []);
     const rules = [...tooling.packageRules, ...preset.packageRules, ...(consumer.packageRules ?? [])];
+    for (const [depName, updateType, expected] of [
+        ["prettier", "patch", true],
+        ["prettier", "minor", true],
+        ["node", "minor", false],
+    ]) {
+        const effective = await applyPackageRules({
+            ...getConfig(),
+            ...tooling,
+            ...consumer,
+            depName,
+            packageName: depName,
+            manager: "npm",
+            packageFile: "package.json",
+            updateType,
+            packageRules: rules,
+        });
+        assert.equal(effective.automerge, expected, `${name}/${depName}/${updateType}`);
+    }
+
     const wheel = await policy(dependency, "regex", "pyproject.toml", rules);
     assert.equal(wheel.enabled, true);
     assert.equal(wheel.automerge, false);
