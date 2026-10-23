@@ -387,6 +387,8 @@ jobs:
         run: uv run --no-sync jpt internal ci web-verify
       - run: uv run --no-sync jpt release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
       - name: Build clean candidate with verified browser assets
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           args=()
           if [ "${{ needs.impact.outputs.web }}" = true ]; then args+=(--prepared-web); fi

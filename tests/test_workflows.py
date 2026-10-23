@@ -26,6 +26,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("if: always()", advisory)
         self.assertNotIn("reuse", advisory)
 
+    def test_release_build_can_verify_the_toolkit_tag_with_read_only_token(self):
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
+        ).read_text()
+        build = workflow.split(
+            "      - name: Build clean candidate with verified browser assets\n", 1
+        )[1].split("      - run:", 1)[0]
+        self.assertIn("GH_TOKEN: ${{ github.token }}", build)
+        self.assertIn("args+=(--release)", build)
+        self.assertIn('jpt build "${args[@]}"', build)
+        self.assertIn("  contents: read\n", workflow)
+        self.assertNotIn("contents: write", workflow)
+
     def test_browser_jobs_forward_runner_options_after_separator(self):
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
