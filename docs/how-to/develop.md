@@ -88,3 +88,5 @@ uv run jpt editor vscode --apply
 ```
 
 `uv run jpt test advisories` blocks validation when an advisory reports a published upstream fix, regardless of severity or current dependency constraints. Findings explicitly lacking a published fix remain warnings. Incomplete metadata and audit service/configuration failures fail validation. The fresh report is saved to `dist/evidence/advisories.json`; CI runs it on every validation and daily safety check. See [advisory waivers](../reference/configuration.md#advisory-waivers) for reviewed, temporary exceptions.
+
+The versioned `tooling` Renovate preset supplies the shared maintenance policy. Generated plugins extend it alongside the plugin preset; toolkit synchronization advances both tags with the wheel and workflow references. Standalone tools such as the catalog may extend only `github>rakuzen25/jellyfin-plugin-toolkit:tooling#VERSION` and review preset upgrades independently. Routine third-party updates automerge after checks and the one-day delay; major and runtime/compiler/package-manager minor upgrades require review. Repository-specific exceptions remain local.

@@ -69,6 +69,17 @@ class BindingTests(unittest.TestCase):
         self.assertIn("b" * 40, updated)
         self.assertTrue(updated.endswith("\r\n"))
 
+    def test_named_preset_drift_stops_rewrite_and_unrelated_presets_are_preserved(self):
+        old = {"repository": "rakuzen25/jellyfin-plugin-toolkit", "version": "v0.2.0"}
+        new = dict(old, version="v0.3.0")
+        config = '{"extends": ["github>example/policy#v9.0.0", "github>rakuzen25/jellyfin-plugin-toolkit:tooling#v0.1.0"]}'
+        with self.assertRaisesRegex(ValueError, "preset drift"):
+            bindings.rewrite_preset(config, old, new)
+        config = config.replace(":tooling#v0.1.0", ":tooling#v0.2.0")
+        updated = bindings.rewrite_preset(config, old, new)
+        self.assertIn("github>example/policy#v9.0.0", updated)
+        self.assertIn(":tooling#v0.3.0", updated)
+
     def test_source_update_requires_canonical_github_wheel(self):
         (self.root / "pyproject.toml").write_text(
             '[tool.uv.sources]\njellyfin-plugin-toolkit = {url="https://attacker.invalid/tool.whl"}'
@@ -101,7 +112,7 @@ class ReleaseBindingPlanTests(unittest.TestCase):
             + " # v0.2.0\n"
         )
         (self.root / "renovate.json").write_text(
-            '{"extends":["config:recommended","github>rakuzen25/jellyfin-plugin-toolkit#v0.2.0"],"automerge":false}\n'
+            '{"extends":["config:recommended","github>rakuzen25/jellyfin-plugin-toolkit#v0.2.0","github>rakuzen25/jellyfin-plugin-toolkit:tooling#v0.2.0"],"automerge":false}\n'
         )
         self.assets = [
             {"name": "jellyfin_plugin_toolkit-0.3.0-py3-none-any.whl"},
@@ -181,6 +192,15 @@ class ReleaseBindingPlanTests(unittest.TestCase):
                 "b" * 40, (self.root / ".github/workflows/validate.yml").read_text()
             )
             configuration = self.root / "renovate.json"
+            self.assertIn(":tooling#v0.3.0", configuration.read_text())
+            configuration.write_text(
+                configuration.read_text().replace(":tooling#v0.3.0", ":tooling#v0.2.0")
+            )
+            with self.assertRaisesRegex(ValueError, "preset differs"):
+                check_pins(self.root)
+            configuration.write_text(
+                configuration.read_text().replace(":tooling#v0.2.0", ":tooling#v0.3.0")
+            )
             configuration.write_text(
                 configuration.read_text().replace("v0.3.0", "v0.4.0")
             )
