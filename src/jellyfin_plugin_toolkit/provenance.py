@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPOSITORY = "rakuzen25/jellyfin-plugin-toolkit"
 NAME = "jellyfin-plugin-toolkit"
+TOOLKIT_DIST = Path(".build/toolkit-dist")
 
 
 def package_version():
@@ -79,11 +80,14 @@ def record(root, *, release=False):
         raise ValueError("Toolkit wheel must have one locked SHA256")
     digest = hashes[0]
     if source.get("path"):
-        if source["path"] != "build-support/" + wheel_name(entry["version"]):
+        if source["path"] != (TOOLKIT_DIST / wheel_name(entry["version"])).as_posix():
             raise ValueError(
-                "Place candidate wheels under build-support with their native filename"
+                "Place candidate wheels under .build/toolkit-dist with their native filename"
             )
+        distribution_directory(root)
         path = root / source["path"]
+        if path.is_symlink():
+            raise ValueError("Candidate wheels cannot follow symlinks")
         if not path.resolve().is_relative_to(root.resolve()) or not path.is_file():
             raise ValueError("Candidate wheels must be inside the consumer checkout")
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
@@ -110,10 +114,22 @@ def identity(root):
     return {k: v for k, v in record(root).items() if k != "python_lock_sha256"}
 
 
+def distribution_directory(root):
+    """Validate retained distribution parents before reading or writing artifacts."""
+    root = Path(root).resolve()
+    directory = root / TOOLKIT_DIST
+    for path in (directory.parent, directory):
+        if path.is_symlink() or path.exists() and not path.is_dir():
+            raise ValueError(
+                "Toolkit distribution directories cannot follow symlinks or special files"
+            )
+    return directory
+
+
 def distributions(root):
     root = Path(root).resolve()
     selected = record(root)
-    directory = root / "build-support"
+    directory = distribution_directory(root)
     wheel = directory / wheel_name(selected["version"])
     sdist = directory / f"jellyfin_plugin_toolkit-{selected['version']}.tar.gz"
     checksums = directory / f"toolkit-{selected['version']}-SHA256SUMS"
@@ -124,7 +140,7 @@ def distributions(root):
         raise ValueError(
             "Corresponding toolkit distributions cannot follow symlinks or special files"
         )
-    directory.mkdir(exist_ok=True)
+    directory.mkdir(parents=True, exist_ok=True)
     if not wheel.exists():
         with urllib.request.urlopen(selected["source"], timeout=60) as response:
             wheel.write_bytes(response.read())
@@ -135,7 +151,7 @@ def distributions(root):
             release_url(selected["version"], sdist.name), timeout=60
         ) as response:
             sdist.write_bytes(response.read())
-    if not selected["source"].startswith("build-support/") and selected[
+    if not selected["source"].startswith(TOOLKIT_DIST.as_posix() + "/") and selected[
         "source"
     ].startswith("https://"):
         if not checksums.exists():

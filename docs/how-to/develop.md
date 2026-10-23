@@ -48,7 +48,11 @@ uv build
 uv run jpt new /tmp/candidate-plugin --id candidate-plugin --name Candidate --repository example/candidate-plugin --toolkit-wheel dist/jellyfin_plugin_toolkit-0.2.0-py3-none-any.whl --toolkit-revision "$(git rev-parse HEAD)"
 ```
 
-Replace the wheel filename with the version in `pyproject.toml`. Keep its matching source distribution beside it. Local candidate projects retain the wheel under `build-support` with its native filename, so the locked path remains valid in source bundles; generation prepares this layout automatically. Candidate dependencies remain local wheels inside the generated checkout; publish and adopt the canonical release URL before merging production adoption changes.
+Replace the wheel filename with the version in `pyproject.toml`. Keep its matching source distribution beside it. Local candidate projects retain the wheel under `.build/toolkit-dist/` with its native filename, so the locked path remains valid in source bundles; generation prepares this layout automatically. Candidate dependencies remain local wheels inside the generated checkout; publish and adopt the canonical release URL before merging production adoption changes.
+
+Toolkit wheels, matching source archives, and published release checksums are retained in `.build/toolkit-dist/` and included at that path in plugin source bundles. Resource preparation replaces only `.build/jpt/` and preserves these distributions. Deleting `.build/` removes them: published distributions can be downloaded again, while unpublished candidate artifacts must be restored or rebuilt.
+
+Existing candidate projects must be regenerated or manually updated: move the wheel and matching source archive from `build-support/` into `.build/toolkit-dist/`, then run `uv add ./.build/toolkit-dist/<wheel-filename>` to update the dependency and lockfile. The old candidate path is unsupported. Published URL dependencies need no dependency or lockfile changes.
 
 ## Adopt a foundation update
 

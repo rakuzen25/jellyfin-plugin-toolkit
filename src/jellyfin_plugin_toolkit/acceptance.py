@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 
 from jellyfin_plugin_toolkit.common.binaries import HOST_LIBRARIES
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.provenance import record
+from jellyfin_plugin_toolkit.provenance import TOOLKIT_DIST, record
 
 
 def members(package):
@@ -73,7 +73,7 @@ def inventory(ctx):
 
         tools = distributions(ctx.root)
         expected_source = {p.as_posix() for p in source_files(ctx.root)} | {
-            "build-support/" + path.name for path in tools
+            (TOOLKIT_DIST / path.name).as_posix() for path in tools
         }
         if names != expected_source:
             raise ValueError("Corresponding source inventory differs")
@@ -81,7 +81,7 @@ def inventory(ctx):
             if package.read(path.as_posix()) != (ctx.root / path).read_bytes():
                 raise ValueError("Corresponding source changed")
         for path in tools:
-            if package.read("build-support/" + path.name) != path.read_bytes():
+            if package.read((TOOLKIT_DIST / path.name).as_posix()) != path.read_bytes():
                 raise ValueError("Corresponding toolkit distribution differs")
     manifest = json.loads((dist / "manifest.json").read_text())[0]
     if (

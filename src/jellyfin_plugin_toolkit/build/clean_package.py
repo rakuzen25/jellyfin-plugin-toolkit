@@ -9,7 +9,7 @@ from pathlib import Path
 
 from jellyfin_plugin_toolkit.common.artifacts import artifact_hashes, digest, verify_web
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
-from jellyfin_plugin_toolkit.provenance import record
+from jellyfin_plugin_toolkit.provenance import TOOLKIT_DIST, record
 
 
 def clean_package(ctx, release=False, prepared_web=False):
@@ -27,9 +27,9 @@ def clean_package(ctx, release=False, prepared_web=False):
             destination = root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(repository / name, destination)
-        (root / "build-support").mkdir(exist_ok=True)
+        (root / TOOLKIT_DIST).mkdir(parents=True, exist_ok=True)
         for tool in tools:
-            shutil.copy2(tool, root / "build-support" / tool.name)
+            shutil.copy2(tool, root / TOOLKIT_DIST / tool.name)
         if prepared_web:
             shutil.copytree(repository / "dist/web", root / "dist/web")
             shutil.copy2(
@@ -41,7 +41,8 @@ def clean_package(ctx, release=False, prepared_web=False):
             "JELLYFIN_PLUGIN_REFERENCE_DIR": str(
                 Path(
                     os.environ.get(
-                        "JELLYFIN_PLUGIN_REFERENCE_DIR", repository / ".build/jellyfin"
+                        "JELLYFIN_PLUGIN_REFERENCE_DIR",
+                        str(repository / ".build/jellyfin"),
                     )
                 ).resolve()
             ),

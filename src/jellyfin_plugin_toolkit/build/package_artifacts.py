@@ -40,7 +40,7 @@ def assemble(ctx, staging, release_mode=False):
     prefix = ctx.prefix
     repository = os.environ.get(
         "JELLYFIN_PLUGIN_REPOSITORY_URL",
-        "https://github.com/" + ctx.identity.repository,
+        "https://github.com/" + str(ctx.identity.repository),
     )
     download = os.environ.get(
         "JELLYFIN_PLUGIN_DOWNLOAD_BASE_URL",
@@ -182,13 +182,13 @@ def assemble(ctx, staging, release_mode=False):
             if e.name not in existing
         )
         products.append(archive(out / f"{prefix}-web-{version}.zip", files))
-    from jellyfin_plugin_toolkit.provenance import distributions
+    from jellyfin_plugin_toolkit.provenance import TOOLKIT_DIST, distributions
 
     tools = distributions(root)
     sources = [
-        (root / p, p) for p in source_files(root) if p.parts[0] != "build-support"
+        (root / p, p) for p in source_files(root) if not p.is_relative_to(TOOLKIT_DIST)
     ]
-    sources.extend((path, Path("build-support") / path.name) for path in tools)
+    sources.extend((path, TOOLKIT_DIST / path.name) for path in tools)
     products.append(archive(out / f"{prefix}-source-{version}.zip", sources))
     manifest = [
         {

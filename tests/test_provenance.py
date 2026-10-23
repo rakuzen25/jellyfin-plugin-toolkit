@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -81,7 +82,10 @@ class ProvenanceTests(ConsumerTestCase):
 
     def test_source_bundle_directory_cannot_redirect_writes(self):
         with tempfile.TemporaryDirectory() as folder:
-            (self.root / "build-support").symlink_to(folder, target_is_directory=True)
+            (self.root / ".build").mkdir()
+            (self.root / ".build/toolkit-dist").symlink_to(
+                folder, target_is_directory=True
+            )
             with patch.object(provenance.urllib.request, "urlopen") as request:
                 with self.assertRaises(ValueError):
                     provenance.distributions(self.root)
@@ -89,8 +93,8 @@ class ProvenanceTests(ConsumerTestCase):
             self.assertEqual([], list(Path(folder).iterdir()))
 
     def test_distribution_file_cannot_redirect_writes(self):
-        support = self.root / "build-support"
-        support.mkdir()
+        support = self.root / ".build/toolkit-dist"
+        support.mkdir(parents=True)
         with tempfile.TemporaryDirectory() as folder:
             target = Path(folder) / "outside"
             (support / provenance.wheel_name()).symlink_to(target)
@@ -99,3 +103,57 @@ class ProvenanceTests(ConsumerTestCase):
                     provenance.distributions(self.root)
             request.assert_not_called()
             self.assertFalse(target.exists())
+
+    def test_build_parent_cannot_redirect_distribution_writes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (self.root / ".build").symlink_to(folder, target_is_directory=True)
+            with patch.object(provenance.urllib.request, "urlopen") as request:
+                with self.assertRaisesRegex(ValueError, "directories"):
+                    provenance.distributions(self.root)
+            request.assert_not_called()
+            self.assertEqual([], list(Path(folder).iterdir()))
+
+    def test_special_distribution_paths_are_rejected_without_downloads(self):
+        directory = self.root / provenance.TOOLKIT_DIST
+        for relative in (
+            Path(".build"),
+            provenance.TOOLKIT_DIST,
+            provenance.TOOLKIT_DIST / provenance.wheel_name(),
+        ):
+            with self.subTest(path=relative):
+                target = self.root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                os.mkfifo(target)
+                try:
+                    with patch.object(provenance.urllib.request, "urlopen") as request:
+                        with self.assertRaises(ValueError):
+                            provenance.distributions(self.root)
+                    request.assert_not_called()
+                finally:
+                    target.unlink()
+        directory.mkdir(exist_ok=True)
+        for name in (
+            f"jellyfin_plugin_toolkit-{provenance.package_version()}.tar.gz",
+            f"toolkit-{provenance.package_version()}-SHA256SUMS",
+        ):
+            target = directory / name
+            os.mkfifo(target)
+            try:
+                with patch.object(provenance.urllib.request, "urlopen") as request:
+                    with self.assertRaises(ValueError):
+                        provenance.distributions(self.root)
+                request.assert_not_called()
+            finally:
+                target.unlink()
+
+    def test_old_candidate_directory_is_rejected(self):
+        lock = self.root / "uv.lock"
+        url = provenance.release_url()
+        lock.write_text(
+            lock.read_text().replace(
+                'url = "' + url + '"',
+                'path = "build-support/' + provenance.wheel_name() + '"',
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "Place candidate wheels"):
+            provenance.record(self.root)

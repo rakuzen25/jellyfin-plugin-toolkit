@@ -7,10 +7,11 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from scaffold_fixture import ROOT, candidate, generate
 
-from jellyfin_plugin_toolkit.provenance import record
+from jellyfin_plugin_toolkit.provenance import TOOLKIT_DIST, distributions, record
 from jellyfin_plugin_toolkit.resources_api import prepare
 
 
@@ -99,7 +100,7 @@ class NativeUvTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "released GitHub wheel"):
                 record(root, release=True)
-            retained = root / "build-support" / candidate().name
+            retained = root / ".build/toolkit-dist" / candidate().name
             original = retained.read_bytes()
             with zipfile.ZipFile(retained, "a") as changed:
                 changed.writestr("tamper.txt", "Different valid wheel bytes")
@@ -216,3 +217,90 @@ class NativeUvTests(unittest.TestCase):
             "src/jellyfin_plugin_toolkit/cli.py",
         ]:
             self.assertIn(name, names)
+
+    def test_source_bundle_retains_candidate_and_installs_after_extraction(self):
+        from jellyfin_plugin_toolkit.acceptance import inventory
+        from jellyfin_plugin_toolkit.build.clean_package import clean_package
+        from jellyfin_plugin_toolkit.build.package_artifacts import assemble
+        from jellyfin_plugin_toolkit.context import Context
+
+        with tempfile.TemporaryDirectory(dir=ROOT / ".build") as folder:
+            root = Path(folder) / "consumer"
+            generate(None, root, "bundle", "Bundle", "example/bundle")
+            ctx = Context.load(root)
+            tools = distributions(root)
+            original = {path.name: path.read_bytes() for path in tools}
+            lock = (root / "uv.lock").read_bytes()
+            self.assertEqual(
+                (TOOLKIT_DIST / candidate().name).as_posix(), record(root)["source"]
+            )
+            self.assertNotIn("build-support", (root / ".gitignore").read_text())
+            for _ in range(2):
+                prepare(root)
+                self.assertEqual(original, {p.name: p.read_bytes() for p in tools})
+            (root / ".build/unrelated.txt").write_text("not source")
+            run = subprocess.run
+
+            def package_in_clean_checkout(command, *, cwd, **kwargs):
+                if command == ["uv", "sync", "--locked"]:
+                    return run(command, cwd=cwd, capture_output=True, **kwargs)
+                self.assertEqual(
+                    ["uv", "run", "--no-sync", "jpt", "internal", "package"], command
+                )
+                clean = Context.load(cwd)
+                self.assertEqual(lock, (cwd / "uv.lock").read_bytes())
+                self.assertEqual(
+                    original, {p.name: p.read_bytes() for p in distributions(cwd)}
+                )
+                self.assertFalse((cwd / ".build/unrelated.txt").exists())
+                staging = cwd / ".build/staging"
+                plugin = staging / "plugin"
+                plugin.mkdir(parents=True)
+                (plugin / (clean.identity.assembly + ".dll")).write_bytes(
+                    b"fixture binary"
+                )
+                with patch(
+                    "jellyfin_plugin_toolkit.dev.references.inventory", return_value={}
+                ):
+                    assemble(clean, staging)
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch(
+                "jellyfin_plugin_toolkit.build.clean_package.subprocess.run",
+                side_effect=package_in_clean_checkout,
+            ):
+                clean_package(ctx)
+            inventory(ctx)
+            source = next((root / "dist").glob("*-source-*.zip"))
+            extracted = Path(folder) / "extracted"
+            with zipfile.ZipFile(source) as bundle:
+                retained = {
+                    name for name in bundle.namelist() if name.startswith(".build/")
+                }
+                self.assertEqual(
+                    {(TOOLKIT_DIST / name).as_posix() for name in original}, retained
+                )
+                bundle.extractall(extracted)
+            self.assertEqual(lock, (extracted / "uv.lock").read_bytes())
+            self.assertEqual(
+                original, {p.name: p.read_bytes() for p in distributions(extracted)}
+            )
+            subprocess.run(
+                ["uv", "sync", "--locked"],
+                cwd=extracted,
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual(lock, (extracted / "uv.lock").read_bytes())
+
+    def test_candidate_provenance_rejects_symlinked_build_parent_before_reading(self):
+        import shutil
+
+        with tempfile.TemporaryDirectory(dir=ROOT / ".build") as folder:
+            root = Path(folder) / "consumer"
+            generate(None, root, "redirect", "Redirect", "example/redirect")
+            outside = Path(folder) / "outside"
+            shutil.move(root / ".build", outside)
+            (root / ".build").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "directories"):
+                record(root)

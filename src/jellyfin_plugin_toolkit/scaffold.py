@@ -39,6 +39,7 @@ def generate(
     defaults = json.loads((TOOLKIT_ROOT / "templates/defaults.json").read_text())
     from jellyfin_plugin_toolkit.provenance import (
         REPOSITORY,
+        TOOLKIT_DIST,
         package_version,
         release_url,
     )
@@ -196,7 +197,7 @@ def generate(
     )
     put(
         ".gitignore",
-        ".build/\ndist/\n.venv/\nnode_modules/\n/build-support/\n**/bin/\n**/obj/\n**/__pycache__/\n**/results-run.*/\n**/TestResults/\n.ruff_cache/\n.mypy_cache/\n",
+        ".build/\ndist/\n.venv/\nnode_modules/\n**/bin/\n**/obj/\n**/__pycache__/\n**/results-run.*/\n**/TestResults/\n.ruff_cache/\n.mypy_cache/\n",
     )
     put(
         "Directory.Build.props",
@@ -319,8 +320,8 @@ def generate(
     source = release_url(selected)
     if toolkit_wheel is not None:
         wheel = Path(toolkit_wheel).resolve()
-        target = destination / "build-support" / wheel.name
-        target.parent.mkdir(exist_ok=True)
+        target = destination / TOOLKIT_DIST / wheel.name
+        target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(wheel, target)
         sdist = wheel.with_name(f"jellyfin_plugin_toolkit-{selected}.tar.gz")
         if not sdist.is_file():
@@ -328,7 +329,7 @@ def generate(
                 "Candidate wheel must have its matching uv-built source distribution"
             )
         shutil.copy2(sdist, target.with_name(sdist.name))
-        source = "./build-support/" + wheel.name
+        source = "./" + (TOOLKIT_DIST / wheel.name).as_posix()
     subprocess.run(["uv", "add", "--no-sync", source], cwd=destination, check=True)
     subprocess.run(
         ["uv", "add", "--dev", "--no-sync", "ruff>=0.17.1,<0.18", "mypy>=2.4,<3"],
