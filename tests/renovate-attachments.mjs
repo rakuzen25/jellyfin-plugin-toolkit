@@ -209,6 +209,7 @@ for (const [depName, updateType, expected] of [
     ["python", "minor", false],
     ["pnpm", "minor", false],
     ["uv", "minor", false],
+    ["astral-sh/uv", "minor", false],
     ["typescript", "minor", false],
     ["ubuntu", "minor", false],
     ["actions/checkout", "digest", true],

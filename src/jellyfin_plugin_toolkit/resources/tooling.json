@@ -28,7 +28,17 @@
         },
         {
             "description": ["Compiler, interpreter, package-manager and runner upgrades need migration review."],
-            "matchPackageNames": ["typescript", "@typescript/typescript6", "typescript-eslint", "node", "python", "ubuntu", "pnpm", "uv"],
+            "matchPackageNames": [
+                "typescript",
+                "@typescript/typescript6",
+                "typescript-eslint",
+                "node",
+                "python",
+                "ubuntu",
+                "pnpm",
+                "uv",
+                "astral-sh/uv"
+            ],
             "matchUpdateTypes": ["minor", "major"],
             "automerge": false,
             "groupName": null
