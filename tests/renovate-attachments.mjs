@@ -38,6 +38,35 @@ const wheelPolicy = await policy(dependency, "regex", "pyproject.toml");
 assert.equal(wheelPolicy.enabled, true);
 assert.equal(wheelPolicy.minimumReleaseAge, null);
 assert.equal(wheelPolicy.minimumReleaseAgeBuffer, null);
+const { getConfig } = await import("/usr/local/renovate/dist/config/defaults.js");
+const { generateBranchConfig } = await import("/usr/local/renovate/dist/workers/repository/updates/generate.js");
+const title = (selected, updateType = "patch", newVersion = "0.3.1") =>
+    generateBranchConfig([
+        {
+            ...getConfig(),
+            semanticCommits: "enabled",
+            semanticCommitType: "chore",
+            semanticCommitScope: "deps",
+            ...selected,
+            updateType,
+            newVersion,
+            newValue: "v" + newVersion,
+            branchName: "renovate/jellyfin-plugin-toolkit",
+        },
+    ]).prTitle;
+for (const [updateType, version] of [
+    ["patch", "0.3.1"],
+    ["minor", "0.4.0"],
+    ["major", "1.0.0"],
+]) {
+    const selected = await policy({ ...dependency, updateType }, "regex", "pyproject.toml");
+    assert.equal(title(selected, updateType, version), "chore(deps): update jellyfin plugin toolkit");
+    if (updateType === "major") assert.equal(selected.dependencyDashboardApproval, true);
+}
+assert.equal(
+    title(await policy({ depName: "example/library", datasource: "github-releases" }, "regex", "pyproject.toml")),
+    "chore(deps): update dependency example/library to v0.3.1",
+);
 // A custom tag lookup or a URL outside pyproject.toml cannot select another version.
 assert.equal((await policy({ ...dependency, datasource: "github-tags" }, "regex", "pyproject.toml")).enabled, false);
 assert.equal((await policy(dependency, "regex", "other.toml")).enabled, false);
@@ -110,6 +139,7 @@ for (const name of ["jellyfin-lyricbridge", "jellyfin-plugin-music-metadata-mana
     assert.equal(wheel.minimumReleaseAge, null);
     assert.equal(wheel.minimumReleaseAgeBuffer, null);
     assert.equal(wheel.groupSlug, "jellyfin-plugin-toolkit");
+    assert.equal(title(wheel), "chore(deps): update jellyfin plugin toolkit");
     assert.equal((await policy(toolkitPreset, "renovate-config", "renovate.json", rules)).enabled, false);
 }
 // Companion commits stay eligible for Renovate updates; human edits still stop them.
