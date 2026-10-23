@@ -175,11 +175,9 @@ def generate(
             {
                 "$schema": "https://docs.renovatebot.com/renovate-schema.json",
                 "extends": [
-                    "config:recommended",
+                    "github>" + lock["repository"] + ":tooling#" + lock["version"],
                     "github>" + lock["repository"] + "#" + lock["version"],
                 ],
-                "automerge": False,
-                "minimumReleaseAge": "1 day",
             },
             indent=4,
         )

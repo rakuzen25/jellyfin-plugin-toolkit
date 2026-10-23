@@ -46,8 +46,11 @@ def check_pins(root, release=False):
     if preset.exists():
         for name in json.loads(preset.read_text()).get("extends", []):
             if (
-                name.startswith("github>" + REPOSITORY + "#")
-                and name != "github>" + REPOSITORY + "#v" + selected["version"]
+                any(
+                    name.startswith("github>" + REPOSITORY + suffix)
+                    for suffix in ("#", ":tooling#")
+                )
+                and name.rsplit("#", 1)[-1] != "v" + selected["version"]
             ):
                 raise ValueError("Renovate preset differs from the toolkit release")
     return selected

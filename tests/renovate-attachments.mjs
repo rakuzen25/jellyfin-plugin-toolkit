@@ -6,11 +6,14 @@ import { extractPackageFile } from "/usr/local/renovate/dist/modules/manager/cus
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const { applyPackageRules } = await import("/usr/local/renovate/dist/util/package-rules/index.js");
 const { validateConfig } = await import("/usr/local/renovate/dist/config/validation.js");
+const tooling = JSON.parse(fs.readFileSync(root + "/tooling.json", "utf8"));
+assert.deepEqual(tooling, JSON.parse(fs.readFileSync(root + "/src/jellyfin_plugin_toolkit/resources/tooling.json", "utf8")));
+assert.deepEqual((await validateConfig("tooling", tooling)).errors, []);
 const preset = JSON.parse(fs.readFileSync(root + "/default.json", "utf8"));
 assert.deepEqual(preset, JSON.parse(fs.readFileSync(root + "/src/jellyfin_plugin_toolkit/resources/default.json", "utf8")));
 const validation = await validateConfig("preset", preset);
 assert.deepEqual(validation.errors, []);
-const policy = (dep, manager, packageFile, packageRules = preset.packageRules) =>
+const policy = (dep, manager, packageFile, packageRules = [...tooling.packageRules, ...preset.packageRules]) =>
     applyPackageRules({
         enabled: true,
         minimumReleaseAge: "1 day",
@@ -129,10 +132,12 @@ console.log("PASS: independent toolkit tag updates are disabled; unrelated actio
 // or allow the toolkit to join routine automerge groups.
 for (const name of ["jellyfin-lyricbridge", "jellyfin-plugin-music-metadata-manager"]) {
     const adoption = root + "/.build/released-0.4.0-adoption/" + name + "/renovate.json";
-    const filename = fs.existsSync(adoption) ? adoption : root + "/.build/native-rollout/" + name + "/renovate.json";
+    const modern = root + "/.build/modernization/" + (name === "jellyfin-lyricbridge" ? "lyricbridge" : "music") + "/renovate.json";
+    const filename = fs.existsSync(modern) ? modern : fs.existsSync(adoption) ? adoption : root + "/.build/native-rollout/" + name + "/renovate.json";
     if (!fs.existsSync(filename)) continue;
     const consumer = JSON.parse(fs.readFileSync(filename, "utf8"));
-    const rules = [...preset.packageRules, ...(consumer.packageRules ?? [])];
+    if (fs.existsSync(modern)) assert.deepEqual((await validateConfig("consumer", consumer)).errors, []);
+    const rules = [...tooling.packageRules, ...preset.packageRules, ...(consumer.packageRules ?? [])];
     const wheel = await policy(dependency, "regex", "pyproject.toml", rules);
     assert.equal(wheel.enabled, true);
     assert.equal(wheel.automerge, false);
@@ -174,3 +179,39 @@ try {
 } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
 }
+
+// Verify shared policy independently of plugin-specific managers and exceptions.
+for (const [depName, updateType, expected] of [
+    ["prettier", "patch", true],
+    ["prettier", "minor", true],
+    ["prettier", "major", false],
+    ["node", "patch", true],
+    ["node", "minor", false],
+    ["python", "minor", false],
+    ["pnpm", "minor", false],
+    ["uv", "minor", false],
+    ["typescript", "minor", false],
+    ["ubuntu", "minor", false],
+    ["actions/checkout", "digest", true],
+]) {
+    const selected = await policy({ depName, updateType }, "npm", "package.json", tooling.packageRules);
+    assert.equal(selected.automerge, expected, `${depName}/${updateType}`);
+    assert.equal(selected.minimumReleaseAge, "1 day");
+}
+const sharedPreset = await policy({ depName: "example/policy", updateType: "patch" }, "renovate-config", "renovate.json", tooling.packageRules);
+assert.equal(sharedPreset.automerge, false);
+const groupedTitle = generateBranchConfig(
+    ["one", "two"].map((depName) => ({
+        ...getConfig(),
+        ...tooling,
+        depName,
+        packageName: depName,
+        updateType: "patch",
+        groupName: "Routine dependency updates",
+        newVersion: "1.0.1",
+        newValue: "1.0.1",
+        branchName: "renovate/routine",
+    })),
+).prTitle;
+assert.equal(groupedTitle, "chore(deps): update routine dependency updates to 1.0.1");
+console.log("PASS: shared tooling policy keeps routine, runtime and policy updates separate");

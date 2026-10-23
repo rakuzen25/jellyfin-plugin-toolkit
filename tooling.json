@@ -1,0 +1,47 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": ["config:recommended"],
+    "semanticCommits": "enabled",
+    "semanticCommitType": "chore",
+    "semanticCommitScope": "deps",
+    "automergeType": "pr",
+    "platformAutomerge": true,
+    "automergeStrategy": "squash",
+    "rebaseWhen": "behind-base-branch",
+    "ignoreTests": false,
+    "minimumReleaseAge": "1 day",
+    "minimumReleaseAgeBuffer": "30 minutes",
+    "minimumReleaseAgeBehaviour": "timestamp-optional",
+    "internalChecksFilter": "strict",
+    "packageRules": [
+        {
+            "description": ["Routine updates automerge only after required checks."],
+            "matchUpdateTypes": ["patch", "minor", "pin", "digest", "pinDigest"],
+            "automerge": true,
+            "groupName": "Routine dependency updates"
+        },
+        {
+            "description": ["Major upgrades require review."],
+            "matchUpdateTypes": ["major"],
+            "automerge": false,
+            "groupName": null
+        },
+        {
+            "description": ["Compiler, interpreter, package-manager and runner upgrades need migration review."],
+            "matchPackageNames": ["typescript", "@typescript/typescript6", "typescript-eslint", "node", "python", "ubuntu", "pnpm", "uv"],
+            "matchUpdateTypes": ["minor", "major"],
+            "automerge": false,
+            "groupName": null
+        },
+        {
+            "description": ["Shared maintenance policy changes require review."],
+            "matchManagers": ["renovate-config"],
+            "automerge": false,
+            "groupName": null
+        },
+        {
+            "matchManagers": ["github-actions"],
+            "pinDigests": true
+        }
+    ]
+}

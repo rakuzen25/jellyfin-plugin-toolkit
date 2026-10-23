@@ -143,11 +143,15 @@ def rewrite_preset(text, old, new):
     if span is None:
         return text
     start, end = span
-    prefix = "github>" + new["repository"] + "#"
+    prefixes = (
+        "github>" + new["repository"] + "#",
+        "github>" + new["repository"] + ":tooling#",
+    )
 
     def replace(match):
         value = json.loads(match[0])
-        if not value.startswith(prefix):
+        prefix = next((item for item in prefixes if value.startswith(item)), None)
+        if prefix is None:
             return match[0]
         if value[len(prefix) :] not in {old["version"], new["version"]}:
             raise ValueError("Toolkit preset drift; repair it before upgrading")
