@@ -1,6 +1,6 @@
 [project]
 name = "jellyfin-plugin-toolkit"
-version = "0.4.1"
+version = "0.4.2"
 description = "Build, develop, and validate independent Jellyfin plugins"
 readme = "README.md"
 requires-python = ">=3.15,<3.16"
