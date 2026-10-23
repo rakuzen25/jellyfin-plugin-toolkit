@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.1...v0.4.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* fix checksum ([bd46ccc](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/bd46ccc8fb972ef119afd9e440207a82ec5c352c))
+* fix ci ([15a39f8](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/15a39f8ccf38a2a99101673a3becdbf253e9f3e7))
+
 ## [0.4.1](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.0...v0.4.1) (2026-10-22)
 
 
