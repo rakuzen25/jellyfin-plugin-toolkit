@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.3](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.2...v0.4.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* standardize dependency maintenance with a shared tooling preset ([#13](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/13)) ([ad2c886](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/ad2c8867657577fdf26c8244e35d0c636bb1bc5c))
+* update toolkit dist ([6954d6b](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/6954d6b6f927e30151f12ec4200cc8825f632ac2))
+
 ## [0.4.2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.1...v0.4.2) (2026-10-23)
 
 
