@@ -6,8 +6,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
+from jellyfin_plugin_toolkit.configuration import Configuration
 from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.provenance import package_version
 from jellyfin_plugin_toolkit.scaffold import toml
@@ -28,7 +30,7 @@ groups = [
     "performance",
     "artifacts",
 ]
-config = {
+config: dict[str, Any] = {
     "schema": 1,
     "plugin": {
         "id": "example",
@@ -87,7 +89,9 @@ config["validation"]["rules"] = [
 ]
 
 
-def create_consumer(root, selected=None):
+def create_consumer(
+    root: Path, selected: Configuration | dict[str, Any] | None = None
+) -> Context:
     selected = copy.deepcopy(config if selected is None else selected)
     (root / "plugin.toml").write_text(toml(selected))
     (root / "version.txt").write_text("0.1.0\n")
@@ -103,7 +107,7 @@ def create_consumer(root, selected=None):
 
 
 class ConsumerTestCase(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="toolkit-tests-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

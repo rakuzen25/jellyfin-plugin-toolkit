@@ -7,8 +7,10 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from collections.abc import MutableMapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import patch
 
 from consumer_fixture import ConsumerTestCase, create_consumer
@@ -19,22 +21,31 @@ from jellyfin_plugin_toolkit.ci import evidence, planning
 from jellyfin_plugin_toolkit.ci.policy import ValidationPolicy
 from jellyfin_plugin_toolkit.common.artifacts import web_inputs
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
+from jellyfin_plugin_toolkit.configuration import (
+    Asset,
+    Configuration,
+    Operation,
+    Source,
+)
 from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.scaffold import toml
 
 
 class SweepTests(ConsumerTestCase):
-    def write_config(self, selected):
+    def write_config(self, selected: Configuration | dict[str, Any]) -> None:
         (self.root / "plugin.toml").write_text(toml(selected))
 
-    def test_operations_and_policies_stay_with_the_supplied_consumer(self):
+    def test_operations_and_policies_stay_with_the_supplied_consumer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = self.ctx.config.data()
             config["validation"] = {"groups": ["backend", "artifacts"], "rules": []}
             other = create_consumer(Path(directory), config)
             for ctx in (self.ctx, other, self.ctx):
                 ctx.config.operations = {
-                    "test-custom": {"commands": [["fixture", "{root}"]]}
+                    key: Operation.model_validate(value)
+                    for key, value in (
+                        {"test-custom": {"commands": [["fixture", "{root}"]]}}
+                    ).items()
                 }
                 with patch.object(tasks, "run") as run:
                     tasks.operation(ctx, "test-custom")
@@ -42,9 +53,12 @@ class SweepTests(ConsumerTestCase):
                 self.assertEqual(str(ctx.root), run.call_args.args[1])
                 self.assertEqual(ctx.groups, ValidationPolicy.from_context(ctx).groups)
             with self.assertRaises(TypeError):
-                ValidationPolicy.from_context(other).job_names["backend"] = frozenset()
+                cast(
+                    MutableMapping[str, frozenset[str]],
+                    ValidationPolicy.from_context(other).job_names,
+                )["backend"] = frozenset()
 
-    def test_imports_and_help_need_no_consumer_and_preserve_argv(self):
+    def test_imports_and_help_need_no_consumer_and_preserve_argv(self) -> None:
         code = """
 import importlib, pkgutil, jellyfin_plugin_toolkit, sys
 for info in pkgutil.walk_packages(jellyfin_plugin_toolkit.__path__, jellyfin_plugin_toolkit.__name__ + '.'):
@@ -64,11 +78,10 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
                 cwd=directory,
                 env=env,
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
             )
 
-    def test_dependencies_are_acyclic_including_local_imports(self):
+    def test_dependencies_are_acyclic_including_local_imports(self) -> None:
         graph = toolkit_graph(Path(__file__).resolve().parents[1] / "src")
         self.assertIn(
             "jellyfin_plugin_toolkit.checks.formatting",
@@ -85,7 +98,22 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
             with self.assertRaisesRegex(ValueError, "cycle"):
                 toolkit_graph(root)
 
-    def test_configuration_rejects_escaping_inputs_and_outputs(self):
+    def test_annotation_only_imports_do_not_create_runtime_cycles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "jellyfin_plugin_toolkit"
+            package.mkdir()
+            (package / "a.py").write_text(
+                "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import jellyfin_plugin_toolkit.b\n"
+            )
+            (package / "b.py").write_text("import jellyfin_plugin_toolkit.a\n")
+            graph = toolkit_graph(root)
+            self.assertEqual(set(), graph["jellyfin_plugin_toolkit.a"])
+            self.assertEqual(
+                {"jellyfin_plugin_toolkit.a"}, graph["jellyfin_plugin_toolkit.b"]
+            )
+
+    def test_configuration_rejects_escaping_inputs_and_outputs(self) -> None:
         invalid = [
             ("frontend", "entries", {"../../outside.ts": "bundle.js"}),
             ("frontend", "entries", {"index.ts": "../bundle.js"}),
@@ -112,7 +140,7 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
                 with self.assertRaises(ValueError):
                     Context.load(self.root)
 
-    def test_empty_commands_and_jobs_cannot_disable_validation(self):
+    def test_empty_commands_and_jobs_cannot_disable_validation(self) -> None:
         for key in ("job_names", "aggregate_jobs", "artifact_jobs", "commands"):
             with self.subTest(key=key):
                 selected = self.ctx.config.data()
@@ -129,13 +157,15 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
         selected["validation"]["aggregate_jobs"] = {"backend": []}
         with self.assertRaises(ValueError):
             planning.finish(
-                Context(self.root, selected),
+                Context(self.root, Configuration.model_validate(selected)),
                 {"required": ["backend"], "reused": {}},
                 {},
             )
 
-    def test_explicit_sources_must_exist_and_cannot_be_symlinks(self):
-        self.ctx.config.source = {"roots": ["optional"], "files": ["missing.txt"]}
+    def test_explicit_sources_must_exist_and_cannot_be_symlinks(self) -> None:
+        self.ctx.config.source = Source.model_validate(
+            {"roots": ["optional"], "files": ["missing.txt"]}
+        )
         self.write_config(self.ctx.config)
         with self.assertRaisesRegex(ValueError, "Missing maintained"):
             source_files(self.root)
@@ -147,7 +177,7 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
         (self.root / "missing.txt").write_text("source")
         self.assertIn(Path("missing.txt"), source_files(self.root))
 
-    def test_source_roots_and_nested_directories_cannot_be_links(self):
+    def test_source_roots_and_nested_directories_cannot_be_links(self) -> None:
         for root_link in (False, True):
             with (
                 self.subTest(root_link=root_link),
@@ -165,16 +195,17 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
                     (root / "inputs/link").symlink_to(
                         root / "actual", target_is_directory=True
                     )
-                ctx.config.source = {"roots": ["inputs"]}
+                ctx.config.source = Source.model_validate({"roots": ["inputs"]})
                 (root / "plugin.toml").write_text(toml(ctx.config))
                 with self.assertRaisesRegex(ValueError, "symlink"):
                     source_files(root)
 
-    def test_external_assets_are_fingerprinted_and_must_be_maintained(self):
+    def test_external_assets_are_fingerprinted_and_must_be_maintained(self) -> None:
         self.ctx.config.frontend.extra_assets = [
-            {"source": "legal/NOTICE", "name": "NOTICE"}
+            Asset.model_validate(value)
+            for value in [{"source": "legal/NOTICE", "name": "NOTICE"}]
         ]
-        self.ctx.config.source = {"roots": ["frontend", "legal"]}
+        self.ctx.config.source = Source.model_validate({"roots": ["frontend", "legal"]})
         (self.root / "legal").mkdir()
         asset = self.root / "legal/NOTICE"
         asset.write_text("first")
@@ -187,8 +218,8 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
         with self.assertRaisesRegex(ValueError, "outside maintained"):
             web_inputs(self.root)
 
-    def test_malformed_receipts_cannot_supply_reuse_evidence(self):
-        run = {
+    def test_malformed_receipts_cannot_supply_reuse_evidence(self) -> None:
+        run: dict[str, Any] = {
             "id": 100,
             "repository": {"full_name": "owner/repo"},
             "head_repository": {"full_name": "owner/repo"},
@@ -196,7 +227,7 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
             "head_branch": "main",
             "head_sha": "source",
         }
-        valid = {
+        valid: dict[str, Any] = {
             "schema": 4,
             "run_id": "100",
             "repository": "owner/repo",
@@ -206,7 +237,7 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
             "required": [],
             "policy": "policy",
         }
-        malformed = [
+        malformed: list[object] = [
             [],
             dict(valid, reused={"backend": []}),
             dict(valid, full_baseline=[]),
@@ -239,8 +270,8 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
                 ):
                     self.assertIsNone(evidence.read_receipt("owner/repo", run))
 
-    def test_release_receipt_and_job_must_match_latest_attempt(self):
-        run = {
+    def test_release_receipt_and_job_must_match_latest_attempt(self) -> None:
+        run: dict[str, Any] = {
             "id": 100,
             "repository": {"full_name": "owner/repo"},
             "head_repository": {"full_name": "owner/repo"},
@@ -252,14 +283,14 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
             "conclusion": "success",
             "run_attempt": 2,
         }
-        receipt = {
+        receipt: dict[str, Any] = {
             "run_head_sha": "source",
             "run_attempt": 1,
             "validated_at": datetime.now(UTC).isoformat(),
         }
         for receipt_attempt, job_attempt in ((1, 2), (2, 1), (2, 2)):
             receipt["run_attempt"] = receipt_attempt
-            job = {
+            job: dict[str, Any] = {
                 "name": "validate",
                 "status": "completed",
                 "conclusion": "success",

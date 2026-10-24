@@ -5,6 +5,9 @@ import copy
 import json
 import re
 import subprocess
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from jellyfin_plugin_toolkit.automation import (
@@ -14,6 +17,7 @@ from jellyfin_plugin_toolkit.automation import (
     record_identity,
 )
 from jellyfin_plugin_toolkit.binding_pr import api
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
 
 BRANCH = "jpt/automation-setup"
 MARKER = "<!-- jpt-automation-setup -->"
@@ -25,14 +29,16 @@ BODY = (
 )
 
 
-def configuration_update(configuration, previous, identity):
-    if not isinstance(configuration, dict):
+def configuration_update(
+    configuration: dict[str, Any],
+    previous: dict[str, Any] | None,
+    identity: dict[str, str],
+) -> dict[str, Any]:
+    if not is_json_object(configuration):
         raise ValueError("Expected a Renovate JSON object")
     updated = copy.deepcopy(configuration)
     authors = updated.get("gitIgnoredAuthors", [])
-    if not isinstance(authors, list) or any(
-        not isinstance(item, str) for item in authors
-    ):
+    if not is_json_array(authors) or any(not isinstance(item, str) for item in authors):
         raise ValueError("gitIgnoredAuthors must be an array of strings")
     old = record_identity(previous)["email"] if previous is not None else None
     # Replace only the email explicitly owned by the trusted record.
@@ -44,7 +50,7 @@ def configuration_update(configuration, previous, identity):
     return updated
 
 
-def format_json(root, name, data):
+def format_json(root: Path, name: str, data: dict[str, Any]) -> bytes:
     return subprocess.check_output(
         ["pnpm", "exec", "prettier", "--stdin-filepath", name],
         cwd=root,
@@ -52,14 +58,16 @@ def format_json(root, name, data):
     )
 
 
-def content(repository, name, revision):
+def content(repository: str, name: str, revision: str) -> bytes:
     result = api(repository, "contents/" + name + "?ref=" + revision)
     if result.get("type") != "file" or result.get("encoding") != "base64":
         raise ValueError("Setup inputs must be regular files")
     return base64.b64decode(result["content"], validate=False)
 
 
-def configuration_at(repository, revision):
+def configuration_at(
+    repository: str, revision: str
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     tree = api(repository, "git/commits/" + revision)["tree"]["sha"]
     inventory = api(repository, "git/trees/" + tree + "?recursive=1")
     if inventory.get("truncated"):
@@ -80,7 +88,7 @@ def configuration_at(repository, revision):
     return configuration, record
 
 
-def branch_ref(repository):
+def branch_ref(repository: str) -> str | None:
     # matching-refs returns an empty list for an absent ref, without hiding errors.
     refs = api(repository, "git/matching-refs/heads/" + BRANCH)
     matches = [ref for ref in refs if ref["ref"] == "refs/heads/" + BRANCH]
@@ -89,8 +97,14 @@ def branch_ref(repository):
     return matches[0]["object"]["sha"] if matches else None
 
 
-def validate_branch(repository, base, head, allowed_identities, reviewed=None):
-    comparison = api(repository, "compare/" + base + "..." + head)
+def validate_branch(
+    repository: str,
+    base: str,
+    head: str,
+    allowed_identities: Sequence[dict[str, str]],
+    reviewed: str | None = None,
+) -> dict[str, Any]:
+    comparison: dict[str, Any] = api(repository, "compare/" + base + "..." + head)
     history = comparison
     if reviewed:
         reviewed_history = api(repository, "compare/" + reviewed + "..." + head)
@@ -111,7 +125,7 @@ def validate_branch(repository, base, head, allowed_identities, reviewed=None):
             identity = {"name": metadata["name"], "email": metadata["email"]}
             if (
                 identity not in allowed_identities
-                or (item.get(role) or {}).get("type") != "Bot"
+                or (item.get(role) or dict[str, Any]()).get("type") != "Bot"
             ):
                 raise ValueError("Setup branch contains human or unrecognized commits")
     if not files:
@@ -131,7 +145,7 @@ def validate_branch(repository, base, head, allowed_identities, reviewed=None):
     return comparison
 
 
-def setup(root, repository, retry_closed=False):
+def setup(root: Path, repository: str, retry_closed: bool = False) -> None:
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repository):
         raise ValueError("Invalid repository identity")
     identity = commit_identity()
@@ -207,6 +221,7 @@ def setup(root, repository, retry_closed=False):
         head
         and pr
         and not pr.get("merged_at")
+        and comparison is not None
         and comparison["merge_base_commit"]["sha"] == base
         and all(
             content(repository, name, head) == data for name, data in rendered.items()
@@ -227,7 +242,7 @@ def setup(root, repository, retry_closed=False):
     if api(repository, ref)["object"]["sha"] != base or branch_ref(repository) != head:
         raise ValueError("Setup base or branch changed; rerun App setup")
     parent = api(repository, "git/commits/" + base)
-    entries = []
+    entries: list[dict[str, Any]] = []
     for name, data in rendered.items():
         blob = api(
             repository,

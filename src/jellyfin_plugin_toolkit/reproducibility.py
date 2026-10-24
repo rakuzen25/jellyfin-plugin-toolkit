@@ -1,5 +1,10 @@
 """Independently rebuild the distributed source using its included toolkit."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import os
 import subprocess
 import tempfile
@@ -10,7 +15,7 @@ from jellyfin_plugin_toolkit.build.backend import reference_directory
 from jellyfin_plugin_toolkit.common.artifacts import artifact_hashes
 
 
-def main(ctx):
+def main(ctx: Context) -> None:
     candidate = artifact_hashes(ctx.root)
     archive = ctx.root / "dist" / f"{ctx.prefix}-source-{ctx.version}.zip"
     with tempfile.TemporaryDirectory(prefix="plugin-reproducibility-") as temporary:

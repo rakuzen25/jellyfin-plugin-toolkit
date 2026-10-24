@@ -3,23 +3,26 @@
 import io
 import json
 import subprocess
+from collections.abc import Sequence
 from contextlib import redirect_stdout
+from typing import Any, cast
 from unittest.mock import call, patch
 
 from consumer_fixture import ConsumerTestCase
 
 from jellyfin_plugin_toolkit import tasks
 from jellyfin_plugin_toolkit.cli import main
+from jellyfin_plugin_toolkit.configuration import Configuration, Operation
 from jellyfin_plugin_toolkit.context import Context
 
 
 class CommandTests(ConsumerTestCase):
-    def test_advisories_use_shared_evaluator(self):
+    def test_advisories_use_shared_evaluator(self) -> None:
         with patch("jellyfin_plugin_toolkit.advisories.audit") as audit:
             tasks.test_default(self.ctx, "advisories", [])
         audit.assert_called_once_with(self.ctx)
 
-    def test_builds_leave_advisory_decisions_to_the_audit_gate(self):
+    def test_builds_leave_advisory_decisions_to_the_audit_gate(self) -> None:
         import xml.etree.ElementTree as ET
 
         from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
@@ -31,7 +34,7 @@ class CommandTests(ConsumerTestCase):
         )
         self.assertEqual(properties.findtext(".//TreatWarningsAsErrors"), "true")
 
-    def test_doctor_stdout_is_json(self):
+    def test_doctor_stdout_is_json(self) -> None:
         with (
             patch.object(tasks, "verify_tools"),
             redirect_stdout(io.StringIO()) as output,
@@ -39,22 +42,32 @@ class CommandTests(ConsumerTestCase):
             self.assertEqual(0, main(["doctor"]))
         self.assertEqual(self.ctx.identity.id, json.loads(output.getvalue())["plugin"])
 
-    def test_validate_runs_every_local_stage_in_order(self):
-        events = []
+    def test_validate_runs_every_local_stage_in_order(self) -> None:
+        events: list[object] = []
+
+        def mock_check(_: object, target: str) -> Any:
+            return events.append(("check", target))
+
+        def mock_test(_: object, target: str, extra: Sequence[str]) -> Any:
+            return events.append(("test", target))
+
+        def mock_clean_package(_: object) -> Any:
+            return events.append(("package", None))
+
         with (
             patch.object(
                 tasks,
                 "check",
-                side_effect=lambda _, target: events.append(("check", target)),
+                side_effect=mock_check,
             ),
             patch.object(
                 tasks,
                 "test",
-                side_effect=lambda _, target, extra: events.append(("test", target)),
+                side_effect=mock_test,
             ),
             patch(
                 "jellyfin_plugin_toolkit.build.clean_package.clean_package",
-                side_effect=lambda _: events.append(("package", None)),
+                side_effect=mock_clean_package,
             ),
         ):
             self.assertEqual(0, main(["validate"]))
@@ -70,7 +83,7 @@ class CommandTests(ConsumerTestCase):
             events,
         )
 
-    def test_default_tests_do_not_run_acceptance(self):
+    def test_default_tests_do_not_run_acceptance(self) -> None:
         with patch.object(tasks, "test") as test:
             main(["test"])
         self.assertEqual(
@@ -78,7 +91,7 @@ class CommandTests(ConsumerTestCase):
             test.call_args_list,
         )
 
-    def test_browser_arguments_are_forwarded_literally(self):
+    def test_browser_arguments_are_forwarded_literally(self) -> None:
         with patch.object(tasks, "test") as test:
             main(
                 [
@@ -97,7 +110,7 @@ class CommandTests(ConsumerTestCase):
             ["--project", "workflow-chromium", "--grep", "literal $(value)"],
         )
 
-    def test_check_stops_after_first_failure(self):
+    def test_check_stops_after_first_failure(self) -> None:
         with (
             patch.object(
                 tasks, "check", side_effect=subprocess.CalledProcessError(1, "check")
@@ -106,9 +119,9 @@ class CommandTests(ConsumerTestCase):
             self.assertEqual(1, main(["check"]))
         self.assertEqual(1, check.call_count)
 
-    def test_docs_checks_format_before_links_without_installing(self):
+    def test_docs_checks_format_before_links_without_installing(self) -> None:
         with (
-            patch("jellyfin_plugin_toolkit.checks.formatting.run") as run,
+            patch("jellyfin_plugin_toolkit.quality.run") as run,
             patch("jellyfin_plugin_toolkit.checks.docs.main") as links,
         ):
             tasks.check(self.ctx, "docs")
@@ -117,7 +130,7 @@ class CommandTests(ConsumerTestCase):
         self.assertNotIn("install", run.call_args.args)
         with (
             patch(
-                "jellyfin_plugin_toolkit.checks.formatting.run",
+                "jellyfin_plugin_toolkit.quality.run",
                 side_effect=subprocess.CalledProcessError(1, "prettier"),
             ),
             patch("jellyfin_plugin_toolkit.checks.docs.main") as links,
@@ -126,7 +139,7 @@ class CommandTests(ConsumerTestCase):
             tasks.check(self.ctx, "docs")
         links.assert_not_called()
 
-    def test_operations_use_argv_and_preserve_globs(self):
+    def test_operations_use_argv_and_preserve_globs(self) -> None:
         context = Context.load(self.root)
         selected = context.config.data()
         selected["operations"] = {
@@ -139,7 +152,9 @@ class CommandTests(ConsumerTestCase):
         ):
             self.assertTrue(
                 tasks.operation(
-                    Context(self.root, selected), "test-example", ["--workers=2"]
+                    Context(self.root, Configuration.model_validate(selected)),
+                    "test-example",
+                    ["--workers=2"],
                 )
             )
         self.assertEqual(
@@ -148,7 +163,7 @@ class CommandTests(ConsumerTestCase):
         )
         self.assertEqual(self.root, run.call_args.kwargs["cwd"])
 
-    def test_bootstrap_leaves_python_environment_to_uv(self):
+    def test_bootstrap_leaves_python_environment_to_uv(self) -> None:
         with (
             patch.object(tasks, "verify_tools"),
             patch.object(Context, "generated"),
@@ -165,7 +180,9 @@ class CommandTests(ConsumerTestCase):
         )
         self.assertEqual("pnpm", run.call_args.args[0])
 
-    def test_backend_tests_prepare_missing_embedded_resources_without_installing(self):
+    def test_backend_tests_prepare_missing_embedded_resources_without_installing(
+        self,
+    ) -> None:
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
@@ -187,16 +204,16 @@ class CommandTests(ConsumerTestCase):
                 patch.object(tasks, "frontend_build") as build,
                 patch.object(tasks, "run") as run,
             ):
-                tasks.backend_tests(context, [])
+                tasks.backend_tests(cast(Context, context), [])
                 build.assert_called_once_with(context)
                 run.assert_not_called()
                 (root / "dist/web").mkdir(parents=True)
                 (root / "dist/web/config.html").write_text("verified prebuilt resource")
                 build.reset_mock()
-                tasks.backend_tests(context, [])
+                tasks.backend_tests(cast(Context, context), [])
                 build.assert_not_called()
 
-    def test_common_tooling_checks_never_restore_dependencies(self):
+    def test_common_tooling_checks_never_restore_dependencies(self) -> None:
         from jellyfin_plugin_toolkit.checks import tooling
 
         with (
@@ -205,7 +222,7 @@ class CommandTests(ConsumerTestCase):
             patch(
                 "jellyfin_plugin_toolkit.checks.formatting.format_target"
             ) as formatting,
-            patch.object(tooling, "run") as run,
+            patch("jellyfin_plugin_toolkit.quality.run") as run,
         ):
             tasks.check(self.ctx, "tooling")
         pins.assert_called_once_with(self.root)
@@ -218,9 +235,12 @@ class CommandTests(ConsumerTestCase):
             all("install" not in invocation.args for invocation in run.call_args_list)
         )
 
-    def test_tooling_check_preserves_consumer_formatting_override(self):
+    def test_tooling_check_preserves_consumer_formatting_override(self) -> None:
         self.ctx.config.operations = {
-            "format-check-tooling": {"commands": [["formatter", "--verify"]]}
+            key: Operation.model_validate(value)
+            for key, value in (
+                {"format-check-tooling": {"commands": [["formatter", "--verify"]]}}
+            ).items()
         }
         with (
             patch.object(tasks, "run") as run,
@@ -237,20 +257,28 @@ class CommandTests(ConsumerTestCase):
 
 
 class AfterOperationTests(ConsumerTestCase):
-    def test_standard_check_finishes_before_after_commands(self):
+    def test_standard_check_finishes_before_after_commands(self) -> None:
         self.ctx.config.operations = {
-            "check-docs": {"after": [["extra", "{root}"]], "cwd": "docs"}
+            key: Operation.model_validate(value)
+            for key, value in (
+                {"check-docs": {"after": [["extra", "{root}"]], "cwd": "docs"}}
+            ).items()
         }
         (self.root / "docs").mkdir()
-        events = []
+        events: list[object] = []
+
+        def mock_check_default(*_: object) -> Any:
+            return events.append("default")
+
+        def mock_run(*args: str, **kw: Any) -> Any:
+            return events.append((args, kw["cwd"]))
+
         with (
-            patch.object(
-                tasks, "check_default", side_effect=lambda *_: events.append("default")
-            ),
+            patch.object(tasks, "check_default", side_effect=mock_check_default),
             patch.object(
                 tasks,
                 "run",
-                side_effect=lambda *args, **kw: events.append((args, kw["cwd"])),
+                side_effect=mock_run,
             ),
         ):
             tasks.check(self.ctx, "docs")
@@ -258,8 +286,11 @@ class AfterOperationTests(ConsumerTestCase):
             ["default", (("extra", str(self.root)), self.root / "docs")], events
         )
 
-    def test_standard_failure_skips_after_commands(self):
-        self.ctx.config.operations = {"check-docs": {"after": [["extra"]]}}
+    def test_standard_failure_skips_after_commands(self) -> None:
+        self.ctx.config.operations = {
+            key: Operation.model_validate(value)
+            for key, value in ({"check-docs": {"after": [["extra"]]}}).items()
+        }
         with (
             patch.object(
                 tasks,
@@ -272,8 +303,13 @@ class AfterOperationTests(ConsumerTestCase):
             tasks.check(self.ctx, "docs")
         run.assert_not_called()
 
-    def test_after_failure_stops_remaining_commands(self):
-        self.ctx.config.operations = {"check-docs": {"after": [["first"], ["second"]]}}
+    def test_after_failure_stops_remaining_commands(self) -> None:
+        self.ctx.config.operations = {
+            key: Operation.model_validate(value)
+            for key, value in (
+                {"check-docs": {"after": [["first"], ["second"]]}}
+            ).items()
+        }
         with (
             patch.object(tasks, "check_default") as default,
             patch.object(
@@ -285,8 +321,11 @@ class AfterOperationTests(ConsumerTestCase):
         default.assert_called_once_with(self.ctx, "docs")
         self.assertEqual(1, run.call_count)
 
-    def test_test_arguments_reach_default_but_not_after(self):
-        self.ctx.config.operations = {"test-backend": {"after": [["extra"]]}}
+    def test_test_arguments_reach_default_but_not_after(self) -> None:
+        self.ctx.config.operations = {
+            key: Operation.model_validate(value)
+            for key, value in ({"test-backend": {"after": [["extra"]]}}).items()
+        }
         with (
             patch.object(tasks, "test_default") as default,
             patch.object(tasks, "run") as run,
@@ -297,8 +336,11 @@ class AfterOperationTests(ConsumerTestCase):
         )
         self.assertEqual(("extra",), run.call_args.args)
 
-    def test_replacement_still_receives_arguments_without_running_default(self):
-        self.ctx.config.operations = {"test-example": {"commands": [["custom"]]}}
+    def test_replacement_still_receives_arguments_without_running_default(self) -> None:
+        self.ctx.config.operations = {
+            key: Operation.model_validate(value)
+            for key, value in ({"test-example": {"commands": [["custom"]]}}).items()
+        }
         with (
             patch.object(tasks, "test_default") as default,
             patch.object(tasks, "run") as run,
@@ -307,8 +349,11 @@ class AfterOperationTests(ConsumerTestCase):
         default.assert_not_called()
         self.assertEqual(("custom", "--literal"), run.call_args.args)
 
-    def test_format_after_uses_standard_formatting(self):
-        self.ctx.config.operations = {"format-docs": {"after": [["extra"]]}}
+    def test_format_after_uses_standard_formatting(self) -> None:
+        self.ctx.config.operations = {
+            key: Operation.model_validate(value)
+            for key, value in ({"format-docs": {"after": [["extra"]]}}).items()
+        }
         with (
             patch("jellyfin_plugin_toolkit.checks.formatting.format_target") as default,
             patch.object(tasks, "run") as run,
@@ -317,16 +362,17 @@ class AfterOperationTests(ConsumerTestCase):
         default.assert_called_once_with(self.ctx, "docs", True)
         self.assertEqual(("extra",), run.call_args.args)
 
-    def test_invalid_hooks_are_rejected_by_context_loading(self):
+    def test_invalid_hooks_are_rejected_by_context_loading(self) -> None:
         from jellyfin_plugin_toolkit.scaffold import toml
 
-        for spec in [
+        cases_spec: list[dict[str, Any]] = [
             {"commands": [["replace"]], "after": [["extra"]]},
             {"after": []},
             {"after": ["shell command"]},
             {"after": [[]]},
             {},
-        ]:
+        ]
+        for spec in cases_spec:
             with self.subTest(spec=spec):
                 selected = self.ctx.config.data()
                 selected["operations"] = {"check-tooling": spec}
@@ -339,7 +385,7 @@ class AfterOperationTests(ConsumerTestCase):
         with self.assertRaisesRegex(ValueError, "standard operation"):
             Context.load(self.root)
 
-    def test_after_hooks_do_not_disable_standard_integration_checks(self):
+    def test_after_hooks_do_not_disable_standard_integration_checks(self) -> None:
         from jellyfin_plugin_toolkit.bindings import check_integrations
 
         selected = self.ctx.config.data()
@@ -357,18 +403,20 @@ class AfterOperationTests(ConsumerTestCase):
         )
         from jellyfin_plugin_toolkit.configuration import Configuration, Operation
 
-        selected = Configuration.model_validate(selected)
+        selected_model = Configuration.model_validate(selected)
         (self.root / "Directory.Build.props").write_text("msbuild/Plugin.props")
         with self.assertRaisesRegex(ValueError, "integration is missing"):
-            check_integrations(self.root, selected)
+            check_integrations(self.root, selected_model)
         (self.root / "eslint.config.mjs").write_text("configs/eslint.mjs")
         (self.root / "pyproject.toml").write_text("configs/ruff.toml")
-        check_integrations(self.root, selected)
+        check_integrations(self.root, selected_model)
         (self.root / "eslint.config.mjs").unlink()
-        selected.operations["check-tooling"] = Operation(commands=[["custom-checker"]])
-        check_integrations(self.root, selected)
+        selected_model.operations["check-tooling"] = Operation(
+            commands=[["custom-checker"]]
+        )
+        check_integrations(self.root, selected_model)
 
-    def test_standard_tooling_discovery_can_import_the_verified_toolkit(self):
+    def test_standard_tooling_discovery_can_import_the_verified_toolkit(self) -> None:
         tests = self.root / "tests/tooling"
         tests.mkdir(parents=True)
         (tests / "test_business.py").write_text(

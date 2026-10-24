@@ -6,29 +6,31 @@ import shutil
 import uuid
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import tomli_w
 
+from jellyfin_plugin_toolkit.configuration import Configuration
 from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, relative
 
 
-def toml(config):
-    return tomli_w.dumps(config.data() if hasattr(config, "data") else config)
+def toml(config: Configuration | dict[str, Any]) -> str:
+    return tomli_w.dumps(config.data() if isinstance(config, Configuration) else config)
 
 
 def generate(
-    context,
-    destination,
-    identifier,
-    name,
-    repository,
-    admin=False,
-    host_project="src/Host/Plugin.csproj",
+    context: object,
+    destination: Path,
+    identifier: str,
+    name: str,
+    repository: str,
+    admin: bool = False,
+    host_project: str = "src/Host/Plugin.csproj",
     *,
-    toolkit_wheel=None,
-    toolkit_revision=None,
-    sync_workflow=False,
-):
+    toolkit_wheel: Path | None = None,
+    toolkit_revision: str | None = None,
+    sync_workflow: bool = False,
+) -> dict[str, Any]:
     if not re.fullmatch(r"[a-z][a-z0-9-]*", identifier):
         raise ValueError("Invalid plugin id")
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repository):
@@ -59,7 +61,7 @@ def generate(
         ["frontend", "workflow"] if admin else []
     )
     test = "tests/backend/Host/Plugin.Tests.csproj"
-    config = {
+    config: dict[str, Any] = {
         "schema": 1,
         "advisories": {"waivers": []},
         "plugin": {
@@ -159,7 +161,7 @@ def generate(
         }
     destination.mkdir(parents=True)
 
-    def put(name, text):
+    def put(name: str, text: str) -> None:
         path = destination / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
@@ -315,6 +317,15 @@ def generate(
         output.write(
             '\n[tool.ruff]\nextend = ".build/jpt/configs/ruff.toml"\ntarget-version = "py315"\ninclude = ["scripts/**/*.py", "tests/**/*.py"]\n'
         )
+    with project.open("a") as output:
+        output.write('\n[tool.mypy]\npython_version = "3.15"\nfiles = ["tests"]\n')
+    with project.open("a") as output:
+        output.write(
+            '\n[tool.basedpyright]\nextends = ".build/jpt/configs/basedpyright.toml"\nvenvPath = "."\nvenv = ".venv"\npythonVersion = "3.15"\ninclude = ["tests"]\n'
+        )
+    from jellyfin_plugin_toolkit.typing_policy import materialize
+
+    project.write_text(materialize(project.read_text()))
     source = release_url(selected)
     if toolkit_wheel is not None:
         wheel = Path(toolkit_wheel).resolve()
@@ -330,7 +341,15 @@ def generate(
         source = "./" + (TOOLKIT_DIST / wheel.name).as_posix()
     subprocess.run(["uv", "add", "--no-sync", source], cwd=destination, check=True)
     subprocess.run(
-        ["uv", "add", "--dev", "--no-sync", "ruff>=0.17.1,<0.18", "mypy>=2.4,<3"],
+        [
+            "uv",
+            "add",
+            "--dev",
+            "--no-sync",
+            "ruff>=0.17.1,<0.18",
+            "mypy>=2.4,<3",
+            "basedpyright>=1.40.2,<2",
+        ],
         cwd=destination,
         check=True,
     )

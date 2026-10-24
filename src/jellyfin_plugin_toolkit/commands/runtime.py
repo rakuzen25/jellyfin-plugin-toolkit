@@ -1,5 +1,10 @@
 """Shared CLI state, lazy consumer preparation, and terminal presentation."""
 
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import os
 import sys
 from contextvars import ContextVar
@@ -22,15 +27,20 @@ class State:
 current: ContextVar[State | None] = ContextVar("jpt_cli_state", default=None)
 
 
-def application(**options):
+def application(**options: Any) -> typer.Typer:
     return typer.Typer(pretty_exceptions_enable=False, no_args_is_help=True, **options)
 
 
 def state(ctx: typer.Context) -> State:
-    return ctx.find_object(State)
+    selected = ctx.find_object(State)
+    if selected is None:
+        raise ValueError("CLI state is unavailable")
+    return selected
 
 
-def consumer(ctx: typer.Context, *, warn=False, release=False):
+def consumer(
+    ctx: typer.Context, *, warn: bool = False, release: bool = False
+) -> Context:
     from jellyfin_plugin_toolkit.checks.pins import check_pins
     from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, Context
     from jellyfin_plugin_toolkit.resources_api import prepare
@@ -50,6 +60,6 @@ def consumer(ctx: typer.Context, *, warn=False, release=False):
     return selected
 
 
-def exclusive(**values):
+def exclusive(**values: object) -> None:
     if sum(bool(value) for value in values.values()) > 1:
         raise typer.BadParameter("Use only one of " + ", ".join(values))

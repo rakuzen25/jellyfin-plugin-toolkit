@@ -4,9 +4,9 @@ import os
 import subprocess
 import sys
 import urllib.error
-import urllib.request
 import zipfile
 from datetime import UTC, datetime
+from typing import Any
 
 import jellyfin_plugin_toolkit.ci.evidence as ci_evidence
 import jellyfin_plugin_toolkit.ci.policy as ci_policy
@@ -17,7 +17,7 @@ from jellyfin_plugin_toolkit.provenance import record
 
 def plan(
     ctx: Context, base: str, full: bool, release: bool, reuse: bool, scheduled: bool
-) -> dict:
+) -> dict[str, Any]:
     root = ctx.root
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     ci_policy.browser_inventory(ctx)
@@ -36,7 +36,7 @@ def plan(
     cumulative = (
         os.environ.get("GITHUB_EVENT_NAME") == "push" and not release and not scheduled
     )
-    baseline: dict = {}
+    baseline: dict[str, Any] = {}
     comparison_mode = "push-baseline" if cumulative else "changed-inputs"
     fallback_reason = ""
     require_all = False
@@ -81,13 +81,13 @@ def plan(
     required = (
         set(validation.groups)
         if full or release or require_all
-        else set().union(*(ci_policy.impacts(ctx, p) for p in changed))
+        else set[str]().union(*(ci_policy.impacts(ctx, p) for p in changed))
     )
     if baseline:
         required |= {
             g for g in validation.code if baseline.get("inputs", {}).get(g) != inputs[g]
         }
-    proofs: dict[str, dict] = {}
+    proofs: dict[str, dict[str, Any]] = {}
     if reuse and (required or scheduled) and repository and os.environ.get("GH_TOKEN"):
         try:
             proofs = ci_evidence.evidence(ctx, repository, inputs, policy, scheduled)
@@ -99,11 +99,11 @@ def plan(
             OSError,
         ):
             print("Evidence unavailable; required checks will run", file=sys.stderr)
-    full_baseline = {}
+    full_baseline: dict[str, Any] = {}
     if scheduled and not full:
         # All meaningful groups must match a full run, never merely a narrow pass.
         required = (
-            set()
+            set[str]()
             if all(g in proofs for g in validation.runtime)
             else set(validation.groups)
         )
@@ -158,10 +158,12 @@ def plan(
     }
 
 
-def finish(ctx: Context, selection: dict, jobs: dict) -> dict:
+def finish(
+    ctx: Context, selection: dict[str, Any], jobs: dict[str, Any]
+) -> dict[str, Any]:
     root = ctx.root
     validation = ci_policy.ValidationPolicy.from_context(ctx)
-    results = {}
+    results: dict[str, str] = {}
     for group in selection["required"]:
         if group in selection["reused"]:
             results[group] = "success"

@@ -1,5 +1,12 @@
 """Owned Docker sandbox operations used by the persistent Node development session."""
 
+from typing import TYPE_CHECKING, Any
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import fcntl
 import hashlib
 import http.client
@@ -22,13 +29,13 @@ from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
 OWNER_LABEL = "jellyfin-plugin-toolkit.local-checkout"
 
 
-def container_name(ctx):
+def container_name(ctx: Context) -> str:
     return (
         ctx.prefix + "-local-" + hashlib.sha256(str(ctx.root).encode()).hexdigest()[:10]
     )
 
 
-def inspect(ctx) -> dict | None:
+def inspect(ctx: Context) -> dict[str, Any] | None:
     # Listing avoids treating daemon/permission errors as an absent container.
     result = subprocess.check_output(
         [
@@ -44,7 +51,7 @@ def inspect(ctx) -> dict | None:
     ).strip()
     if not result:
         return None
-    container = json.loads(
+    container: dict[str, Any] = json.loads(
         subprocess.check_output(["docker", "inspect", container_name(ctx)], text=True)
     )[0]
     if container["Config"].get("Labels", {}).get(OWNER_LABEL) != str(ctx.root):
@@ -54,7 +61,7 @@ def inspect(ctx) -> dict | None:
     return container
 
 
-def media_paths(ctx, requested: list[str] | None) -> list[str]:
+def media_paths(ctx: Context, requested: list[str] | None) -> list[str]:
     settings = (ctx.root / ".build/local-jellyfin") / "media-mounts.json"
     values = (
         requested
@@ -63,9 +70,7 @@ def media_paths(ctx, requested: list[str] | None) -> list[str]:
         if settings.exists()
         else []
     )
-    if not isinstance(values, list) or not all(
-        isinstance(value, str) for value in values
-    ):
+    if not is_json_array(values) or not all(isinstance(value, str) for value in values):
         raise ValueError(
             "Invalid saved media mounts. Use --clear-media-mounts to clear them."
         )
@@ -98,13 +103,13 @@ def media_paths(ctx, requested: list[str] | None) -> list[str]:
     return paths
 
 
-def stop(ctx) -> None:
+def stop(ctx: Context) -> None:
     if inspect(ctx):
         run("docker", "rm", "-f", container_name(ctx), cwd=ctx.root)
     ((ctx.root / ".build/local-jellyfin") / "session.json").unlink(missing_ok=True)
 
 
-def wait_ready(ctx, port: int) -> None:
+def wait_ready(ctx: Context, port: int) -> None:
     for _ in range(60):
         try:
             with urllib.request.urlopen(
@@ -119,7 +124,7 @@ def wait_ready(ctx, port: int) -> None:
     raise RuntimeError("Jellyfin startup timed out")
 
 
-def start(ctx, mounts: list[str]) -> int:
+def start(ctx: Context, mounts: list[str]) -> int:
     for name in ("config", "cache", "media"):
         ((ctx.root / ".build/local-jellyfin") / name).mkdir(parents=True, exist_ok=True)
     run(
@@ -158,7 +163,7 @@ def start(ctx, mounts: list[str]) -> int:
     return port
 
 
-def deploy(ctx, web: Path, requested_mounts: list[str] | None = None) -> None:
+def deploy(ctx: Context, web: Path, requested_mounts: list[str] | None = None) -> None:
     mounts = media_paths(ctx, requested_mounts)
     (ctx.root / ".build/local-jellyfin").mkdir(parents=True, exist_ok=True, mode=0o700)
     release = load_identity(ctx.root)
@@ -224,7 +229,14 @@ def deploy(ctx, web: Path, requested_mounts: list[str] | None = None) -> None:
     )
 
 
-def dev(ctx, *, port=18096, open_browser=False, watch=True, media_mounts=None) -> None:
+def dev(
+    ctx: Context,
+    *,
+    port: int = 18096,
+    open_browser: bool = False,
+    watch: bool = True,
+    media_mounts: list[str] | None = None,
+) -> None:
     from jellyfin_plugin_toolkit.tasks import verify_tools
 
     (ctx.root / ".build/local-jellyfin").mkdir(parents=True, exist_ok=True, mode=0o700)

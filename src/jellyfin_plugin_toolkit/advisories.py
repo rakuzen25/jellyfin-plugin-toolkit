@@ -1,5 +1,16 @@
 """Fresh native audits, published-fix decisions, and reviewed expiring waivers."""
 
+from collections.abc import Callable, Sequence
+from functools import partial
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
+from jellyfin_plugin_toolkit.configuration import Advisories
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.configuration import AdvisoryWaiver
+
 import json
 import os
 import re
@@ -11,13 +22,44 @@ from urllib.parse import urlparse
 
 from jellyfin_plugin_toolkit.common.process import executable, run
 
+
+class AuditBackend(Protocol):
+    @property
+    def projects(self) -> dict[str, str]: ...
+
+    @property
+    def tests(self) -> list[str]: ...
+
+
+class AuditConfiguration(Protocol):
+    @property
+    def backend(self) -> AuditBackend: ...
+
+    @property
+    def advisories(self) -> Advisories: ...
+
+
+class AuditContext(Protocol):
+    @property
+    def root(self) -> Path: ...
+
+    @property
+    def config(self) -> AuditConfiguration: ...
+
+
 GHSA = re.compile(r"GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}")
 
 
-def command_json(ctx, *args, finding_exit=False):
+def command_json(
+    ctx: AuditContext, *args: str, finding_exit: bool = False
+) -> dict[str, Any]:
     # Configuration output can contain registry credentials: never echo it.
     result = subprocess.run(
-        [str(arg) for arg in args], cwd=ctx.root, capture_output=True, text=True
+        [str(arg) for arg in args],
+        cwd=ctx.root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode not in ({0, 1} if finding_exit else {0}):
         raise ValueError(f"{args[0]} audit command failed (exit {result.returncode})")
@@ -25,23 +67,31 @@ def command_json(ctx, *args, finding_exit=False):
         value = json.loads(result.stdout)
     except ValueError as error:
         raise ValueError(f"{args[0]} returned invalid audit JSON") from error
-    if not isinstance(value, dict) or value.get("error") or value.get("errors"):
+    if not is_json_object(value) or value.get("error") or value.get("errors"):
         raise ValueError(f"{args[0]} returned an audit error")
     return value
 
 
-def text(value, label):
+def text(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("Missing or invalid " + label)
     return value
 
 
-def finding(ecosystem, package, version, ghsa, severity, locations, fixes):
+def finding(
+    ecosystem: str,
+    package: str,
+    version: str,
+    ghsa: str,
+    severity: str,
+    locations: list[str],
+    fixes: list[str],
+) -> dict[str, Any]:
     if not GHSA.fullmatch(ghsa):
         raise ValueError("Unsupported advisory identifier: " + ghsa)
-    if not isinstance(locations, list) or not locations:
+    if not is_json_array(locations) or not locations:
         raise ValueError("Advisory has no locations")
-    if not isinstance(fixes, list):
+    if not is_json_array(fixes):
         raise ValueError("Unknown advisory fix status")
     return {
         "ecosystem": ecosystem,
@@ -55,11 +105,11 @@ def finding(ecosystem, package, version, ghsa, severity, locations, fixes):
     }
 
 
-def node_findings(ctx, findings):
+def node_findings(ctx: AuditContext, findings: list[dict[str, Any]]) -> None:
     config = command_json(ctx, executable("pnpm"), "config", "list", "--json")
 
-    def exclusions(value, path=""):
-        if isinstance(value, dict):
+    def exclusions(value: object, path: str = "") -> None:
+        if is_json_object(value):
             for key, child in value.items():
                 current = path + "." + key.lower().replace("-", "").replace("_", "")
                 if child and (
@@ -84,11 +134,11 @@ def node_findings(ctx, findings):
         finding_exit=True,
     )
     advisories = report.get("advisories")
-    if not isinstance(advisories, dict) or not isinstance(report.get("metadata"), dict):
+    if not is_json_object(advisories) or not is_json_object(report.get("metadata")):
         raise ValueError("Unsupported pnpm audit report")
     counts = report["metadata"].get("vulnerabilities")
     if (
-        not isinstance(counts, dict)
+        not is_json_object(counts)
         or not counts
         or any(type(count) is not int or count < 0 for count in counts.values())
         or (any(counts.values()) and not advisories)
@@ -102,7 +152,7 @@ def node_findings(ctx, findings):
         if patched is None:
             if unpublished is False:
                 raise ValueError("Contradictory pnpm fix metadata")
-            fixes = []
+            fixes: list[str] = []
         elif isinstance(patched, str) and patched.strip():
             if unpublished is True:
                 fixes = []
@@ -111,7 +161,7 @@ def node_findings(ctx, findings):
         else:
             raise ValueError("Invalid pnpm patched-version metadata")
         entries = advisory["findings"]
-        if not isinstance(entries, list) or not entries:
+        if not is_json_array(entries) or not entries:
             raise ValueError("pnpm advisory has no installed findings")
         for entry in entries:
             findings.append(
@@ -127,7 +177,7 @@ def node_findings(ctx, findings):
             )
 
 
-def github_advisory(ghsa):
+def github_advisory(ghsa: str) -> dict[str, Any]:
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "jellyfin-plugin-toolkit",
@@ -141,7 +191,7 @@ def github_advisory(ghsa):
     with urllib.request.urlopen(request, timeout=30) as response:
         data = json.load(response)
     if (
-        not isinstance(data, dict)
+        not is_json_object(data)
         or data.get("ghsa_id") != ghsa
         or data.get("withdrawn_at")
     ):
@@ -149,9 +199,9 @@ def github_advisory(ghsa):
     return data
 
 
-def nuget_fixes(data, package):
+def nuget_fixes(data: dict[str, Any], package: str) -> list[str]:
     entries = data["vulnerabilities"]
-    if not isinstance(entries, list):
+    if not is_json_array(entries):
         raise ValueError("Invalid GitHub vulnerabilities metadata")
     matching = [
         entry
@@ -161,7 +211,7 @@ def nuget_fixes(data, package):
     ]
     if not matching:
         raise ValueError("Advisory does not identify NuGet package " + package)
-    fixes = set()
+    fixes: set[str] = set()
     for entry in matching:
         patched = entry["first_patched_version"]
         if patched is not None:
@@ -169,7 +219,12 @@ def nuget_fixes(data, package):
     return sorted(fixes)
 
 
-def nuget_findings(ctx, project, findings, cache):
+def nuget_findings(
+    ctx: AuditContext,
+    project: str,
+    findings: list[dict[str, Any]],
+    cache: dict[str, Any],
+) -> None:
     settings = command_json(
         ctx,
         executable("dotnet"),
@@ -213,7 +268,7 @@ def nuget_findings(ctx, project, findings, cache):
     )
     if (
         report.get("version") != 1
-        or not isinstance(report.get("projects"), list)
+        or not is_json_array(report.get("projects"))
         or not report["projects"]
     ):
         raise ValueError("Unsupported NuGet audit report")
@@ -223,7 +278,8 @@ def nuget_findings(ctx, project, findings, cache):
                 "transitivePackages", []
             ):
                 for advisory in entry.get("vulnerabilities", []):
-                    url = urlparse(advisory["advisoryurl"])
+                    advisory_url: str = advisory["advisoryurl"]
+                    url = urlparse(advisory_url)
                     ghsa = url.path.removeprefix("/advisories/")
                     if (
                         url.scheme != "https"
@@ -247,13 +303,13 @@ def nuget_findings(ctx, project, findings, cache):
                             cache[ghsa] = github_advisory(ghsa)
                         except (ValueError, KeyError, TypeError, OSError) as error:
                             cache[ghsa] = error
-                    if isinstance(cache[ghsa], Exception):
+                    if isinstance(cache[ghsa], Exception) or cache[ghsa] is None:
                         raise ValueError("Advisory metadata unavailable for " + ghsa)
                     item["fixes"] = nuget_fixes(cache[ghsa], entry["id"])
                     item["fix_status"] = "published" if item["fixes"] else "unavailable"
 
 
-def scope(entry):
+def scope(entry: dict[str, Any]) -> tuple[str, str, str, str]:
     package = (
         entry["package"].casefold()
         if entry["ecosystem"] == "nuget"
@@ -262,8 +318,14 @@ def scope(entry):
     return entry["ecosystem"], package, entry["version"], entry["ghsa"]
 
 
-def evaluate(findings, waivers, now, *, fail_on_findings=True):
-    unique = {}
+def evaluate(
+    findings: list[dict[str, Any]],
+    waivers: Sequence[AdvisoryWaiver],
+    now: datetime,
+    *,
+    fail_on_findings: bool = True,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    unique: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for entry in findings:
         if entry["fix_status"] not in {"published", "unavailable"}:
             raise ValueError("Unknown fix status for " + entry["ghsa"])
@@ -280,12 +342,12 @@ def evaluate(findings, waivers, now, *, fail_on_findings=True):
             )
         else:
             unique[key] = dict(entry)
-    warnings = []
-    for waiver in waivers:
-        if waiver.timestamp(waiver.expires_at) <= now:
-            warnings.append("Expired waiver: " + "/".join(waiver.scope))
-        elif waiver.scope not in unique:
-            warnings.append("Unused waiver: " + "/".join(waiver.scope))
+    warnings: list[str] = []
+    for configured in waivers:
+        if configured.timestamp(configured.expires_at) <= now:
+            warnings.append("Expired waiver: " + "/".join(configured.scope))
+        elif configured.scope not in unique:
+            warnings.append("Unused waiver: " + "/".join(configured.scope))
     for key, entry in unique.items():
         waiver = next((waiver for waiver in waivers if waiver.scope == key), None)
         active = waiver is not None and waiver.timestamp(waiver.expires_at) > now
@@ -298,9 +360,9 @@ def evaluate(findings, waivers, now, *, fail_on_findings=True):
     return sorted(unique.values(), key=scope), warnings
 
 
-def audit(ctx):
+def audit(ctx: AuditContext) -> dict[str, Any]:
     now = datetime.now(UTC)
-    report = {
+    report: dict[str, Any] = {
         "schema": 1,
         "checked_at": now.isoformat(),
         "fail_on_findings": ctx.config.advisories.fail_on_findings,
@@ -308,9 +370,9 @@ def audit(ctx):
         "warnings": [],
         "errors": [],
     }
-    findings = []
-    cache = {}
-    actions = []
+    findings: list[dict[str, Any]] = []
+    cache: dict[str, Any] = {}
+    actions: list[tuple[str, Callable[[], None]]] = []
     if (ctx.root / "pnpm-lock.yaml").exists():
         actions.append(("Node dependency audit", lambda: node_findings(ctx, findings)))
     projects = list(
@@ -322,7 +384,7 @@ def audit(ctx):
         actions.append(
             (
                 "NuGet audit: " + str(project),
-                lambda project=project: nuget_findings(ctx, project, findings, cache),
+                partial(nuget_findings, ctx, project, findings, cache),
             )
         )
     for label, action in actions:
@@ -383,23 +445,34 @@ def audit(ctx):
     return report
 
 
-def audit_toolkit():
+def audit_toolkit() -> dict[str, Any]:
     """Apply the same gate to this Python/Node tooling repository itself."""
     import tomllib
     from pathlib import Path
-    from types import SimpleNamespace
-
-    from jellyfin_plugin_toolkit.configuration import Advisories
 
     root = Path.cwd()
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
     policy = metadata.get("tool", {}).get("jpt", {}).get("advisories", {})
-    return audit(
-        SimpleNamespace(
-            root=root,
-            config=SimpleNamespace(
-                backend=SimpleNamespace(projects={}, tests=[]),
-                advisories=Advisories.model_validate(policy),
-            ),
-        )
-    )
+    return audit_repository(root, Advisories.model_validate(policy))
+
+
+def audit_repository(root: Path, policy: Advisories) -> dict[str, Any]:
+    """Audit repository development dependencies without loading plugin metadata."""
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class Projects:
+        projects: dict[str, str]
+        tests: list[str]
+
+    @dataclass(frozen=True)
+    class RepositoryPolicy:
+        backend: Projects
+        advisories: Advisories
+
+    @dataclass(frozen=True)
+    class Repository:
+        root: Path
+        config: RepositoryPolicy
+
+    return audit(Repository(root, RepositoryPolicy(Projects({}, []), policy)))

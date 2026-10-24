@@ -1,15 +1,17 @@
 """Toolkit releases bind immutable source, archive inventory and retry bytes."""
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit import toolkit_release as release
 
 
 class ToolkitReleaseTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -34,16 +36,21 @@ class ToolkitReleaseTests(unittest.TestCase):
             source.addfile(item, io.BytesIO(metadata))
         with patch.object(release, "package_version", return_value="0.1.0"):
             release.manifest(self.directory, self.sha)
-        self.draft = {"id": 123, "draft": True, "tag_name": "v0.1.0", "assets": []}
+        self.draft: dict[str, Any] = {
+            "id": 123,
+            "draft": True,
+            "tag_name": "v0.1.0",
+            "assets": [],
+        }
 
-    def resolve(self, **kwargs):
+    def resolve(self, **kwargs: Any) -> tuple[dict[str, Any], str]:
         with (
             patch.object(release, "release_for_tag", return_value=self.draft),
             patch.object(release, "tag_commit", return_value=self.sha),
         ):
             return release.resolve("example/toolkit", "v0.1.0", **kwargs)
 
-    def test_draft_resolves_only_matching_immutable_source(self):
+    def test_draft_resolves_only_matching_immutable_source(self) -> None:
         self.assertEqual((self.draft, self.sha), self.resolve(sha=self.sha))
         with self.assertRaisesRegex(ValueError, "moved"):
             self.resolve(sha="f" * 40)
@@ -60,7 +67,7 @@ class ToolkitReleaseTests(unittest.TestCase):
         ):
             release.resolve("example/toolkit", "v0.1.0")
 
-    def test_archive_must_match_version_revision_and_checksum(self):
+    def test_archive_must_match_version_revision_and_checksum(self) -> None:
         hashes = release.artifact_hashes(self.directory, "v0.1.0", self.sha)
         self.assertEqual(
             {
@@ -79,7 +86,7 @@ class ToolkitReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "checksums"):
             release.artifact_hashes(self.directory, "v0.1.0", self.sha)
 
-    def test_source_provenance_tampering_is_rejected(self):
+    def test_source_provenance_tampering_is_rejected(self) -> None:
         import json
 
         path = self.directory / "build-provenance.json"
@@ -91,17 +98,17 @@ class ToolkitReleaseTests(unittest.TestCase):
 
     def test_upload_retry_preserves_identical_assets_and_uploads_only_missing_bytes(
         self,
-    ):
+    ) -> None:
         self.draft["assets"] = [{"name": self.archive.name}]
 
-        def download(command, **kwargs):
+        def download(command: list[str], **kwargs: Any) -> None:
             if command[2] == "download":
                 directory = Path(command[command.index("--dir") + 1])
                 (directory / self.archive.name).write_bytes(self.archive.read_bytes())
 
         with (
             patch.object(release, "resolve", return_value=(self.draft, self.sha)),
-            patch.object(release.subprocess, "run", side_effect=download) as run,
+            patch.object(subprocess, "run", side_effect=download) as run,
         ):
             release.upload(self.directory, "example/toolkit", "v0.1.0", self.sha)
         upload = run.call_args_list[-1].args[0]
@@ -110,7 +117,7 @@ class ToolkitReleaseTests(unittest.TestCase):
         self.assertNotIn(str(self.archive), upload)
         self.assertNotIn("--clobber", upload)
 
-    def test_complete_retry_does_not_upload_and_conflicts_never_overwrite(self):
+    def test_complete_retry_does_not_upload_and_conflicts_never_overwrite(self) -> None:
         self.draft["assets"] = [
             {"name": name}
             for name in [
@@ -123,7 +130,9 @@ class ToolkitReleaseTests(unittest.TestCase):
         for corrupt in [False, True]:
             with self.subTest(corrupt=corrupt):
 
-                def download(command, **kwargs):
+                def download(
+                    command: list[str], corrupt: bool = corrupt, **kwargs: Any
+                ) -> None:
                     name = command[command.index("--pattern") + 1]
                     target = Path(command[command.index("--dir") + 1]) / name
                     target.write_bytes(
@@ -134,9 +143,7 @@ class ToolkitReleaseTests(unittest.TestCase):
                     patch.object(
                         release, "resolve", return_value=(self.draft, self.sha)
                     ),
-                    patch.object(
-                        release.subprocess, "run", side_effect=download
-                    ) as run,
+                    patch.object(subprocess, "run", side_effect=download) as run,
                 ):
                     if corrupt:
                         with self.assertRaisesRegex(ValueError, "Conflicting"):
@@ -151,14 +158,14 @@ class ToolkitReleaseTests(unittest.TestCase):
                         all(c.args[0][2] == "download" for c in run.call_args_list)
                     )
 
-    def test_publication_during_verification_stops_upload(self):
+    def test_publication_during_verification_stops_upload(self) -> None:
         with (
             patch.object(
                 release,
                 "resolve",
                 side_effect=[(self.draft, self.sha), ValueError("published")],
             ),
-            patch.object(release.subprocess, "run") as run,
+            patch.object(subprocess, "run") as run,
             self.assertRaisesRegex(ValueError, "published"),
         ):
             release.upload(self.directory, "example/toolkit", "v0.1.0", self.sha)

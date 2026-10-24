@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from scaffold_fixture import ROOT, candidate, generate
@@ -16,7 +17,7 @@ from jellyfin_plugin_toolkit.resources_api import prepare
 
 
 class NativeUvTests(unittest.TestCase):
-    def test_wheel_contains_all_resources_without_vendored_dependencies(self):
+    def test_wheel_contains_all_resources_without_vendored_dependencies(self) -> None:
         with zipfile.ZipFile(candidate()) as wheel:
             names = set(wheel.namelist())
         for name in (
@@ -34,7 +35,7 @@ class NativeUvTests(unittest.TestCase):
             any("_vendor/" in name or name.endswith("bootstrap.py") for name in names)
         )
 
-    def test_native_build_is_repeatable(self):
+    def test_native_build_is_repeatable(self) -> None:
         first = candidate().read_bytes()
         source = candidate().with_name(
             candidate().name.replace("-py3-none-any.whl", ".tar.gz")
@@ -53,7 +54,7 @@ class NativeUvTests(unittest.TestCase):
                 hashlib.sha256((Path(folder) / candidate().name).read_bytes()).digest(),
             )
 
-    def test_cold_project_installs_wheel_and_runs_without_pythonpath(self):
+    def test_cold_project_installs_wheel_and_runs_without_pythonpath(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as folder:
             root = Path(folder) / "consumer"
             generate(None, root, "cold", "Cold", "example/cold", True)
@@ -117,6 +118,7 @@ class NativeUvTests(unittest.TestCase):
                 cwd=root,
                 env=environment,
                 capture_output=True,
+                check=False,
             )
             self.assertNotEqual(0, rejected.returncode)
             self.assertIn(b"Hash mismatch", rejected.stderr)
@@ -133,13 +135,14 @@ class NativeUvTests(unittest.TestCase):
                 cwd=root,
                 env=environment,
                 capture_output=True,
+                check=False,
             )
             self.assertNotEqual(0, check.returncode)
             self.assertEqual(before, (root / "uv.lock").read_bytes())
 
     def test_resource_projection_repairs_removed_resources_and_rejects_redirection(
         self,
-    ):
+    ) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             exported = prepare(root)
@@ -153,12 +156,12 @@ class NativeUvTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 prepare(root)
 
-    def test_workflow_resource_references_exist_in_installed_wheel(self):
+    def test_workflow_resource_references_exist_in_installed_wheel(self) -> None:
         import re
 
         with zipfile.ZipFile(candidate()) as wheel:
             names = set(wheel.namelist())
-        found = set()
+        found: set[str] = set()
         for workflow in (ROOT / ".github/workflows").glob("*.yml"):
             for reference in re.findall(
                 r"uses: \./\.build/jpt/([^\s]+)", workflow.read_text()
@@ -170,7 +173,7 @@ class NativeUvTests(unittest.TestCase):
                 )
         self.assertTrue(found)
 
-    def test_console_new_succeeds_outside_consumer_checkout(self):
+    def test_console_new_succeeds_outside_consumer_checkout(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as folder:
             root = Path(folder)
             result = subprocess.run(
@@ -197,12 +200,13 @@ class NativeUvTests(unittest.TestCase):
                 cwd=root,
                 capture_output=True,
                 text=True,
+                check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertTrue((root / "plugin/uv.lock").is_file())
             self.assertFalse((root / ".build").exists())
 
-    def test_sdist_retains_native_lock_pin_and_resource_source(self):
+    def test_sdist_retains_native_lock_pin_and_resource_source(self) -> None:
         import tarfile
 
         source = candidate().with_name(
@@ -218,7 +222,9 @@ class NativeUvTests(unittest.TestCase):
         ]:
             self.assertIn(name, names)
 
-    def test_source_bundle_retains_candidate_and_installs_after_extraction(self):
+    def test_source_bundle_retains_candidate_and_installs_after_extraction(
+        self,
+    ) -> None:
         from jellyfin_plugin_toolkit.acceptance import inventory
         from jellyfin_plugin_toolkit.build.clean_package import clean_package
         from jellyfin_plugin_toolkit.build.package_artifacts import assemble
@@ -241,9 +247,14 @@ class NativeUvTests(unittest.TestCase):
             (root / ".build/unrelated.txt").write_text("not source")
             run = subprocess.run
 
-            def package_in_clean_checkout(command, *, cwd, **kwargs):
+            def package_in_clean_checkout(
+                command: list[str], *, cwd: Path, check: bool, env: dict[str, str]
+            ) -> subprocess.CompletedProcess[Any]:
                 if command == ["uv", "sync", "--locked"]:
-                    return run(command, cwd=cwd, capture_output=True, **kwargs)
+                    process: subprocess.CompletedProcess[Any] = run(
+                        command, cwd=cwd, env=env, capture_output=True, check=check
+                    )
+                    return process
                 self.assertEqual(
                     ["uv", "run", "--no-sync", "jpt", "internal", "package"], command
                 )
@@ -293,7 +304,9 @@ class NativeUvTests(unittest.TestCase):
             )
             self.assertEqual(lock, (extracted / "uv.lock").read_bytes())
 
-    def test_candidate_provenance_rejects_symlinked_build_parent_before_reading(self):
+    def test_candidate_provenance_rejects_symlinked_build_parent_before_reading(
+        self,
+    ) -> None:
         import shutil
 
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as folder:

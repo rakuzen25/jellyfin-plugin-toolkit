@@ -4,13 +4,16 @@ import json
 import os
 import re
 import urllib.request
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
 
-def resolve_bot(slug):
+
+def resolve_bot(slug: str) -> dict[str, str]:
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
         raise ValueError("Expected a GitHub App slug")
     login = slug + "[bot]"
@@ -38,7 +41,7 @@ def resolve_bot(slug):
     }
 
 
-def commit_identity():
+def commit_identity() -> dict[str, str]:
     if not os.environ.get("GH_TOKEN"):
         raise ValueError("A GitHub App installation token is required for writes")
     return resolve_bot(os.environ.get("JPT_APP_SLUG", ""))
@@ -54,8 +57,8 @@ class AutomationRecord(BaseModel):
     bot_id: int = Field(gt=0)
 
 
-def record_identity(record):
-    if not isinstance(record, dict) or type(record.get("schema_version")) is not int:
+def record_identity(record: object) -> dict[str, str]:
+    if not is_json_object(record) or type(record.get("schema_version")) is not int:
         raise ValueError("Invalid App ownership record")
     selected = AutomationRecord.model_validate(record)
     login = selected.app_slug + "[bot]"
@@ -65,7 +68,7 @@ def record_identity(record):
     }
 
 
-def identity_record(identity):
+def identity_record(identity: dict[str, str]) -> dict[str, Any]:
     match = re.fullmatch(
         r"([1-9][0-9]*)\+([a-z0-9]+(?:-[a-z0-9]+)*)\[bot\]@users\.noreply\.github\.com",
         identity["email"],
@@ -75,7 +78,7 @@ def identity_record(identity):
     return {"schema_version": 1, "app_slug": match[2], "bot_id": int(match[1])}
 
 
-def check_renovate(root, identity):
+def check_renovate(root: Path, identity: dict[str, str]) -> None:
     from jellyfin_plugin_toolkit.bindings import safe_path
 
     message = "Merge the App setup PR, or run the App setup workflow to refresh the connected App identity"

@@ -4,8 +4,11 @@ import copy
 import difflib
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.context import Context
 
@@ -14,7 +17,7 @@ PREFIX = "$['dependencies'][*][?(@.type === 'Project')]['dependencies'][?("
 SUFFIX = ")]"
 
 
-def selector(assemblies):
+def selector(assemblies: Iterable[str]) -> str:
     return (
         PREFIX
         + " || ".join(
@@ -24,8 +27,8 @@ def selector(assemblies):
     )
 
 
-def canonical_rule(rule):
-    if not isinstance(rule, dict) or set(rule) != {"type", "path", "jsonpath"}:
+def canonical_rule(rule: object) -> bool:
+    if not is_json_object(rule) or set(rule) != {"type", "path", "jsonpath"}:
         return False
     expression = rule.get("jsonpath")
     if rule["type"] != "json" or not isinstance(expression, str):
@@ -36,17 +39,19 @@ def canonical_rule(rule):
     return bool(names) and expression == selector({json.loads(name) for name in names})
 
 
-def internal_references(ctx):
+def internal_references(
+    ctx: Context,
+) -> tuple[set[str], dict[str, list[tuple[str, str, str, str]]]]:
     """Return lockfile paths and their (framework, project, dependency, range) rows."""
     assemblies = set(ctx.config.backend.project_assemblies)
     assemblies.add(ctx.identity.assembly)
-    locks = {}
+    locks: dict[str, list[tuple[str, str, str, str]]] = {}
     for name in source_files(ctx.root):
         if name.name != "packages.lock.json":
             continue
         try:
             data = json.loads((ctx.root / name).read_text())
-            rows = []
+            rows: list[tuple[str, str, str, str]] = []
             for framework, projects in data["dependencies"].items():
                 for project, record in projects.items():
                     if record.get("type") != "Project":
@@ -64,34 +69,34 @@ def internal_references(ctx):
     return assemblies, locks
 
 
-def generated_config(ctx, data):
+def generated_config(ctx: Context, data: object) -> dict[str, Any]:
     """Preserve consumer settings, replacing only canonical internal-reference rules."""
-    if not isinstance(data, dict) or not isinstance(data.get("packages"), dict):
+    if not is_json_object(data) or not is_json_object(data.get("packages")):
         raise ValueError(
             "Release configuration requires packages with a single '.' entry"
         )
     packages = data["packages"]
-    if set(packages) != {"."} or not isinstance(packages["."], dict):
+    if set(packages) != {"."} or not is_json_object(packages["."]):
         raise ValueError("Release configuration supports only a single '.' package")
     package = packages["."]
     if package.get("release-type", data.get("release-type")) != "simple":
         raise ValueError("Release configuration requires release-type 'simple'")
     rules = package.get("extra-files", [])
-    if not isinstance(rules, list):
+    if not is_json_array(rules):
         raise ValueError(
             "Release configuration packages['.'].extra-files must be an array"
         )
     assemblies, locks = internal_references(ctx)
-    preserved = []
+    preserved: list[Any] = []
     for rule in rules:
         path = (
             rule
             if isinstance(rule, str)
             else rule.get("path")
-            if isinstance(rule, dict)
+            if is_json_object(rule)
             else None
         )
-        if not isinstance(path, str):
+        if not isinstance(path, str) or not path:
             raise ValueError("Release configuration extra-files entries require a path")
         if Path(path).name == "packages.lock.json" and canonical_rule(rule):
             continue
@@ -116,7 +121,7 @@ def generated_config(ctx, data):
     return result
 
 
-def proposal(root):
+def proposal(root: Path) -> tuple[str, str]:
     path = root / FILENAME
     try:
         before = path.read_text()
@@ -128,7 +133,7 @@ def proposal(root):
     return before, after
 
 
-def check(root):
+def check(root: Path) -> None:
     before, after = proposal(root)
     if before != after:
         raise ValueError(
@@ -137,7 +142,7 @@ def check(root):
         )
 
 
-def configure(root, *, apply=False, verify=False):
+def configure(root: Path, *, apply: bool = False, verify: bool = False) -> None:
     before, after = proposal(root)
     if verify:
         check(root)

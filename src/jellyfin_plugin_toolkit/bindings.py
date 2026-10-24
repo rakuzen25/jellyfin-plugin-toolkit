@@ -1,7 +1,17 @@
 """Bounded, data-only synchronization of toolkit bindings in consumer checkouts."""
 
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.configuration import Configuration
+
 import difflib
 import fcntl
+import hashlib
+import io
 import json
 import os
 import re
@@ -10,6 +20,8 @@ import stat
 import subprocess
 import tempfile
 import tomllib
+import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,7 +29,7 @@ from jellyfin_plugin_toolkit.operations import replaces
 from jellyfin_plugin_toolkit.provenance import REPOSITORY, record, wheel_name
 
 
-def safe_path(root, name):
+def safe_path(root: Path, name: str | Path) -> Path:
     path = root / name
     if not path.is_relative_to(root) or ".." in Path(name).parts:
         raise ValueError("Unsafe binding path: " + str(name))
@@ -29,11 +41,11 @@ def safe_path(root, name):
     return path
 
 
-def git(root, *args):
+def git(root: Path, *args: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(root), *args])
 
 
-def base_revision(root, ref):
+def base_revision(root: Path, ref: str) -> str:
     return (
         git(root, "rev-parse", "--verify", "--end-of-options", ref + "^{commit}")
         .decode()
@@ -41,7 +53,7 @@ def base_revision(root, ref):
     )
 
 
-def workflow_references(text, repository):
+def workflow_references(text: str, repository: str) -> list[re.Match[str]]:
     pattern = re.compile(
         r"^(?P<prefix>[ \t]*(?:-[ \t]+)?uses:[ \t]*)(?P<quote>['\"]?)"
         + re.escape(repository)
@@ -54,24 +66,29 @@ def workflow_references(text, repository):
     for line in text.splitlines():
         if line.lstrip().startswith("#"):
             continue
-        if re.search(r"\buses\s*:", line) and repository + "/" in line:
-            if not pattern.fullmatch(line):
-                raise ValueError(
-                    "Ambiguous toolkit workflow/action reference: " + line.strip()
-                )
+        if (
+            re.search(r"\buses\s*:", line)
+            and repository + "/" in line
+            and not pattern.fullmatch(line)
+        ):
+            raise ValueError(
+                "Ambiguous toolkit workflow/action reference: " + line.strip()
+            )
     return matches
 
 
-def reference_tag(match):
+def reference_tag(match: re.Match[str]) -> re.Match[str] | None:
     return re.search(r"(?<!\S)v\d+\.\d+\.\d+(?:-[\w.]+)?(?!\S)", match["comment"] or "")
 
 
-def rewrite_workflow(text, old, new, files):
+def rewrite_workflow(
+    text: str, old: dict[str, str], new: dict[str, str], files: dict[str, bytes]
+) -> str:
     metadata = json.loads(files["toolkit-release.json"])
     revision = metadata.get("revision", "")
     if not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise ValueError("Toolkit references require an immutable source revision")
-    updates = []
+    updates: list[tuple[int, int, str]] = []
     for match in workflow_references(text, new["repository"]):
         component = match["component"]
         if component not in files and not any(
@@ -96,18 +113,18 @@ def rewrite_workflow(text, old, new, files):
     return text
 
 
-def skip_space(text, index):
+def skip_space(text: str, index: int) -> int:
     while index < len(text) and text[index].isspace():
         index += 1
     return index
 
 
-def preset_span(text):
+def preset_span(text: str) -> tuple[int, int] | None:
     """Locate the top-level extends value without reserializing unrelated JSON."""
     decoder = json.JSONDecoder()
     index = text.index("{") + 1
     found = None
-    seen = set()
+    seen: set[str] = set()
     while True:
         index = skip_space(text, index)
         if text[index] == "}":
@@ -123,7 +140,7 @@ def preset_span(text):
         start = index
         value, index = decoder.raw_decode(text, index)
         if key == "extends":
-            if not isinstance(value, list) or any(
+            if not is_json_array(value) or any(
                 not isinstance(item, str) for item in value
             ):
                 raise ValueError("Renovate extends must contain preset strings")
@@ -136,8 +153,8 @@ def preset_span(text):
     return found
 
 
-def rewrite_preset(text, old, new):
-    if not isinstance(json.loads(text), dict):
+def rewrite_preset(text: str, old: dict[str, str], new: dict[str, str]) -> str:
+    if not is_json_object(json.loads(text)):
         raise ValueError("Renovate configuration must be an object")
     span = preset_span(text)
     if span is None:
@@ -148,7 +165,7 @@ def rewrite_preset(text, old, new):
         "github>" + new["repository"] + ":tooling#",
     )
 
-    def replace(match):
+    def replace(match: re.Match[str]) -> str:
         value = json.loads(match[0])
         prefix = next((item for item in prefixes if value.startswith(item)), None)
         if prefix is None:
@@ -173,7 +190,9 @@ class Change:
     mode: int
 
 
-def change_for(root, name, after, mode=None):
+def change_for(
+    root: Path, name: str, after: bytes, mode: int | None = None
+) -> Change | None:
     path = safe_path(root, name)
     before = path.read_bytes() if path.exists() else None
     before_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
@@ -183,7 +202,7 @@ def change_for(root, name, after, mode=None):
     return Change(name, before, after, before_mode, mode)
 
 
-def target(root):
+def target(root: Path) -> tuple[str, str]:
     data = tomllib.loads(safe_path(root, "pyproject.toml").read_text())
     sources = data.get("tool", {}).get("uv", {}).get("sources", {})
     source = sources.get("jellyfin-plugin-toolkit", {})
@@ -202,10 +221,16 @@ def target(root):
     match = re.fullmatch(pattern, url or "")
     if not match:
         raise ValueError("Toolkit updates require a canonical GitHub release wheel URL")
-    return url, match[1]
+    return str(url), match[1]
 
 
-def plan(root, base_ref=None, *, download=False, git_root=None):
+def plan(
+    root: Path,
+    base_ref: str | None = None,
+    *,
+    download: bool = False,
+    git_root: Path | None = None,
+) -> list[Change]:
     from jellyfin_plugin_toolkit.release.service import (
         github_json,
         release_for_tag,
@@ -213,6 +238,16 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
     )
 
     root = Path(root)
+    from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT
+
+    if root.resolve() == RESOURCE_ROOT.parents[2]:
+        from jellyfin_plugin_toolkit.typing_policy import materialize
+
+        project = safe_path(root, "pyproject.toml")
+        change = change_for(
+            root, "pyproject.toml", materialize(project.read_text()).encode()
+        )
+        return [change] if change else []
     url, selected = target(root)
     tag = "v" + selected
     release = release_for_tag(REPOSITORY, tag)
@@ -233,18 +268,33 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
             source = safe_path(root, name)
             if source.exists():
                 shutil.copy2(source, staged / name)
+        metadata = tomllib.loads((staged / "pyproject.toml").read_text())
+        development = any(
+            re.match(r"jellyfin[-_]plugin[-_]toolkit(?:\s|[<>=!~;\[]|$)", dependency)
+            for dependency in metadata.get("dependency-groups", {}).get("dev", [])
+            if isinstance(dependency, str)
+        )
         subprocess.run(
             [
                 "uv",
                 "add",
                 "--no-sync",
                 "--no-build",
+                *(["--dev"] if development else []),
                 "jellyfin-plugin-toolkit @ " + url,
             ],
             cwd=staged,
             check=True,
         )
         selected_record = record(staged, release=True)
+        project = staged / "pyproject.toml"
+        if "mypy" in tomllib.loads(project.read_text()).get("tool", {}):
+            from jellyfin_plugin_toolkit.typing_policy import materialize
+
+            policy = released_policy(
+                selected_record["source"], selected_record["sha256"]
+            )
+            project.write_text(materialize(project.read_text(), policy))
         new = {"repository": REPOSITORY, "version": tag, "revision": revision}
         if base_ref:
             old_lock = tomllib.loads(
@@ -276,7 +326,7 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
         ):
             if entry.get("type") == "file":
                 files[entry["path"]] = b"workflow"
-        changes = []
+        changes: list[Change | None] = []
         for name in ("pyproject.toml", "uv.lock"):
             changes.append(change_for(root, name, (staged / name).read_bytes()))
         for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
@@ -299,11 +349,27 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
         return [change for change in changes if change]
 
 
-def transaction_path(root):
+def released_policy(url: str, digest: str) -> bytes:
+    """Read a known data member from the resolved wheel, never import proposed code."""
+    with urllib.request.urlopen(url, timeout=30) as response:
+        payload = response.read()
+    if hashlib.sha256(payload).hexdigest() != digest:
+        raise ValueError("Released policy wheel differs from its locked SHA256")
+    member = "jellyfin_plugin_toolkit/resources/configs/mypy.toml"
+    with zipfile.ZipFile(io.BytesIO(payload)) as wheel:
+        matches = [entry for entry in wheel.infolist() if entry.filename == member]
+        if len(matches) != 1 or matches[0].file_size > 65536:
+            raise ValueError(
+                "Released wheel has no unambiguous supported typing policy"
+            )
+        return wheel.read(matches[0])
+
+
+def transaction_path(root: Path) -> Path:
     return safe_path(root, ".build/binding-transaction")
 
 
-def write_durable(path, data, mode=0o644):
+def write_durable(path: Path, data: bytes, mode: int = 0o644) -> None:
     with path.open("wb") as stream:
         stream.write(data)
         stream.flush()
@@ -311,7 +377,7 @@ def write_durable(path, data, mode=0o644):
     path.chmod(mode)
 
 
-def validate_original(root, item):
+def validate_original(root: Path, item: Change) -> None:
     path = safe_path(root, item.name)
     actual = path.read_bytes() if path.exists() else None
     mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
@@ -319,7 +385,7 @@ def validate_original(root, item):
         raise ValueError("Binding changed during synchronization: " + item.name)
 
 
-def recover(root):
+def recover(root: Path) -> None:
     """Explicitly finish rollback after a process interruption; never discard new edits."""
     folder = transaction_path(root)
     if not folder.exists():
@@ -330,7 +396,7 @@ def recover(root):
     manifest = json.loads(
         safe_path(root, ".build/binding-transaction/manifest.json").read_text()
     )
-    originals = []
+    originals: list[tuple[Path, bytes | None, int]] = []
     for item in manifest:
         name = item["name"]
         if name not in {
@@ -359,7 +425,7 @@ def recover(root):
     shutil.rmtree(folder)
 
 
-def apply(root, changes):
+def apply(root: Path, changes: Sequence[Change]) -> None:
     """Stage all bytes and journal originals before replacement; recover interrupted writes."""
     if not changes:
         return
@@ -412,7 +478,7 @@ def apply(root, changes):
                     shutil.rmtree(folder)
 
 
-def preview(changes):
+def preview(changes: Sequence[Change]) -> None:
     for item in changes:
         print(
             "".join(
@@ -431,13 +497,13 @@ def preview(changes):
         print("Toolkit bindings are synchronized.")
 
 
-def check_integrations(root, config):
+def check_integrations(root: Path, config: Configuration) -> None:
     """Check bindings for default components; consumer overrides retain ownership."""
     checks = config.validation.check_targets
     tooling = "tooling" in checks and not replaces(config, "check-tooling")
     frontend = config.frontend
     frontend_checks = "frontend" in checks and not replaces(config, "check-frontend")
-    expected = []
+    expected: list[tuple[str, str]] = []
     if tooling:
         expected.extend(
             [

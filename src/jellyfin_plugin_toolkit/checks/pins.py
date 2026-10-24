@@ -4,12 +4,13 @@ import json
 import re
 from importlib.metadata import distribution
 from pathlib import Path
+from typing import Any
 
 from jellyfin_plugin_toolkit.bindings import reference_tag, workflow_references
 from jellyfin_plugin_toolkit.provenance import REPOSITORY, package_version, record
 
 
-def check_pins(root, release=False):
+def check_pins(root: Path, release: bool = False) -> dict[str, Any]:
     root = Path(root)
     selected = record(root, release=release)
     if selected["version"] != package_version():
@@ -21,7 +22,7 @@ def check_pins(root, release=False):
             raise ValueError(
                 "Installed toolkit differs from uv.lock; run uv sync --locked"
             )
-    pins = set()
+    pins: set[str] = set()
     for workflow in (root / ".github/workflows").glob("*.y*ml"):
         for match in workflow_references(workflow.read_text(), REPOSITORY):
             tag = reference_tag(match)

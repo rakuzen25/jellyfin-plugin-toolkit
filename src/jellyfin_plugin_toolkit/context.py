@@ -1,5 +1,12 @@
 """Consumer configuration; toolkit installation paths never identify a plugin root."""
 
+from typing import TYPE_CHECKING, Self
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.configuration import Plugin
+
 import json
 import os
 import re
@@ -14,7 +21,7 @@ from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT
 TOOLKIT_ROOT = RESOURCE_ROOT
 
 
-def relative(root: Path, value: str) -> Path:
+def relative(root: Path, value: object) -> Path:
     if not isinstance(value, str) or not value or "\\" in value:
         raise ValueError("Configured path must be a nonempty relative path")
     path = root / value
@@ -25,7 +32,7 @@ def relative(root: Path, value: str) -> Path:
     return path
 
 
-def output_name(value):
+def output_name(value: object) -> str:
     if not isinstance(value, str) or not value or "\\" in value:
         raise ValueError("Invalid output path")
     path = PurePosixPath(value)
@@ -39,7 +46,7 @@ def output_name(value):
     return value
 
 
-def validate_paths(root, config: Configuration):
+def validate_paths(root: Path, config: Configuration) -> None:
     backend, frontend, browser = config.backend, config.frontend, config.browser
     distribution = config.distribution
     paths = [
@@ -70,8 +77,8 @@ def validate_paths(root, config: Configuration):
     paths.extend(config.architecture.forbidden)
     paths.extend(operation.cwd for operation in config.operations.values())
     base = relative(root, frontend.directory)
-    for entry, output in frontend.entries.items():
-        relative(base, entry)
+    for entry_path, output in frontend.entries.items():
+        relative(base, entry_path)
         output_name(output)
     if frontend.admin_entry:
         relative(base, frontend.admin_entry)
@@ -80,17 +87,20 @@ def validate_paths(root, config: Configuration):
         output_name(asset.name)
     for name in [*frontend.required_assets, *frontend.reload_assets]:
         output_name(name)
-    for entry in [*distribution.notices, *distribution.web_notices]:
-        paths.append(entry.source)
-        output_name(entry.name or Path(entry.source).name)
-    for entry in distribution.payload_notices:
-        output_name(entry.source)
-        output_name(entry.name)
-    for entry in [*distribution.licenses.values(), *distribution.licensed_paths]:
-        for name in entry.notices:
+    for notice in list(distribution.notices) + list(distribution.web_notices):
+        paths.append(notice.source)
+        output_name(notice.name or Path(notice.source).name)
+    for payload in distribution.payload_notices:
+        output_name(payload.source)
+        output_name(payload.name)
+    for license_entry in [
+        *distribution.licenses.values(),
+        *distribution.licensed_paths,
+    ]:
+        for name in license_entry.notices:
             output_name(name)
-    for entry in distribution.licensed_paths:
-        output_name(entry.prefix.rstrip("/"))
+    for licensed_path in distribution.licensed_paths:
+        output_name(licensed_path.prefix.rstrip("/"))
     for value in paths:
         relative(root, value)
     for spec in config.validation.browser_inputs.values():
@@ -103,14 +113,14 @@ class Context:
     root: Path
     config: Configuration
 
-    def __post_init__(self):
-        if isinstance(self.config, dict):
+    def __post_init__(self) -> None:
+        if is_json_object(self.config):
             object.__setattr__(
                 self, "config", Configuration.model_validate(self.config)
             )
 
     @classmethod
-    def load(cls, root: Path | None = None):
+    def load(cls, root: Path | None = None) -> Self:
         if root is None:
             selected = os.environ.get("JELLYFIN_PLUGIN_ROOT")
             root = Path(selected) if selected else Path.cwd()
@@ -149,19 +159,19 @@ class Context:
         return cls(root, config)
 
     @property
-    def identity(self):
+    def identity(self) -> Plugin:
         return self.config.plugin
 
     @property
-    def version(self):
+    def version(self) -> str:
         return (self.root / "version.txt").read_text().strip()
 
     @property
-    def groups(self):
+    def groups(self) -> tuple[str, ...]:
         return tuple(self.config.validation.groups)
 
     @property
-    def images(self):
+    def images(self) -> dict[str, str]:
         return {
             **self.config.images,
             "jellyfin": self.config.host.image,
@@ -169,13 +179,13 @@ class Context:
         }
 
     @property
-    def prefix(self):
+    def prefix(self) -> str:
         return self.identity.id
 
-    def path(self, value):
+    def path(self, value: str) -> Path:
         return relative(self.root, value)
 
-    def generated(self):
+    def generated(self) -> Path:
         from jellyfin_plugin_toolkit.resources_api import prepare
 
         prepare(self.root)

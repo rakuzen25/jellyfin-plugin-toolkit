@@ -1,5 +1,10 @@
 """Disposable installation fixtures with no caller-supplied server or container targets."""
 
+from typing import TYPE_CHECKING, Any, Self
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import hashlib
 import json
 import os
@@ -21,7 +26,7 @@ OWNER_LABEL = "jellyfin-plugin-toolkit.acceptance-owner"
 
 
 class Session:
-    def __init__(self, ctx, archive: Path | None = None):
+    def __init__(self, ctx: Context, archive: Path | None = None) -> None:
         self.context = ctx
         self.name = "plugin-acceptance-" + uuid.uuid4().hex
         self.temporary = tempfile.TemporaryDirectory(prefix=self.name + "-")
@@ -34,29 +39,33 @@ class Session:
         )
         self.base = ""
         self.token = ""
-        self.container_id = None
+        self.container_id = ""
 
-    def docker(self, *args):
+    def docker(self, *args: str) -> str:
         return subprocess.check_output(
             ["docker", *args], text=True, stderr=subprocess.STDOUT
         ).strip()
 
-    def owned(self):
+    def owned(self) -> dict[str, Any]:
         if not self.container_id:
             raise ValueError("No disposable container was created by this session")
-        container = json.loads(self.docker("inspect", self.container_id))[0]
+        container: dict[str, Any] = json.loads(
+            self.docker("inspect", self.container_id)
+        )[0]
         if container["Config"].get("Labels", {}).get(OWNER_LABEL) != self.name:
             raise ValueError(
                 "Disposable container ownership changed; refusing to manage it"
             )
         return container
 
-    def endpoint(self):
+    def endpoint(self) -> None:
         container = self.owned()
         port = container["NetworkSettings"]["Ports"]["8096/tcp"][0]["HostPort"]
         self.base = "http://127.0.0.1:" + port
 
-    def call(self, path, method="GET", body=None):
+    def call(
+        self, path: str, method: str = "GET", body: dict[str, Any] | None = None
+    ) -> Any:
         authorization = 'MediaBrowser Client="PluginAcceptance", Device="Disposable", DeviceId="fixture", Version="1"'
         if self.token:
             authorization += ', Token="' + self.token + '"'
@@ -73,7 +82,7 @@ class Session:
             data = response.read()
             return json.loads(data) if data else None
 
-    def diagnostics(self):
+    def diagnostics(self) -> None:
         if not self.container_id:
             return
         evidence = self.context.root / "dist/evidence"
@@ -85,7 +94,7 @@ class Session:
         except subprocess.CalledProcessError:
             pass
 
-    def ready(self):
+    def ready(self) -> None:
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             try:
@@ -110,13 +119,13 @@ class Session:
             "Disposable Jellyfin did not become ready; inspect dist/evidence/installation-startup.log"
         )
 
-    def restart(self):
+    def restart(self) -> None:
         self.owned()
         self.docker("restart", "--timeout", "15", self.container_id)
         self.endpoint()  # Docker allocates a new ephemeral host port on restart.
         self.ready()
 
-    def assert_loaded(self):
+    def assert_loaded(self) -> None:
         plugins = self.call("/Plugins")
         expected = uuid.UUID(self.context.identity.guid)
         plugin = next(
@@ -126,7 +135,7 @@ class Session:
         if plugin is None or plugin.get("status", plugin.get("Status")) != "Active":
             raise AssertionError("Packaged plugin did not load: " + str(plugin))
 
-    def extract(self, archive, target):
+    def extract(self, archive: Path, target: Path) -> None:
         with zipfile.ZipFile(archive) as package:
             names = members(package)
             metadata = json.loads(package.read("meta.json"))
@@ -143,7 +152,7 @@ class Session:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(package.read(member))
 
-    def replace(self, archive):
+    def replace(self, archive: Path) -> None:
         """Install verified candidate bytes into this fixture, retaining configuration."""
         with tempfile.TemporaryDirectory(
             prefix="replacement-", dir=self.root
@@ -190,7 +199,7 @@ class Session:
                 self.ready()
                 raise
 
-    def populate_media(self, media):
+    def populate_media(self, media: Path) -> None:
         """Plugin adapters may add synthetic fixtures before the read-only mount."""
         with wave.open(str(media / "track.wav"), "wb") as audio:
             audio.setnchannels(1)
@@ -198,7 +207,7 @@ class Session:
             audio.setframerate(8000)
             audio.writeframes(bytes(32000))
 
-    def media_inventory(self):
+    def media_inventory(self) -> dict[str, Any]:
         media = self.root / "media"
         return {
             path.relative_to(media).as_posix(): hashlib.sha256(
@@ -208,7 +217,7 @@ class Session:
             if path.is_file()
         }
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         try:
             config = self.root / "config"
             config.mkdir()
@@ -280,7 +289,7 @@ class Session:
             self.__exit__(None, None, None)
             raise
 
-    def __exit__(self, *exception):
+    def __exit__(self, *exception: object) -> None:
         try:
             if exception and exception[0]:
                 self.diagnostics()
@@ -293,7 +302,7 @@ class Session:
             self.temporary.cleanup()
 
 
-def main(ctx):
+def main(ctx: Context) -> None:
     inventory(ctx)
     with Session(ctx) as session:
         session.restart()

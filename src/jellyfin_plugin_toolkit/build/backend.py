@@ -1,5 +1,10 @@
 """Locked backend publication without host-owned assemblies in the payload."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import os
 import shutil
 from pathlib import Path
@@ -9,13 +14,20 @@ from jellyfin_plugin_toolkit.common.process import executable, run
 from jellyfin_plugin_toolkit.dev.references import ensure
 
 
-def reference_directory(ctx):
+def reference_directory(ctx: Context) -> Path:
     return Path(
         os.environ.get("JELLYFIN_PLUGIN_REFERENCE_DIR", ctx.root / ".build/jellyfin")
     ).resolve()
 
 
-def publish(ctx, output, web, *, configuration="Release", references=None):
+def publish(
+    ctx: Context,
+    output: Path,
+    web: Path,
+    *,
+    configuration: str = "Release",
+    references: Path | None = None,
+) -> None:
     root = ctx.root
     ctx.generated()
     if ctx.config.frontend.enabled and not (web / "config.html").is_file():
@@ -60,7 +72,7 @@ def publish(ctx, output, web, *, configuration="Release", references=None):
             binary.unlink()
 
 
-def maintained_csharp(ctx, pattern):
+def maintained_csharp(ctx: Context, pattern: str) -> list[Path]:
     roots = ctx.config.backend.source_roots
     return sorted(
         p
@@ -70,7 +82,7 @@ def maintained_csharp(ctx, pattern):
     )
 
 
-def prepare(ctx):
+def prepare(ctx: Context) -> None:
     ctx.generated()
     ensure(ctx, reference_directory(ctx))
     for project in maintained_csharp(ctx, "*.csproj"):

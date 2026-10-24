@@ -1,5 +1,10 @@
 """Framework-independent CI operations and receipt writing."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import json
 import os
 
@@ -8,7 +13,15 @@ import jellyfin_plugin_toolkit.ci.planning as ci_planning
 from jellyfin_plugin_toolkit.common import artifacts
 
 
-def plan(ctx, *, base="", full=False, release=False, reuse=False, scheduled=False):
+def plan(
+    ctx: Context,
+    *,
+    base: str = "",
+    full: bool = False,
+    release: bool = False,
+    reuse: bool = False,
+    scheduled: bool = False,
+) -> None:
     root = ctx.root
     try:
         result = ci_planning.plan(ctx, base, full, release, reuse, scheduled)
@@ -74,7 +87,7 @@ def plan(ctx, *, base="", full=False, release=False, reuse=False, scheduled=Fals
             stream.write("### Validation impact\n\n" + summary.replace("\n", "\n\n"))
 
 
-def finish(ctx):
+def finish(ctx: Context) -> None:
     root = ctx.root
     result = ci_planning.finish(
         ctx,
@@ -89,14 +102,14 @@ def finish(ctx):
         raise ValueError("Required validation groups failed")
 
 
-def verify(ctx, run_id):
+def verify(ctx: Context, run_id: str) -> None:
     root = ctx.root
     receipt = json.loads((root / "dist/validation.json").read_text())
     ci_evidence.verify_run(os.environ["GITHUB_REPOSITORY"], run_id, receipt)
     ci_evidence.verify(ctx, receipt, os.environ["GITHUB_REPOSITORY"], run_id)
 
 
-def web_record(ctx):
+def web_record(ctx: Context) -> None:
     root = ctx.root
     path = root / "dist/web-build.json"
     current = artifacts.web_inputs(root)

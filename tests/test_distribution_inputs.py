@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from consumer_fixture import config, create_consumer
 
@@ -12,14 +13,14 @@ from jellyfin_plugin_toolkit.common.artifacts import digest, web_inputs
 
 
 class DistributionInputTests(unittest.TestCase):
-    def fixture(self, root):
+    def fixture(self, root: Path) -> None:
         selected = copy.deepcopy(config)
         selected["backend"]["project_assemblies"] = ["Example.Core"]
         create_consumer(root, selected)
         (root / "version.txt").write_text("0.1.0\n")
         (root / "uv.lock").write_text("{}")
 
-    def test_nested_asset_mutation_invalidates_web_evidence(self):
+    def test_nested_asset_mutation_invalidates_web_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.fixture(root)
@@ -31,12 +32,14 @@ class DistributionInputTests(unittest.TestCase):
             nested.write_text("changed")
             self.assertNotEqual(first, web_inputs(root))
 
-    def test_version_normalization_applies_only_to_owned_project_dependencies(self):
+    def test_version_normalization_applies_only_to_owned_project_dependencies(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.fixture(root)
             path = Path("packages.lock.json")
-            lock = {
+            lock: dict[str, Any] = {
                 "dependencies": {
                     "net10.0": {
                         "Host": {

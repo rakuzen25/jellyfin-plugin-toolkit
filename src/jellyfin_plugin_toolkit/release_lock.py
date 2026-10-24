@@ -13,7 +13,7 @@ from jellyfin_plugin_toolkit.automation import commit_identity
 from jellyfin_plugin_toolkit.binding_pr import api, eligible
 
 
-def refresh(root, repository, number, bot):
+def refresh(root: Path, repository: str, number: str | int, bot: str) -> None:
     pr = api(repository, f"pulls/{number}")
     if not eligible(pr, repository, bot):
         raise ValueError("Expected an open same-repository release bot PR")

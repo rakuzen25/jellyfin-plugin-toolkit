@@ -1,16 +1,17 @@
 """Expensive fixture-only checks reuse results for identical emitted behavior."""
 
 import os
+from typing import Any
 from unittest.mock import patch
 
 from consumer_fixture import ConsumerTestCase
 
 from jellyfin_plugin_toolkit.ci import browser, evidence, policy
-from jellyfin_plugin_toolkit.configuration import Rule
+from jellyfin_plugin_toolkit.configuration import BrowserInputs, Rule
 
 
 class BrowserInputTests(ConsumerTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
         self.ctx.config.validation.rules.append(
             Rule(
@@ -19,16 +20,21 @@ class BrowserInputTests(ConsumerTestCase):
             )
         )
         self.ctx.config.validation.browser_inputs = {
-            "performance": {
-                "files": [
-                    "tests/browser/performance/**",
-                    "tests/browser/fixtures/**",
-                    "tests/browser/playwright.config.cjs",
-                ],
-                "assets": ["renderer.js", "renderer.css"],
-                "projects": ["stress-chromium", "stress-mobile-chromium"],
-                "workers": 1,
-            }
+            key: BrowserInputs.model_validate(value)
+            for key, value in (
+                {
+                    "performance": {
+                        "files": [
+                            "tests/browser/performance/**",
+                            "tests/browser/fixtures/**",
+                            "tests/browser/playwright.config.cjs",
+                        ],
+                        "assets": ["renderer.js", "renderer.css"],
+                        "projects": ["stress-chromium", "stress-mobile-chromium"],
+                        "workers": 1,
+                    }
+                }
+            ).items()
         }
         for name, content in {
             "tests/browser/performance/song.spec.cjs": "test playback",
@@ -46,10 +52,10 @@ class BrowserInputTests(ConsumerTestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
 
-    def key(self):
+    def key(self) -> str:
         return policy.fingerprints(self.ctx, browser.capture(self.ctx))["performance"]
 
-    def test_backend_lint_and_unused_assets_do_not_invalidate_stress(self):
+    def test_backend_lint_and_unused_assets_do_not_invalidate_stress(self) -> None:
         original = self.key()
         before_policy = policy.policy_fingerprint(self.ctx)
         for name in ["src/Host/Plugin.cs", "pnpm-lock.yaml", "dist/web/config.html"]:
@@ -58,7 +64,7 @@ class BrowserInputTests(ConsumerTestCase):
                 self.assertEqual(original, self.key())
                 self.assertEqual(before_policy, policy.policy_fingerprint(self.ctx))
 
-    def test_waiver_changes_affect_validation_inputs_but_not_stress_reuse(self):
+    def test_waiver_changes_affect_validation_inputs_but_not_stress_reuse(self) -> None:
         from datetime import UTC, datetime, timedelta
 
         from jellyfin_plugin_toolkit.configuration import AdvisoryWaiver
@@ -90,7 +96,7 @@ class BrowserInputTests(ConsumerTestCase):
             policy.fingerprints(self.ctx, browser.capture(self.ctx))["artifacts"],
         )
 
-    def test_python_dev_lock_changes_do_not_invalidate_stress_or_policy(self):
+    def test_python_dev_lock_changes_do_not_invalidate_stress_or_policy(self) -> None:
         original = self.key()
         before_policy = policy.policy_fingerprint(self.ctx)
         lock = self.root / "uv.lock"
@@ -103,7 +109,9 @@ class BrowserInputTests(ConsumerTestCase):
         self.assertEqual(original, self.key())
         self.assertEqual(before_policy, policy.policy_fingerprint(self.ctx))
 
-    def test_behavior_fixtures_tests_and_execution_settings_invalidate_stress(self):
+    def test_behavior_fixtures_tests_and_execution_settings_invalidate_stress(
+        self,
+    ) -> None:
         for name in [
             "dist/web/renderer.js",
             "dist/web/renderer.css",
@@ -125,14 +133,14 @@ class BrowserInputTests(ConsumerTestCase):
         with patch.dict(os.environ, {"ImageVersion": "different-runner-image"}):
             self.assertNotEqual(original, self.key())
 
-    def test_unclassified_and_missing_precise_inputs_fail_closed(self):
+    def test_unclassified_and_missing_precise_inputs_fail_closed(self) -> None:
         self.ctx.config.validation.browser_inputs["performance"].files.append(
             "tests/missing/**"
         )
         with self.assertRaisesRegex(ValueError, "matches no maintained"):
             self.key()
 
-    def test_publication_can_verify_provenance_without_rebuilding_assets(self):
+    def test_publication_can_verify_provenance_without_rebuilding_assets(self) -> None:
         proof = browser.capture(self.ctx)
         expected = browser.verify(self.ctx, proof)
         for path in (self.root / "dist/web").iterdir():
@@ -142,8 +150,8 @@ class BrowserInputTests(ConsumerTestCase):
         with self.assertRaisesRegex(ValueError, "source or execution"):
             browser.verify(self.ctx, proof)
 
-    def test_execution_must_match_planned_assets_and_settings(self):
-        selection = {"browser": browser.capture(self.ctx)}
+    def test_execution_must_match_planned_assets_and_settings(self) -> None:
+        selection: dict[str, Any] = {"browser": browser.capture(self.ctx)}
         browser.verify_execution(
             self.ctx, selection, "performance", "stress-chromium", 1
         )
@@ -157,27 +165,27 @@ class BrowserInputTests(ConsumerTestCase):
                 self.ctx, selection, "performance", "stress-chromium", 1
             )
 
-    def test_malformed_asset_receipts_are_rejected(self):
+    def test_malformed_asset_receipts_are_rejected(self) -> None:
         proof = browser.capture(self.ctx)
         proof["performance"]["assets"] = {"../outside.js": "a" * 64}
         with self.assertRaises(ValueError):
             browser.verify(self.ctx, proof)
 
-    def test_changing_group_contract_or_workflow_invalidates_reuse_policy(self):
+    def test_changing_group_contract_or_workflow_invalidates_reuse_policy(self) -> None:
         initial = policy.policy_fingerprint(self.ctx)
         (self.root / ".github/workflows/validate.yml").write_text("new workflow")
         self.assertNotEqual(initial, policy.policy_fingerprint(self.ctx))
 
-    def test_reuse_receipt_records_direct_executions(self):
+    def test_reuse_receipt_records_direct_executions(self) -> None:
         # A direct reference may never point at another reused result.
-        run = {"id": 2}
-        receipt = {
+        run: dict[str, Any] = {"id": 2}
+        receipt: dict[str, Any] = {
             "policy": "p",
             "inputs": {"backend": "f"},
             "groups": {"backend": "success"},
             "reused": {"backend": {"run_id": "1"}},
         }
-        origin = {**receipt, "reused": {"backend": {"run_id": "0"}}}
+        origin: dict[str, Any] = {**receipt, "reused": {"backend": {"run_id": "0"}}}
         with (
             patch.object(
                 evidence,

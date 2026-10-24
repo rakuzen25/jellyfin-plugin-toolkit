@@ -2,6 +2,9 @@
 
 import hashlib
 import json
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 from jellyfin_plugin_toolkit.common.source_inventory import (
     frontend_inputs,
@@ -10,7 +13,7 @@ from jellyfin_plugin_toolkit.common.source_inventory import (
 from jellyfin_plugin_toolkit.context import Context
 
 
-def digest(root, paths, normalize_version=False):
+def digest(root: Path, paths: Iterable[Path], normalize_version: bool = False) -> str:
     value = hashlib.sha256()
     for path in sorted(paths):
         data = (root / path).read_bytes()
@@ -37,7 +40,7 @@ def digest(root, paths, normalize_version=False):
     return value.hexdigest()
 
 
-def artifact_hashes(root):
+def artifact_hashes(root: Path) -> dict[str, str]:
     return {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted((root / "dist").iterdir())
@@ -45,7 +48,7 @@ def artifact_hashes(root):
     }
 
 
-def web_inputs(root):
+def web_inputs(root: Path) -> dict[str, Any]:
     ctx = Context.load(root)
     return {
         "input": digest(root, frontend_inputs(ctx, source_files(root))),
@@ -59,6 +62,6 @@ def web_inputs(root):
     }
 
 
-def verify_web(root):
+def verify_web(root: Path) -> None:
     if json.loads((root / "dist/web-build.json").read_text()) != web_inputs(root):
         raise ValueError("Prepared frontend inputs or asset hashes changed")

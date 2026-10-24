@@ -12,6 +12,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 from jellyfin_plugin_toolkit.common.release_metadata import load_release
 from jellyfin_plugin_toolkit.context import Context
@@ -67,7 +68,7 @@ def prepare(root: Path, repository: str, tag: str, environment: Path) -> None:
         )
 
 
-def github_json(repository: str, endpoint: str):
+def github_json(repository: str, endpoint: str) -> Any:
     token = os.environ.get("GH_TOKEN", "")
     if not token:
         raise ValueError("GH_TOKEN is required to inspect the draft release")
@@ -102,7 +103,7 @@ def artifact_hashes(
     }
     if ctx.config.distribution.web:
         expected.add(f"{prefix}-web-{release.version}.zip")
-    hashes = {}
+    hashes: dict[str, str] = {}
     for line in (directory / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split("  ", 1)
         if (
@@ -140,8 +141,8 @@ def artifact_hashes(
     return hashes
 
 
-def release_for_tag(repository: str, tag: str) -> dict | None:
-    matches: list[dict] = []
+def release_for_tag(repository: str, tag: str) -> dict[str, Any] | None:
+    matches: list[dict[str, Any]] = []
     page = 1
     while True:
         releases = github_json(repository, f"/releases?per_page=100&page={page}")
@@ -164,7 +165,7 @@ def tag_commit(repository: str, tag: str) -> str:
         reference = github_json(repository, "/git/tags/" + reference["sha"])["object"]
     if reference["type"] != "commit":
         raise ValueError("Release tag does not identify a commit")
-    return reference["sha"]
+    return str(reference["sha"])
 
 
 def resume_draft(root: Path, repository: str, output: Path) -> None:
@@ -219,7 +220,7 @@ def upload(root: Path, directory: Path, repository: str, tag: str) -> None:
     names = [asset["name"] for asset in release.get("assets", [])]
     if len(set(names)) != len(names):
         raise ValueError("Duplicate existing release assets")
-    missing = []
+    missing: list[str] = []
     with tempfile.TemporaryDirectory(
         prefix="jellyfin-plugin-existing-assets-"
     ) as temporary:

@@ -1,5 +1,15 @@
 """Fixture-only browser test identity, independent of unrelated build inputs."""
 
+from collections.abc import Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.configuration import BrowserInputs
+    from jellyfin_plugin_toolkit.context import Context
+
 import fnmatch
 import hashlib
 import json
@@ -14,14 +24,14 @@ from jellyfin_plugin_toolkit.common.source_inventory import (
 from jellyfin_plugin_toolkit.context import output_name
 
 
-def fingerprint(value):
+def fingerprint(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
 
 
-def test_inputs(ctx, spec, maintained):
-    selected = set()
+def test_inputs(ctx: Context, spec: BrowserInputs, maintained: Sequence[Path]) -> str:
+    selected: set[Path] = set()
     for pattern in spec.files:
         matches = {
             path for path in maintained if fnmatch.fnmatchcase(path.as_posix(), pattern)
@@ -34,7 +44,7 @@ def test_inputs(ctx, spec, maintained):
     return digest(ctx.root, selected)
 
 
-def settings(ctx, group, spec):
+def settings(ctx: Context, group: str, spec: BrowserInputs) -> dict[str, Any]:
     return {
         "group": group,
         "projects": spec.projects,
@@ -47,12 +57,12 @@ def settings(ctx, group, spec):
     }
 
 
-def capture(ctx):
+def capture(ctx: Context) -> dict[str, dict[str, Any]]:
     if not ctx.config.validation.browser_inputs:
         return {}
     maintained = source_files(ctx.root)
     source = digest(ctx.root, frontend_inputs(ctx, maintained))
-    files = {}
+    files: dict[str, str] = {}
     for path in sorted((ctx.root / "dist/web").rglob("*")):
         if path.is_symlink():
             raise ValueError("Browser assets cannot contain symlinks")
@@ -60,9 +70,9 @@ def capture(ctx):
             files[path.relative_to(ctx.root / "dist/web").as_posix()] = hashlib.sha256(
                 path.read_bytes()
             ).hexdigest()
-    result = {}
+    result: dict[str, dict[str, Any]] = {}
     for group, spec in ctx.config.validation.browser_inputs.items():
-        assets = {}
+        assets: dict[str, str] = {}
         for pattern in spec.assets:
             matched = {
                 name: value
@@ -87,19 +97,19 @@ def capture(ctx):
     return result
 
 
-def verify(ctx, proofs):
+def verify(ctx: Context, proofs: dict[str, Any]) -> dict[str, str]:
     """Validate a trusted receipt without rebuilding assets in the publication job."""
     specs = ctx.config.validation.browser_inputs
-    if not isinstance(proofs, dict) or set(proofs) != set(specs):
+    if not is_json_object(proofs) or set(proofs) != set(specs):
         raise ValueError("Browser evidence does not match configured groups")
     if not specs:
         return {}
     maintained = source_files(ctx.root)
     source = digest(ctx.root, frontend_inputs(ctx, maintained))
-    results = {}
+    results: dict[str, str] = {}
     for group, spec in specs.items():
         proof = proofs[group]
-        if not isinstance(proof, dict) or set(proof) != {
+        if not is_json_object(proof) or set(proof) != {
             "source",
             "tests",
             "assets",
@@ -114,7 +124,7 @@ def verify(ctx, proofs):
         ):
             raise ValueError("Browser source or execution inputs changed")
         assets = proof["assets"]
-        if not isinstance(assets, dict) or not assets:
+        if not is_json_object(assets) or not assets:
             raise ValueError("Browser evidence has no built assets")
         for name, value in assets.items():
             output_name(name)
@@ -130,7 +140,7 @@ def verify(ctx, proofs):
             raise ValueError("Browser asset inventory does not match configuration")
         runner = proof["runner_image"]
         if (
-            not isinstance(runner, dict)
+            not is_json_object(runner)
             or set(runner) != {"ImageOS", "ImageVersion", "RUNNER_ARCH", "RUNNER_OS"}
             or any(not isinstance(value, str) for value in runner.values())
         ):
@@ -142,7 +152,9 @@ def verify(ctx, proofs):
     return results
 
 
-def verify_execution(ctx, selection, group, project, workers):
+def verify_execution(
+    ctx: Context, selection: dict[str, Any], group: str, project: str, workers: int
+) -> None:
     spec = ctx.config.validation.browser_inputs.get(group)
     if spec is None:
         return

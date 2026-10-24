@@ -9,13 +9,20 @@ import subprocess
 import tempfile
 import tomllib
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from jellyfin_plugin_toolkit import bindings
 from jellyfin_plugin_toolkit.automation import check_renovate, commit_identity
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
 
 
-def api(repository, endpoint, method="GET", body=None):
+def api(
+    repository: str,
+    endpoint: str,
+    method: str = "GET",
+    body: dict[str, Any] | None = None,
+) -> Any:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Expected a repository in OWNER/REPO form")
     resource = "repos/" + repository + ("/" + endpoint if endpoint else "")
@@ -28,7 +35,7 @@ def api(repository, endpoint, method="GET", body=None):
     return json.loads(output) if output.strip() else None
 
 
-def eligible(pr, repository, bot):
+def eligible(pr: dict[str, Any], repository: str, bot: str) -> bool:
     return (
         pr.get("state") == "open"
         and pr.get("user", {}).get("login") == bot
@@ -45,7 +52,12 @@ def eligible(pr, repository, bot):
     )
 
 
-def discover(repository, bot, run_id=None, number=None):
+def discover(
+    repository: str,
+    bot: str,
+    run_id: str | int | None = None,
+    number: int | None = None,
+) -> dict[str, Any] | None:
     if number:
         candidates = [api(repository, "pulls/" + str(number))]
         sha = None
@@ -64,10 +76,11 @@ def discover(repository, bot, run_id=None, number=None):
     ]
     if len(candidates) != 1:
         return None
-    return candidates[0]
+    selected: dict[str, Any] = candidates[0]
+    return selected
 
 
-def snapshot(repository_root, revision, destination):
+def snapshot(repository_root: Path, revision: str, destination: Path) -> None:
     """Materialize only binding data, never check out or execute a PR's source."""
     data = bindings.git(
         repository_root,
@@ -103,7 +116,7 @@ def snapshot(repository_root, revision, destination):
         path.chmod(int(mode, 8) & 0o777)
 
 
-def validate_project_update(before, after):
+def validate_project_update(before: bytes, after: bytes) -> None:
     trusted = tomllib.loads(before.decode())
     proposed = tomllib.loads(after.decode())
     sanitized = copy.deepcopy(proposed)
@@ -118,11 +131,20 @@ def validate_project_update(before, after):
     sanitized.setdefault("tool", {}).setdefault("uv", {}).setdefault("sources", {})[
         "jellyfin-plugin-toolkit"
     ] = trusted_source
+    trusted_mypy = trusted.get("tool", {}).get("mypy")
+    proposed_mypy = sanitized.get("tool", {}).get("mypy")
+    if is_json_object(trusted_mypy) and is_json_object(proposed_mypy):
+        if "strict" in trusted_mypy:
+            proposed_mypy["strict"] = trusted_mypy["strict"]
+        else:
+            proposed_mypy.pop("strict", None)
     if sanitized != trusted:
         raise ValueError("Toolkit update changed unrelated Python project settings")
 
 
-def prepare(root, repository, pr, bot):
+def prepare(
+    root: Path, repository: str, pr: dict[str, Any], bot: str
+) -> dict[str, Any] | None:
     if not eligible(pr, repository, bot):
         raise ValueError(
             "Only configured bot-authored, same-repository open PRs are eligible"
@@ -197,7 +219,7 @@ def prepare(root, repository, pr, bot):
         }
 
 
-def commit(root, repository, proposal, bot):
+def commit(root: Path, repository: str, proposal: dict[str, Any], bot: str) -> None:
     if (
         proposal.get("schema") != 1
         or proposal.get("repository") != repository
@@ -213,7 +235,7 @@ def commit(root, repository, proposal, bot):
         return
     identity = commit_identity()
     check_renovate(root, identity)
-    tree = []
+    tree: list[dict[str, Any]] = []
     for item in proposal["changes"]:
         blob = api(
             repository,

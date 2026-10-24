@@ -8,6 +8,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit import advisories as audit
@@ -17,7 +18,7 @@ ID = "GHSA-vfj7-8cjw-p6xm"
 NOW = datetime.now(UTC)
 
 
-def waiver(**changes):
+def waiver(**changes: Any) -> AdvisoryWaiver:
     return AdvisoryWaiver.model_validate(
         dict(
             ecosystem="npm",
@@ -33,7 +34,9 @@ def waiver(**changes):
     )
 
 
-def entry(fixes=None, severity="high", **changes):
+def entry(
+    fixes: list[str] | None = None, severity: str = "high", **changes: Any
+) -> dict[str, Any]:
     result = audit.finding(
         "npm",
         "braces",
@@ -48,13 +51,13 @@ def entry(fixes=None, severity="high", **changes):
 
 
 class AdvisoryTests(unittest.TestCase):
-    def test_fixes_block_at_every_severity_and_unavailable_fixes_warn(self):
+    def test_fixes_block_at_every_severity_and_unavailable_fixes_warn(self) -> None:
         for severity in ("low", "moderate", "high", "critical"):
             for fixes in ([], [">=4.0.0"], ["4.0.0-beta.1"]):
                 findings, _ = audit.evaluate([entry(fixes, severity)], [], NOW)
                 self.assertEqual(bool(fixes), findings[0]["blocking"])
 
-    def test_exact_scope_expiry_renewal_and_deduplication(self):
+    def test_exact_scope_expiry_renewal_and_deduplication(self) -> None:
         selected = waiver()
         finding = entry([">=4.0.0"])
         findings, warnings = audit.evaluate(
@@ -77,7 +80,7 @@ class AdvisoryTests(unittest.TestCase):
         findings, _ = audit.evaluate([finding], [waiver()], NOW)
         self.assertFalse(findings[0]["blocking"])
 
-    def test_invalid_waiver_dates_and_duplicate_case_insensitive_scopes(self):
+    def test_invalid_waiver_dates_and_duplicate_case_insensitive_scopes(self) -> None:
         data = waiver().model_dump()
         for changes in (
             {"issued_at": (NOW + timedelta(days=1)).isoformat()},
@@ -101,8 +104,8 @@ class AdvisoryTests(unittest.TestCase):
         )
         self.assertFalse(findings[0]["blocking"])
 
-    def test_node_metadata_unpublished_missing_and_exclusions(self):
-        report = {
+    def test_node_metadata_unpublished_missing_and_exclusions(self) -> None:
+        report: dict[str, Any] = {
             "metadata": {"vulnerabilities": {"critical": 1}},
             "advisories": {
                 "1": {
@@ -125,8 +128,10 @@ class AdvisoryTests(unittest.TestCase):
                 patched_versions=patched, patched_versions_unpublished=unpublished
             )
             with patch.object(audit, "command_json", side_effect=[{}, candidate]):
-                findings = []
-                audit.node_findings(None, findings)
+                findings: list[dict[str, Any]] = []
+                audit.node_findings(
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))), findings
+                )
             self.assertEqual(expected, bool(findings[0]["fixes"]))
         for config in (
             {"audit": {"ignore": [ID]}},
@@ -137,20 +142,26 @@ class AdvisoryTests(unittest.TestCase):
                 patch.object(audit, "command_json", return_value=config),
                 self.assertRaisesRegex(ValueError, "exclusions"),
             ):
-                audit.node_findings(None, [])
-        for bad in (
+                audit.node_findings(
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))), []
+                )
+        bad: dict[str, Any]
+        cases_bad: tuple[dict[str, Any], ...] = (
             {},
             {"metadata": {}, "advisories": []},
             {"metadata": {}, "advisories": {"1": {}}},
-        ):
+        )
+        for bad in cases_bad:
             with (
                 patch.object(audit, "command_json", side_effect=[{}, bad]),
                 self.assertRaises((ValueError, KeyError)),
             ):
-                audit.node_findings(None, [])
+                audit.node_findings(
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))), []
+                )
 
-    def test_nuget_fixes_match_package_not_severity_or_constraints(self):
-        data = {
+    def test_nuget_fixes_match_package_not_severity_or_constraints(self) -> None:
+        data: dict[str, Any] = {
             "vulnerabilities": [
                 {
                     "package": {"ecosystem": "nuget", "name": "Example"},
@@ -167,7 +178,7 @@ class AdvisoryTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             audit.nuget_fixes(data, "example")
 
-    def test_conflicting_fix_metadata_and_unknown_counts_fail(self):
+    def test_conflicting_fix_metadata_and_unknown_counts_fail(self) -> None:
         with self.assertRaisesRegex(ValueError, "Conflicting"):
             audit.evaluate([entry(), entry(["4.0.0"])], [], NOW)
         with (
@@ -181,9 +192,11 @@ class AdvisoryTests(unittest.TestCase):
             ),
             self.assertRaisesRegex(ValueError, "counts"),
         ):
-            audit.node_findings(None, [])
+            audit.node_findings(
+                cast(audit.AuditContext, SimpleNamespace(root=Path("."))), []
+            )
 
-    def test_native_nuget_suppressions_stop_before_restore(self):
+    def test_native_nuget_suppressions_stop_before_restore(self) -> None:
         with (
             patch.object(
                 audit,
@@ -191,13 +204,18 @@ class AdvisoryTests(unittest.TestCase):
                 return_value={"Items": {"NuGetAuditSuppress": [{}]}},
             ),
             patch.object(audit, "run") as run,
+            self.assertRaisesRegex(ValueError, "suppressions"),
         ):
-            with self.assertRaisesRegex(ValueError, "suppressions"):
-                audit.nuget_findings(None, "x.csproj", [], {})
+            audit.nuget_findings(
+                cast(audit.AuditContext, SimpleNamespace(root=Path("."))),
+                "x.csproj",
+                [],
+                {},
+            )
         run.assert_not_called()
 
-    def test_nuget_api_is_cached_across_versions_and_projects(self):
-        report = {
+    def test_nuget_api_is_cached_across_versions_and_projects(self) -> None:
+        report: dict[str, Any] = {
             "version": 1,
             "projects": [
                 {
@@ -222,7 +240,7 @@ class AdvisoryTests(unittest.TestCase):
                 }
             ],
         }
-        metadata = {
+        metadata: dict[str, Any] = {
             "vulnerabilities": [
                 {
                     "package": {"ecosystem": "nuget", "name": "example"},
@@ -239,11 +257,14 @@ class AdvisoryTests(unittest.TestCase):
             patch.object(audit, "run"),
             patch.object(audit, "github_advisory", return_value=metadata) as remote,
         ):
-            findings = []
-            cache = {}
+            findings: list[dict[str, Any]] = []
+            cache: dict[str, Any] = {}
             for project in ("a.csproj", "b.csproj"):
                 audit.nuget_findings(
-                    SimpleNamespace(root=Path(".")), project, findings, cache
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))),
+                    project,
+                    findings,
+                    cache,
                 )
         remote.assert_called_once_with(ID)
         result, _ = audit.evaluate(findings, [], NOW)
@@ -264,7 +285,10 @@ class AdvisoryTests(unittest.TestCase):
             for project in ("a.csproj", "b.csproj"):
                 with self.assertRaisesRegex(ValueError, "metadata unavailable"):
                     audit.nuget_findings(
-                        SimpleNamespace(root=Path(".")), project, findings, cache
+                        cast(audit.AuditContext, SimpleNamespace(root=Path("."))),
+                        project,
+                        findings,
+                        cache,
                     )
         remote.assert_called_once_with(ID)
         self.assertEqual(2, len(findings))
@@ -272,7 +296,7 @@ class AdvisoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown fix status"):
             audit.evaluate(findings, [], NOW)
 
-    def test_findings_warn_by_default_and_enforcement_is_opt_in(self):
+    def test_findings_warn_by_default_and_enforcement_is_opt_in(self) -> None:
         for enforce in (False, True):
             with (
                 self.subTest(enforce=enforce),
@@ -281,17 +305,20 @@ class AdvisoryTests(unittest.TestCase):
                 root = Path(directory)
                 (root / "pnpm-lock.yaml").touch()
                 summary = root / "summary.md"
-                ctx = SimpleNamespace(
-                    root=root,
-                    config=SimpleNamespace(
-                        backend=SimpleNamespace(projects={}, tests=[]),
-                        advisories=Advisories(fail_on_findings=True)
-                        if enforce
-                        else Advisories(),
+                ctx = cast(
+                    audit.AuditContext,
+                    SimpleNamespace(
+                        root=root,
+                        config=SimpleNamespace(
+                            backend=SimpleNamespace(projects={}, tests=[]),
+                            advisories=Advisories(fail_on_findings=True)
+                            if enforce
+                            else Advisories(),
+                        ),
                     ),
                 )
 
-                def node(_ctx, findings):
+                def node(_ctx: object, findings: list[dict[str, Any]]) -> None:
                     findings.append(entry([">=4.0.0"]))
 
                 with (
@@ -315,19 +342,24 @@ class AdvisoryTests(unittest.TestCase):
                 self.assertIn(ID, summary.read_text())
                 self.assertIn("ERROR:" if enforce else "WARNING:", summary.read_text())
 
-    def test_failures_keep_partial_findings_and_always_write_report(self):
+    def test_failures_keep_partial_findings_and_always_write_report(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "pnpm-lock.yaml").touch()
-            ctx = SimpleNamespace(
-                root=root,
-                config=SimpleNamespace(
-                    backend=SimpleNamespace(projects={"Host": "a.csproj"}, tests=[]),
-                    advisories=Advisories(),
+            ctx = cast(
+                audit.AuditContext,
+                SimpleNamespace(
+                    root=root,
+                    config=SimpleNamespace(
+                        backend=SimpleNamespace(
+                            projects={"Host": "a.csproj"}, tests=[]
+                        ),
+                        advisories=Advisories(),
+                    ),
                 ),
             )
 
-            def node(_ctx, findings):
+            def node(_ctx: object, findings: list[dict[str, Any]]) -> None:
                 findings.append(entry())
 
             with (
@@ -335,9 +367,9 @@ class AdvisoryTests(unittest.TestCase):
                 patch.object(
                     audit, "nuget_findings", side_effect=ValueError("Audit unavailable")
                 ),
+                self.assertRaises(ValueError),
             ):
-                with self.assertRaises(ValueError):
-                    audit.audit(ctx)
+                audit.audit(ctx)
             report = json.loads((root / "dist/evidence/advisories.json").read_text())
             self.assertFalse(report["success"])
             self.assertEqual(1, len(report["findings"]))
@@ -345,8 +377,8 @@ class AdvisoryTests(unittest.TestCase):
                 ["NuGet audit: a.csproj: Audit unavailable"], report["errors"]
             )
 
-    def test_bad_exit_codes_and_malformed_output_fail_closed(self):
-        ctx = SimpleNamespace(root=Path("."))
+    def test_bad_exit_codes_and_malformed_output_fail_closed(self) -> None:
+        ctx = cast(audit.AuditContext, SimpleNamespace(root=Path(".")))
         for status, output in (
             (2, "{}"),
             (0, "no json"),
@@ -355,7 +387,7 @@ class AdvisoryTests(unittest.TestCase):
         ):
             with (
                 patch.object(
-                    audit.subprocess,
+                    subprocess,
                     "run",
                     return_value=subprocess.CompletedProcess([], status, output, ""),
                 ),
