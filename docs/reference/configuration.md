@@ -93,10 +93,12 @@ Bootstrap never edits editor settings. Optional editor setup accepts JSON settin
 
 ## Advisory waivers
 
+Advisory findings are warnings by default and remain visible in logs, the CI summary, and `dist/evidence/advisories.json`. Set `fail_on_findings = true` under `[advisories]` to make unwaived findings with published fixes fail validation. Audit service, configuration, and metadata errors fail in either mode.
+
 Optional `[[advisories.waivers]]` entries waive a fixable finding for one ecosystem, package, exact installed version, and GHSA. Use `ecosystem = "npm"` or `"nuget"`, `package`, `version`, `ghsa`, a nonblank `reason`, an HTTPS tracking `issue` URL, and UTC `issued_at` and `expires_at` timestamp strings. Expiry must follow issuance by no more than 30 days. NuGet package names match without case sensitivity.
 
 Review waiver changes through ordinary PRs. Expired waivers cannot suppress findings; unused and expired entries produce cleanup warnings. Renewals require reviewed timestamp changes. Waivers cannot suppress unknown fix status or audit failures. Native pnpm audit exclusions and NuGet audit suppressions are rejected so this configuration remains the sole exception mechanism.
 
-A published fix counts even when it is a major upgrade, prerelease, or requires a transitive override. Dependency release-age restrictions still apply when installing that fix. No-fix findings need no waiver; a subsequent fresh audit blocks once upstream reports a published fix. The daily check evaluates expiry even without repository changes.
+A published fix counts even when it is a major upgrade, prerelease, or requires a transitive override. Dependency release-age restrictions still apply when installing that fix. No-fix findings need no waiver; a subsequent fresh audit blocks once upstream reports a published fix only when `fail_on_findings` is enabled. The daily check evaluates expiry even without repository changes.
 
-The toolkit repository has no consumer `plugin.toml`; its own Node audit uses the same waiver fields under `[[tool.jpt.advisories.waivers]]` in `pyproject.toml`.
+The toolkit repository has no consumer `plugin.toml`; its own Node audit accepts `fail_on_findings` under `[tool.jpt.advisories]` and the same waiver fields under `[[tool.jpt.advisories.waivers]]` in `pyproject.toml`.
