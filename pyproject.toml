@@ -55,7 +55,7 @@ extends = "src/jellyfin_plugin_toolkit/resources/configs/basedpyright.toml"
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.15"
-include = ["src", "scripts", "tests"]
+include = ["src", "tests"]
 extraPaths = ["src", "tests"]
 
 [tool.jpt.quality]
