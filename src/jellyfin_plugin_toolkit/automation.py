@@ -10,6 +10,8 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
+
 
 def resolve_bot(slug: str) -> dict[str, str]:
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
@@ -56,7 +58,7 @@ class AutomationRecord(BaseModel):
 
 
 def record_identity(record: object) -> dict[str, str]:
-    if not isinstance(record, dict) or type(record.get("schema_version")) is not int:
+    if not is_json_object(record) or type(record.get("schema_version")) is not int:
         raise ValueError("Invalid App ownership record")
     selected = AutomationRecord.model_validate(record)
     login = selected.app_slug + "[bot]"

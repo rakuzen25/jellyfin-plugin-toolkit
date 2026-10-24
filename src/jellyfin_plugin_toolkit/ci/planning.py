@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 import urllib.error
-import urllib.request
 import zipfile
 from datetime import UTC, datetime
 from typing import Any
@@ -82,7 +81,7 @@ def plan(
     required = (
         set(validation.groups)
         if full or release or require_all
-        else set().union(*(ci_policy.impacts(ctx, p) for p in changed))
+        else set[str]().union(*(ci_policy.impacts(ctx, p) for p in changed))
     )
     if baseline:
         required |= {
@@ -100,11 +99,11 @@ def plan(
             OSError,
         ):
             print("Evidence unavailable; required checks will run", file=sys.stderr)
-    full_baseline = {}
+    full_baseline: dict[str, Any] = {}
     if scheduled and not full:
         # All meaningful groups must match a full run, never merely a narrow pass.
         required = (
-            set()
+            set[str]()
             if all(g in proofs for g in validation.runtime)
             else set(validation.groups)
         )
@@ -164,7 +163,7 @@ def finish(
 ) -> dict[str, Any]:
     root = ctx.root
     validation = ci_policy.ValidationPolicy.from_context(ctx)
-    results = {}
+    results: dict[str, str] = {}
     for group in selection["required"]:
         if group in selection["reused"]:
             results[group] = "success"

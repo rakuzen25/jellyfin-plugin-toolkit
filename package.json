@@ -8,8 +8,8 @@
     },
     "scripts": {
         "test": "uv run python -m unittest discover -s tests",
-        "check": "uv run python scripts/quality.py check",
-        "format": "uv run python scripts/quality.py format"
+        "check": "uv run jpt check",
+        "format": "uv run jpt format"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",

@@ -5,9 +5,10 @@ import os
 import subprocess
 import sys
 import traceback
+from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Sequence
+from typing import Annotated
 
 import typer
 
@@ -165,6 +166,11 @@ def check(
     """Check one consumer-defined target or all configured targets."""
     from jellyfin_plugin_toolkit import tasks
 
+    if not (state(ctx).root / "plugin.toml").is_file():
+        from jellyfin_plugin_toolkit.quality import main as quality
+
+        quality(state(ctx).root, target=target)
+        return
     selected = consumer(ctx)
     for name in [target] if target else selected.config.validation.check_targets:
         tasks.check(selected, name)
@@ -177,6 +183,11 @@ def format_command(
     """Format one consumer-defined target or all configured targets."""
     from jellyfin_plugin_toolkit import tasks
 
+    if not (state(ctx).root / "plugin.toml").is_file():
+        from jellyfin_plugin_toolkit.quality import main as quality
+
+        quality(state(ctx).root, fix=True, target=target)
+        return
     selected = consumer(ctx)
     for name in [target] if target else selected.config.validation.check_targets:
         tasks.format_target(selected, name, True)
@@ -198,6 +209,19 @@ def test(
     extra = ctx.args[1:] if ctx.args else []
     from jellyfin_plugin_toolkit import tasks
 
+    if target == "advisories" and not (state(ctx).root / "plugin.toml").is_file():
+        if extra:
+            raise typer.BadParameter("Advisory checks do not accept runner arguments")
+        import tomllib
+
+        from jellyfin_plugin_toolkit.advisories import audit_repository
+        from jellyfin_plugin_toolkit.configuration import Advisories
+
+        root = state(ctx).root
+        metadata = tomllib.loads((root / "pyproject.toml").read_text())
+        policy = metadata.get("tool", {}).get("jpt", {}).get("advisories", {})
+        audit_repository(root, Advisories.model_validate(policy))
+        return
     selected = consumer(ctx)
     for name in [target] if target else selected.config.validation.unit_groups:
         tasks.test(selected, name, extra)
@@ -287,7 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except typer.TyperException as error:
         typer.echo("Error: " + error.format_message(), err=True)
         return error.exit_code
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 -- Convert unexpected CLI errors to a diagnostic and exit status.
         selected = current.get()
         if selected and selected.debug:
             traceback.print_exc(file=sys.stderr)

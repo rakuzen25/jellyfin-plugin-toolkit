@@ -97,6 +97,7 @@ class StarterTests(unittest.TestCase):
                     ["git", "-C", str(root), "check-ignore", "--no-index", name],
                     capture_output=True,
                     text=True,
+                    check=False,
                 )
                 self.assertEqual(0, result.returncode, name)
             maintained = subprocess.run(
@@ -110,6 +111,7 @@ class StarterTests(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             self.assertEqual(1, maintained.returncode)
 
@@ -132,6 +134,11 @@ class StarterTests(unittest.TestCase):
             self.assertNotIn("build", Context.load(root).config.frontend)
             self.assertNotIn("operations", Context.load(root).config)
             self.assertFalse((root / "tests/tooling/test_configuration.py").exists())
+            from jellyfin_plugin_toolkit.quality import python as check_python
+
+            with patch("jellyfin_plugin_toolkit.quality.run") as checks:
+                check_python(root)
+            self.assertEqual(["ruff"], [call.args[2] for call in checks.call_args_list])
             self.assertIn(
                 "configs/eslint.mjs", (root / "eslint.config.mjs").read_text()
             )

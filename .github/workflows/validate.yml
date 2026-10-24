@@ -116,10 +116,9 @@ jobs:
       - run: uv run --no-sync jpt internal ci metadata-check 2>&1 | tee dist/evidence/metadata.log
       - name: Validate Renovate configuration with the upstream validator
         run: >-
-          docker run --rm --network none --entrypoint renovate-config-validator
-          -v "$PWD/renovate.json:/tmp/renovate.json:ro"
+          uv run --no-sync jpt internal automation-check renovate
           ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21
-          --strict /tmp/renovate.json 2>&1 | tee -a dist/evidence/metadata.log
+          2>&1 | tee -a dist/evidence/metadata.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
         with:

@@ -8,7 +8,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit import advisories as audit
@@ -129,7 +129,9 @@ class AdvisoryTests(unittest.TestCase):
             )
             with patch.object(audit, "command_json", side_effect=[{}, candidate]):
                 findings: list[dict[str, Any]] = []
-                audit.node_findings(SimpleNamespace(root=Path(".")), findings)
+                audit.node_findings(
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))), findings
+                )
             self.assertEqual(expected, bool(findings[0]["fixes"]))
         for config in (
             {"audit": {"ignore": [ID]}},
@@ -140,18 +142,23 @@ class AdvisoryTests(unittest.TestCase):
                 patch.object(audit, "command_json", return_value=config),
                 self.assertRaisesRegex(ValueError, "exclusions"),
             ):
-                audit.node_findings(SimpleNamespace(root=Path(".")), [])
+                audit.node_findings(
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))), []
+                )
         bad: dict[str, Any]
-        for bad in (
+        cases_bad: tuple[dict[str, Any], ...] = (
             {},
             {"metadata": {}, "advisories": []},
             {"metadata": {}, "advisories": {"1": {}}},
-        ):
+        )
+        for bad in cases_bad:
             with (
                 patch.object(audit, "command_json", side_effect=[{}, bad]),
                 self.assertRaises((ValueError, KeyError)),
             ):
-                audit.node_findings(SimpleNamespace(root=Path(".")), [])
+                audit.node_findings(
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))), []
+                )
 
     def test_nuget_fixes_match_package_not_severity_or_constraints(self) -> None:
         data: dict[str, Any] = {
@@ -185,7 +192,9 @@ class AdvisoryTests(unittest.TestCase):
             ),
             self.assertRaisesRegex(ValueError, "counts"),
         ):
-            audit.node_findings(SimpleNamespace(root=Path(".")), [])
+            audit.node_findings(
+                cast(audit.AuditContext, SimpleNamespace(root=Path("."))), []
+            )
 
     def test_native_nuget_suppressions_stop_before_restore(self) -> None:
         with (
@@ -195,11 +204,14 @@ class AdvisoryTests(unittest.TestCase):
                 return_value={"Items": {"NuGetAuditSuppress": [{}]}},
             ),
             patch.object(audit, "run") as run,
+            self.assertRaisesRegex(ValueError, "suppressions"),
         ):
-            with self.assertRaisesRegex(ValueError, "suppressions"):
-                audit.nuget_findings(
-                    SimpleNamespace(root=Path(".")), "x.csproj", [], {}
-                )
+            audit.nuget_findings(
+                cast(audit.AuditContext, SimpleNamespace(root=Path("."))),
+                "x.csproj",
+                [],
+                {},
+            )
         run.assert_not_called()
 
     def test_nuget_api_is_cached_across_versions_and_projects(self) -> None:
@@ -249,7 +261,10 @@ class AdvisoryTests(unittest.TestCase):
             cache: dict[str, Any] = {}
             for project in ("a.csproj", "b.csproj"):
                 audit.nuget_findings(
-                    SimpleNamespace(root=Path(".")), project, findings, cache
+                    cast(audit.AuditContext, SimpleNamespace(root=Path("."))),
+                    project,
+                    findings,
+                    cache,
                 )
         remote.assert_called_once_with(ID)
         result, _ = audit.evaluate(findings, [], NOW)
@@ -270,7 +285,10 @@ class AdvisoryTests(unittest.TestCase):
             for project in ("a.csproj", "b.csproj"):
                 with self.assertRaisesRegex(ValueError, "metadata unavailable"):
                     audit.nuget_findings(
-                        SimpleNamespace(root=Path(".")), project, findings, cache
+                        cast(audit.AuditContext, SimpleNamespace(root=Path("."))),
+                        project,
+                        findings,
+                        cache,
                     )
         remote.assert_called_once_with(ID)
         self.assertEqual(2, len(findings))
@@ -287,13 +305,16 @@ class AdvisoryTests(unittest.TestCase):
                 root = Path(directory)
                 (root / "pnpm-lock.yaml").touch()
                 summary = root / "summary.md"
-                ctx = SimpleNamespace(
-                    root=root,
-                    config=SimpleNamespace(
-                        backend=SimpleNamespace(projects={}, tests=[]),
-                        advisories=Advisories(fail_on_findings=True)
-                        if enforce
-                        else Advisories(),
+                ctx = cast(
+                    audit.AuditContext,
+                    SimpleNamespace(
+                        root=root,
+                        config=SimpleNamespace(
+                            backend=SimpleNamespace(projects={}, tests=[]),
+                            advisories=Advisories(fail_on_findings=True)
+                            if enforce
+                            else Advisories(),
+                        ),
                     ),
                 )
 
@@ -325,11 +346,16 @@ class AdvisoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "pnpm-lock.yaml").touch()
-            ctx = SimpleNamespace(
-                root=root,
-                config=SimpleNamespace(
-                    backend=SimpleNamespace(projects={"Host": "a.csproj"}, tests=[]),
-                    advisories=Advisories(),
+            ctx = cast(
+                audit.AuditContext,
+                SimpleNamespace(
+                    root=root,
+                    config=SimpleNamespace(
+                        backend=SimpleNamespace(
+                            projects={"Host": "a.csproj"}, tests=[]
+                        ),
+                        advisories=Advisories(),
+                    ),
                 ),
             )
 
@@ -341,9 +367,9 @@ class AdvisoryTests(unittest.TestCase):
                 patch.object(
                     audit, "nuget_findings", side_effect=ValueError("Audit unavailable")
                 ),
+                self.assertRaises(ValueError),
             ):
-                with self.assertRaises(ValueError):
-                    audit.audit(ctx)
+                audit.audit(ctx)
             report = json.loads((root / "dist/evidence/advisories.json").read_text())
             self.assertFalse(report["success"])
             self.assertEqual(1, len(report["findings"]))
@@ -352,7 +378,7 @@ class AdvisoryTests(unittest.TestCase):
             )
 
     def test_bad_exit_codes_and_malformed_output_fail_closed(self) -> None:
-        ctx = SimpleNamespace(root=Path("."))
+        ctx = cast(audit.AuditContext, SimpleNamespace(root=Path(".")))
         for status, output in (
             (2, "{}"),
             (0, "no json"),

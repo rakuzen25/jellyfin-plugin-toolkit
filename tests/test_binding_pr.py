@@ -78,11 +78,9 @@ class BindingPRTests(unittest.TestCase):
             patch.object(
                 binding_pr, "prepare", return_value=dict(proposal, changes=[])
             ),
+            self.assertRaises(ValueError),
         ):
-            with self.assertRaises(ValueError):
-                binding_pr.commit(
-                    Path("."), "example/plugin", proposal, "renovate[bot]"
-                )
+            binding_pr.commit(Path("."), "example/plugin", proposal, "renovate[bot]")
         self.assertTrue(all(len(call.args) < 3 for call in api.call_args_list))
 
     def test_identity_failure_stops_before_any_write(self) -> None:
@@ -100,11 +98,9 @@ class BindingPRTests(unittest.TestCase):
                 "commit_identity",
                 side_effect=ValueError("Invalid App identity"),
             ),
+            self.assertRaisesRegex(ValueError, "App identity"),
         ):
-            with self.assertRaisesRegex(ValueError, "App identity"):
-                binding_pr.commit(
-                    Path("."), "example/plugin", proposal, "renovate[bot]"
-                )
+            binding_pr.commit(Path("."), "example/plugin", proposal, "renovate[bot]")
         self.assertTrue(all(len(call.args) < 3 for call in api.call_args_list))
 
     def test_app_is_both_author_and_committer(self) -> None:
@@ -121,7 +117,7 @@ class BindingPRTests(unittest.TestCase):
             "name": "fixture-app[bot]",
             "email": "123+fixture-app[bot]@users.noreply.github.com",
         }
-        writes = []
+        writes: list[tuple[str, dict[str, Any]]] = []
 
         def api(
             repository: str,
@@ -150,9 +146,8 @@ class BindingPRTests(unittest.TestCase):
         self.assertFalse(writes[-1][1]["force"])
 
     def test_invalid_proposal_is_rejected_without_github_access(self) -> None:
-        with patch.object(binding_pr, "api") as api:
-            with self.assertRaises(ValueError):
-                binding_pr.commit(Path("."), "example/plugin", {}, "renovate[bot]")
+        with patch.object(binding_pr, "api") as api, self.assertRaises(ValueError):
+            binding_pr.commit(Path("."), "example/plugin", {}, "renovate[bot]")
         api.assert_not_called()
 
 
@@ -167,6 +162,8 @@ class NativeResolverBoundaryTests(unittest.TestCase):
             + b'\n[build-system]\nrequires=["untrusted-backend"]\nbuild-backend="untrusted"\n',
             after + b'\n[tool.uv]\nindex-url="https://attacker.invalid"\n',
         ]:
-            with self.subTest(injected=injected):
-                with self.assertRaisesRegex(ValueError, "unrelated Python"):
-                    binding_pr.validate_project_update(before, injected)
+            with (
+                self.subTest(injected=injected),
+                self.assertRaisesRegex(ValueError, "unrelated Python"),
+            ):
+                binding_pr.validate_project_update(before, injected)

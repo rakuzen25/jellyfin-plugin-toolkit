@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
 
 from jellyfin_plugin_toolkit.build.backend import maintained_csharp, reference_directory
-from jellyfin_plugin_toolkit.common.process import executable, python_checks, run
+from jellyfin_plugin_toolkit.common.process import executable, run
 from jellyfin_plugin_toolkit.dev.references import verify
 
 FRONTEND_FORMAT = [
@@ -53,29 +53,15 @@ def format_target(ctx: Context, target: str, fix: bool) -> None:
                 ".github/**/*.{yml,yaml}",
             ]
         )
-        run(
-            executable("pnpm"),
-            "exec",
-            "prettier",
-            "--write" if fix else "--check",
-            "--no-error-on-unmatched-pattern",
-            *patterns,
-            cwd=ctx.root,
-        )
+        from jellyfin_plugin_toolkit.quality import prettier, python_format
+
+        prettier(ctx.root, patterns, fix)
         if target == "tooling":
             roots = [
                 name for name in ["scripts", "tests"] if (ctx.root / name).is_dir()
             ]
             if roots:
-                run(
-                    python_checks(ctx),
-                    "-m",
-                    "ruff",
-                    "format",
-                    *([] if fix else ["--check"]),
-                    *roots,
-                    cwd=ctx.root,
-                )
+                python_format(ctx.root, fix, roots)
             run(
                 executable("pnpm"),
                 "exec",

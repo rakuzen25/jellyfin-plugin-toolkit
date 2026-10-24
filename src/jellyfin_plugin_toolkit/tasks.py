@@ -1,6 +1,7 @@
 """Common commands with explicit, consumer-owned feature operations."""
 
-from typing import TYPE_CHECKING, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
@@ -41,7 +42,7 @@ def operation(
         "dotnet": executable("dotnet"),
     }
     for command in getattr(spec, kind):
-        argv = []
+        argv: list[str] = []
         for argument in command:
             for key, value in replacements.items():
                 argument = argument.replace("{" + key + "}", value)
@@ -160,24 +161,10 @@ def check_default(ctx: Context, target: str) -> None:
         main(ctx)
     elif target == "frontend":
         format_target(ctx, "frontend", False)
-        run(
-            executable("pnpm"),
-            "exec",
-            "eslint",
-            ".",
-            "--max-warnings",
-            "0",
-            cwd=ctx.root,
-        )
-        run(
-            executable("pnpm"),
-            "--dir",
-            ctx.config.frontend.directory,
-            "exec",
-            "tsc",
-            "--noEmit",
-            cwd=ctx.root,
-        )
+        from jellyfin_plugin_toolkit.quality import javascript, typescript
+
+        javascript(ctx.root)
+        typescript(ctx.root / ctx.config.frontend.directory, ["tsconfig.json"])
     elif target == "tooling":
         from jellyfin_plugin_toolkit.checks.tooling import main
 

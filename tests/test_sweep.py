@@ -7,9 +7,10 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from collections.abc import MutableMapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, MutableMapping, cast
+from typing import Any, cast
 from unittest.mock import patch
 
 from consumer_fixture import ConsumerTestCase, create_consumer
@@ -77,8 +78,7 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
                 cwd=directory,
                 env=env,
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
             )
 
     def test_dependencies_are_acyclic_including_local_imports(self) -> None:
@@ -237,7 +237,7 @@ for args in (['--help'], ['internal', 'ci', '--help'], ['release', '--help']):
             "required": [],
             "policy": "policy",
         }
-        malformed = [
+        malformed: list[object] = [
             [],
             dict(valid, reused={"backend": []}),
             dict(valid, full_baseline=[]),

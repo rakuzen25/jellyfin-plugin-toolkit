@@ -22,7 +22,7 @@ def check_pins(root: Path, release: bool = False) -> dict[str, Any]:
             raise ValueError(
                 "Installed toolkit differs from uv.lock; run uv sync --locked"
             )
-    pins = set()
+    pins: set[str] = set()
     for workflow in (root / ".github/workflows").glob("*.y*ml"):
         for match in workflow_references(workflow.read_text(), REPOSITORY):
             tag = reference_tag(match)

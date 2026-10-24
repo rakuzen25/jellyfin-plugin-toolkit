@@ -118,6 +118,7 @@ class NativeUvTests(unittest.TestCase):
                 cwd=root,
                 env=environment,
                 capture_output=True,
+                check=False,
             )
             self.assertNotEqual(0, rejected.returncode)
             self.assertIn(b"Hash mismatch", rejected.stderr)
@@ -134,6 +135,7 @@ class NativeUvTests(unittest.TestCase):
                 cwd=root,
                 env=environment,
                 capture_output=True,
+                check=False,
             )
             self.assertNotEqual(0, check.returncode)
             self.assertEqual(before, (root / "uv.lock").read_bytes())
@@ -159,7 +161,7 @@ class NativeUvTests(unittest.TestCase):
 
         with zipfile.ZipFile(candidate()) as wheel:
             names = set(wheel.namelist())
-        found = set()
+        found: set[str] = set()
         for workflow in (ROOT / ".github/workflows").glob("*.yml"):
             for reference in re.findall(
                 r"uses: \./\.build/jpt/([^\s]+)", workflow.read_text()
@@ -198,6 +200,7 @@ class NativeUvTests(unittest.TestCase):
                 cwd=root,
                 capture_output=True,
                 text=True,
+                check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertTrue((root / "plugin/uv.lock").is_file())
@@ -245,10 +248,13 @@ class NativeUvTests(unittest.TestCase):
             run = subprocess.run
 
             def package_in_clean_checkout(
-                command: list[str], *, cwd: Path, **kwargs: Any
+                command: list[str], *, cwd: Path, check: bool, env: dict[str, str]
             ) -> subprocess.CompletedProcess[Any]:
                 if command == ["uv", "sync", "--locked"]:
-                    return run(command, cwd=cwd, capture_output=True, **kwargs)
+                    process: subprocess.CompletedProcess[Any] = run(
+                        command, cwd=cwd, env=env, capture_output=True, check=check
+                    )
+                    return process
                 self.assertEqual(
                     ["uv", "run", "--no-sync", "jpt", "internal", "package"], command
                 )

@@ -1,10 +1,12 @@
 """Fresh native audits, published-fix decisions, and reviewed expiring waivers."""
 
+from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Protocol
 
-from jellyfin_plugin_toolkit.configuration import Configuration
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
+from jellyfin_plugin_toolkit.configuration import Advisories
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.configuration import AdvisoryWaiver
@@ -21,12 +23,28 @@ from urllib.parse import urlparse
 from jellyfin_plugin_toolkit.common.process import executable, run
 
 
+class AuditBackend(Protocol):
+    @property
+    def projects(self) -> dict[str, str]: ...
+
+    @property
+    def tests(self) -> list[str]: ...
+
+
+class AuditConfiguration(Protocol):
+    @property
+    def backend(self) -> AuditBackend: ...
+
+    @property
+    def advisories(self) -> Advisories: ...
+
+
 class AuditContext(Protocol):
     @property
     def root(self) -> Path: ...
 
     @property
-    def config(self) -> Configuration: ...
+    def config(self) -> AuditConfiguration: ...
 
 
 GHSA = re.compile(r"GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}")
@@ -37,7 +55,11 @@ def command_json(
 ) -> dict[str, Any]:
     # Configuration output can contain registry credentials: never echo it.
     result = subprocess.run(
-        [str(arg) for arg in args], cwd=ctx.root, capture_output=True, text=True
+        [str(arg) for arg in args],
+        cwd=ctx.root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode not in ({0, 1} if finding_exit else {0}):
         raise ValueError(f"{args[0]} audit command failed (exit {result.returncode})")
@@ -45,7 +67,7 @@ def command_json(
         value = json.loads(result.stdout)
     except ValueError as error:
         raise ValueError(f"{args[0]} returned invalid audit JSON") from error
-    if not isinstance(value, dict) or value.get("error") or value.get("errors"):
+    if not is_json_object(value) or value.get("error") or value.get("errors"):
         raise ValueError(f"{args[0]} returned an audit error")
     return value
 
@@ -67,9 +89,9 @@ def finding(
 ) -> dict[str, Any]:
     if not GHSA.fullmatch(ghsa):
         raise ValueError("Unsupported advisory identifier: " + ghsa)
-    if not isinstance(locations, list) or not locations:
+    if not is_json_array(locations) or not locations:
         raise ValueError("Advisory has no locations")
-    if not isinstance(fixes, list):
+    if not is_json_array(fixes):
         raise ValueError("Unknown advisory fix status")
     return {
         "ecosystem": ecosystem,
@@ -87,7 +109,7 @@ def node_findings(ctx: AuditContext, findings: list[dict[str, Any]]) -> None:
     config = command_json(ctx, executable("pnpm"), "config", "list", "--json")
 
     def exclusions(value: object, path: str = "") -> None:
-        if isinstance(value, dict):
+        if is_json_object(value):
             for key, child in value.items():
                 current = path + "." + key.lower().replace("-", "").replace("_", "")
                 if child and (
@@ -112,11 +134,11 @@ def node_findings(ctx: AuditContext, findings: list[dict[str, Any]]) -> None:
         finding_exit=True,
     )
     advisories = report.get("advisories")
-    if not isinstance(advisories, dict) or not isinstance(report.get("metadata"), dict):
+    if not is_json_object(advisories) or not is_json_object(report.get("metadata")):
         raise ValueError("Unsupported pnpm audit report")
     counts = report["metadata"].get("vulnerabilities")
     if (
-        not isinstance(counts, dict)
+        not is_json_object(counts)
         or not counts
         or any(type(count) is not int or count < 0 for count in counts.values())
         or (any(counts.values()) and not advisories)
@@ -139,7 +161,7 @@ def node_findings(ctx: AuditContext, findings: list[dict[str, Any]]) -> None:
         else:
             raise ValueError("Invalid pnpm patched-version metadata")
         entries = advisory["findings"]
-        if not isinstance(entries, list) or not entries:
+        if not is_json_array(entries) or not entries:
             raise ValueError("pnpm advisory has no installed findings")
         for entry in entries:
             findings.append(
@@ -169,7 +191,7 @@ def github_advisory(ghsa: str) -> dict[str, Any]:
     with urllib.request.urlopen(request, timeout=30) as response:
         data = json.load(response)
     if (
-        not isinstance(data, dict)
+        not is_json_object(data)
         or data.get("ghsa_id") != ghsa
         or data.get("withdrawn_at")
     ):
@@ -179,7 +201,7 @@ def github_advisory(ghsa: str) -> dict[str, Any]:
 
 def nuget_fixes(data: dict[str, Any], package: str) -> list[str]:
     entries = data["vulnerabilities"]
-    if not isinstance(entries, list):
+    if not is_json_array(entries):
         raise ValueError("Invalid GitHub vulnerabilities metadata")
     matching = [
         entry
@@ -189,7 +211,7 @@ def nuget_fixes(data: dict[str, Any], package: str) -> list[str]:
     ]
     if not matching:
         raise ValueError("Advisory does not identify NuGet package " + package)
-    fixes = set()
+    fixes: set[str] = set()
     for entry in matching:
         patched = entry["first_patched_version"]
         if patched is not None:
@@ -246,7 +268,7 @@ def nuget_findings(
     )
     if (
         report.get("version") != 1
-        or not isinstance(report.get("projects"), list)
+        or not is_json_array(report.get("projects"))
         or not report["projects"]
     ):
         raise ValueError("Unsupported NuGet audit report")
@@ -256,7 +278,8 @@ def nuget_findings(
                 "transitivePackages", []
             ):
                 for advisory in entry.get("vulnerabilities", []):
-                    url = urlparse(advisory["advisoryurl"])
+                    advisory_url: str = advisory["advisoryurl"]
+                    url = urlparse(advisory_url)
                     ghsa = url.path.removeprefix("/advisories/")
                     if (
                         url.scheme != "https"
@@ -280,7 +303,7 @@ def nuget_findings(
                             cache[ghsa] = github_advisory(ghsa)
                         except (ValueError, KeyError, TypeError, OSError) as error:
                             cache[ghsa] = error
-                    if isinstance(cache[ghsa], Exception):
+                    if isinstance(cache[ghsa], Exception) or cache[ghsa] is None:
                         raise ValueError("Advisory metadata unavailable for " + ghsa)
                     item["fixes"] = nuget_fixes(cache[ghsa], entry["id"])
                     item["fix_status"] = "published" if item["fixes"] else "unavailable"
@@ -319,7 +342,7 @@ def evaluate(
             )
         else:
             unique[key] = dict(entry)
-    warnings = []
+    warnings: list[str] = []
     for configured in waivers:
         if configured.timestamp(configured.expires_at) <= now:
             warnings.append("Expired waiver: " + "/".join(configured.scope))
@@ -426,19 +449,30 @@ def audit_toolkit() -> dict[str, Any]:
     """Apply the same gate to this Python/Node tooling repository itself."""
     import tomllib
     from pathlib import Path
-    from types import SimpleNamespace
-
-    from jellyfin_plugin_toolkit.configuration import Advisories
 
     root = Path.cwd()
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
     policy = metadata.get("tool", {}).get("jpt", {}).get("advisories", {})
-    return audit(
-        SimpleNamespace(
-            root=root,
-            config=SimpleNamespace(
-                backend=SimpleNamespace(projects={}, tests=[]),
-                advisories=Advisories.model_validate(policy),
-            ),
-        )
-    )
+    return audit_repository(root, Advisories.model_validate(policy))
+
+
+def audit_repository(root: Path, policy: Advisories) -> dict[str, Any]:
+    """Audit repository development dependencies without loading plugin metadata."""
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class Projects:
+        projects: dict[str, str]
+        tests: list[str]
+
+    @dataclass(frozen=True)
+    class RepositoryPolicy:
+        backend: Projects
+        advisories: Advisories
+
+    @dataclass(frozen=True)
+    class Repository:
+        root: Path
+        config: RepositoryPolicy
+
+    return audit(Repository(root, RepositoryPolicy(Projects({}, []), policy)))

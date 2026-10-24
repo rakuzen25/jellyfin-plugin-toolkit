@@ -29,7 +29,7 @@ Use `uv run jpt --debug COMMAND` for failure tracebacks. Redirected output and C
 
 uv synchronizes Python dependencies before local commands. Bootstrap prepares Node, .NET and Jellyfin dependencies. Full validation builds the complete distribution and executes the consumer's enabled acceptance operations, including installation and reproducibility.
 
-The toolkit source checkout runs strict mypy over `src`, `scripts`, and `tests` as part of `pnpm check`. Run `uv run python -m mypy` for the Python type check alone.
+The toolkit source checkout uses the shared `jpt check` implementation through `pnpm check`, including Ruff defaults, strict mypy and basedpyright, JavaScript and TypeScript checks, documentation links, and automation validation. Run `uv run python -m mypy` or `uv run python -m basedpyright` for an individual type checker. `pnpm format` applies the shared formatting checks without running type checkers.
 
 ## Generate a repository
 

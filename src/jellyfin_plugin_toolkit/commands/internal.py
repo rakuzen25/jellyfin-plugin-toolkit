@@ -317,3 +317,16 @@ def tooling(ctx: typer.Context) -> None:
     selected = consumer(ctx)
     format_target(selected, "tooling", False)
     inspect(selected)
+
+
+@internal.command("automation-check")
+def automation_check(ctx: typer.Context, kind: str, image: str) -> None:
+    """Run a pinned native validator without requiring plugin configuration."""
+    from jellyfin_plugin_toolkit.commands.runtime import state
+    from jellyfin_plugin_toolkit.quality import automation
+
+    if kind not in ("workflows", "renovate"):
+        raise typer.BadParameter("Choose workflows or renovate")
+    automation(
+        state(ctx).root, image, "workflows" if kind == "workflows" else "renovate"
+    )

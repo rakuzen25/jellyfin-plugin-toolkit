@@ -52,9 +52,9 @@ class AutomationTests(unittest.TestCase):
                     "urlopen",
                     return_value=io.BytesIO(json.dumps(payload).encode()),
                 ),
+                self.assertRaises(ValueError),
             ):
-                with self.assertRaises(ValueError):
-                    automation.resolve_bot("fixture-app")
+                automation.resolve_bot("fixture-app")
 
     def test_missing_token_or_slug_stops_before_network_access(self) -> None:
         for environment in [{}, {"GH_TOKEN": "fixture-token"}]:

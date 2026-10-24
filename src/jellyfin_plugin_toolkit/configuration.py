@@ -261,7 +261,7 @@ class AdvisoryWaiver(Model):
 
     @staticmethod
     def timestamp(value: str) -> datetime:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
         if "T" not in value or parsed.utcoffset() != timedelta(0):
             raise ValueError("Waiver timestamps must include a UTC timezone")
         return parsed

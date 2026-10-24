@@ -33,7 +33,7 @@ def inventory(ctx: Context) -> None:
     expected = {binary, source, "manifest.json"}
     if ctx.config.distribution.web:
         expected.add(f"{ctx.prefix}-web-{ctx.version}.zip")
-    sums = {}
+    sums: dict[str, str] = {}
     for line in (dist / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split("  ", 1)
         if name in sums or name not in expected:

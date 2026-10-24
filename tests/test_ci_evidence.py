@@ -301,13 +301,15 @@ class GroupReuseTests(IsolatedCiTestCase):
         origin = dict(run, id=99)
         receipt["reused"] = {"backend": {"run_id": "99"}}
         original = dict(receipt, reused={})
+
+        def mock_api(repo: str, endpoint: str) -> Any:
+            return origin if endpoint == "/actions/runs/99" else {"jobs": jobs}
+
         with (
             patch.object(
                 ci_evidence,
                 "api",
-                side_effect=lambda repo, endpoint: (
-                    origin if endpoint == "/actions/runs/99" else {"jobs": jobs}
-                ),
+                side_effect=mock_api,
             ),
             patch.object(ci_evidence, "read_receipt", return_value=original),
         ):
@@ -798,6 +800,10 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
             "commit": "a" * 40,
             "inputs": dict(original, backend="older"),
         }
+
+        def mock_git(root: Path, *args: str) -> Any:
+            return "README.md" if args[0] == "diff" else "commit"
+
         with (
             patch.dict(
                 os.environ,
@@ -813,9 +819,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
             patch.object(
                 ci_policy,
                 "git",
-                side_effect=lambda root, *args: (
-                    "README.md" if args[0] == "diff" else "commit"
-                ),
+                side_effect=mock_git,
             ),
         ):
             self.assertIn(

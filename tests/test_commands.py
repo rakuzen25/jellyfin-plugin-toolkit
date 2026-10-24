@@ -3,8 +3,9 @@
 import io
 import json
 import subprocess
+from collections.abc import Sequence
 from contextlib import redirect_stdout
-from typing import cast
+from typing import Any, cast
 from unittest.mock import call, patch
 
 from consumer_fixture import ConsumerTestCase
@@ -43,20 +44,30 @@ class CommandTests(ConsumerTestCase):
 
     def test_validate_runs_every_local_stage_in_order(self) -> None:
         events: list[object] = []
+
+        def mock_check(_: object, target: str) -> Any:
+            return events.append(("check", target))
+
+        def mock_test(_: object, target: str, extra: Sequence[str]) -> Any:
+            return events.append(("test", target))
+
+        def mock_clean_package(_: object) -> Any:
+            return events.append(("package", None))
+
         with (
             patch.object(
                 tasks,
                 "check",
-                side_effect=lambda _, target: events.append(("check", target)),
+                side_effect=mock_check,
             ),
             patch.object(
                 tasks,
                 "test",
-                side_effect=lambda _, target, extra: events.append(("test", target)),
+                side_effect=mock_test,
             ),
             patch(
                 "jellyfin_plugin_toolkit.build.clean_package.clean_package",
-                side_effect=lambda _: events.append(("package", None)),
+                side_effect=mock_clean_package,
             ),
         ):
             self.assertEqual(0, main(["validate"]))
@@ -110,7 +121,7 @@ class CommandTests(ConsumerTestCase):
 
     def test_docs_checks_format_before_links_without_installing(self) -> None:
         with (
-            patch("jellyfin_plugin_toolkit.checks.formatting.run") as run,
+            patch("jellyfin_plugin_toolkit.quality.run") as run,
             patch("jellyfin_plugin_toolkit.checks.docs.main") as links,
         ):
             tasks.check(self.ctx, "docs")
@@ -119,7 +130,7 @@ class CommandTests(ConsumerTestCase):
         self.assertNotIn("install", run.call_args.args)
         with (
             patch(
-                "jellyfin_plugin_toolkit.checks.formatting.run",
+                "jellyfin_plugin_toolkit.quality.run",
                 side_effect=subprocess.CalledProcessError(1, "prettier"),
             ),
             patch("jellyfin_plugin_toolkit.checks.docs.main") as links,
@@ -211,7 +222,7 @@ class CommandTests(ConsumerTestCase):
             patch(
                 "jellyfin_plugin_toolkit.checks.formatting.format_target"
             ) as formatting,
-            patch.object(tooling, "run") as run,
+            patch("jellyfin_plugin_toolkit.quality.run") as run,
         ):
             tasks.check(self.ctx, "tooling")
         pins.assert_called_once_with(self.root)
@@ -255,14 +266,19 @@ class AfterOperationTests(ConsumerTestCase):
         }
         (self.root / "docs").mkdir()
         events: list[object] = []
+
+        def mock_check_default(*_: object) -> Any:
+            return events.append("default")
+
+        def mock_run(*args: str, **kw: Any) -> Any:
+            return events.append((args, kw["cwd"]))
+
         with (
-            patch.object(
-                tasks, "check_default", side_effect=lambda *_: events.append("default")
-            ),
+            patch.object(tasks, "check_default", side_effect=mock_check_default),
             patch.object(
                 tasks,
                 "run",
-                side_effect=lambda *args, **kw: events.append((args, kw["cwd"])),
+                side_effect=mock_run,
             ),
         ):
             tasks.check(self.ctx, "docs")
@@ -349,13 +365,14 @@ class AfterOperationTests(ConsumerTestCase):
     def test_invalid_hooks_are_rejected_by_context_loading(self) -> None:
         from jellyfin_plugin_toolkit.scaffold import toml
 
-        for spec in [
+        cases_spec: list[dict[str, Any]] = [
             {"commands": [["replace"]], "after": [["extra"]]},
             {"after": []},
             {"after": ["shell command"]},
             {"after": [[]]},
             {},
-        ]:
+        ]
+        for spec in cases_spec:
             with self.subTest(spec=spec):
                 selected = self.ctx.config.data()
                 selected["operations"] = {"check-tooling": spec}

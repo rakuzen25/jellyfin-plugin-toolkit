@@ -239,11 +239,13 @@ class SetupTests(unittest.TestCase):
         )
 
     def test_identity_lookup_failure_prevents_all_writes(self) -> None:
-        with patch.object(
-            setup, "commit_identity", side_effect=OSError("lookup failed")
+        with (
+            patch.object(
+                setup, "commit_identity", side_effect=OSError("lookup failed")
+            ),
+            self.assertRaises(OSError),
         ):
-            with self.assertRaises(OSError):
-                self.run_setup()
+            self.run_setup()
         self.assertEqual([], self.repository.writes)
 
     def test_malformed_base_record_prevents_all_writes(self) -> None:
@@ -255,11 +257,13 @@ class SetupTests(unittest.TestCase):
         self.assertEqual([], self.repository.writes)
 
     def test_format_failure_prevents_all_writes(self) -> None:
-        with patch.object(
-            setup, "format_json", side_effect=ValueError("formatter failed")
+        with (
+            patch.object(
+                setup, "format_json", side_effect=ValueError("formatter failed")
+            ),
+            self.assertRaisesRegex(ValueError, "formatter failed"),
         ):
-            with self.assertRaisesRegex(ValueError, "formatter failed"):
-                self.run_setup()
+            self.run_setup()
         self.assertEqual([], self.repository.writes)
 
     def test_reviewed_history_can_survive_squash_merges_and_app_rotation(self) -> None:

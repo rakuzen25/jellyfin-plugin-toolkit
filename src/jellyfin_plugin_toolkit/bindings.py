@@ -1,12 +1,17 @@
 """Bounded, data-only synchronization of toolkit bindings in consumer checkouts."""
 
-from typing import TYPE_CHECKING, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.configuration import Configuration
 
 import difflib
 import fcntl
+import hashlib
+import io
 import json
 import os
 import re
@@ -15,6 +20,8 @@ import stat
 import subprocess
 import tempfile
 import tomllib
+import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,11 +66,14 @@ def workflow_references(text: str, repository: str) -> list[re.Match[str]]:
     for line in text.splitlines():
         if line.lstrip().startswith("#"):
             continue
-        if re.search(r"\buses\s*:", line) and repository + "/" in line:
-            if not pattern.fullmatch(line):
-                raise ValueError(
-                    "Ambiguous toolkit workflow/action reference: " + line.strip()
-                )
+        if (
+            re.search(r"\buses\s*:", line)
+            and repository + "/" in line
+            and not pattern.fullmatch(line)
+        ):
+            raise ValueError(
+                "Ambiguous toolkit workflow/action reference: " + line.strip()
+            )
     return matches
 
 
@@ -78,7 +88,7 @@ def rewrite_workflow(
     revision = metadata.get("revision", "")
     if not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise ValueError("Toolkit references require an immutable source revision")
-    updates = []
+    updates: list[tuple[int, int, str]] = []
     for match in workflow_references(text, new["repository"]):
         component = match["component"]
         if component not in files and not any(
@@ -114,7 +124,7 @@ def preset_span(text: str) -> tuple[int, int] | None:
     decoder = json.JSONDecoder()
     index = text.index("{") + 1
     found = None
-    seen = set()
+    seen: set[str] = set()
     while True:
         index = skip_space(text, index)
         if text[index] == "}":
@@ -130,7 +140,7 @@ def preset_span(text: str) -> tuple[int, int] | None:
         start = index
         value, index = decoder.raw_decode(text, index)
         if key == "extends":
-            if not isinstance(value, list) or any(
+            if not is_json_array(value) or any(
                 not isinstance(item, str) for item in value
             ):
                 raise ValueError("Renovate extends must contain preset strings")
@@ -144,7 +154,7 @@ def preset_span(text: str) -> tuple[int, int] | None:
 
 
 def rewrite_preset(text: str, old: dict[str, str], new: dict[str, str]) -> str:
-    if not isinstance(json.loads(text), dict):
+    if not is_json_object(json.loads(text)):
         raise ValueError("Renovate configuration must be an object")
     span = preset_span(text)
     if span is None:
@@ -211,7 +221,7 @@ def target(root: Path) -> tuple[str, str]:
     match = re.fullmatch(pattern, url or "")
     if not match:
         raise ValueError("Toolkit updates require a canonical GitHub release wheel URL")
-    return url, match[1]
+    return str(url), match[1]
 
 
 def plan(
@@ -228,6 +238,16 @@ def plan(
     )
 
     root = Path(root)
+    from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT
+
+    if root.resolve() == RESOURCE_ROOT.parents[2]:
+        from jellyfin_plugin_toolkit.typing_policy import materialize
+
+        project = safe_path(root, "pyproject.toml")
+        change = change_for(
+            root, "pyproject.toml", materialize(project.read_text()).encode()
+        )
+        return [change] if change else []
     url, selected = target(root)
     tag = "v" + selected
     release = release_for_tag(REPOSITORY, tag)
@@ -248,18 +268,33 @@ def plan(
             source = safe_path(root, name)
             if source.exists():
                 shutil.copy2(source, staged / name)
+        metadata = tomllib.loads((staged / "pyproject.toml").read_text())
+        development = any(
+            re.match(r"jellyfin[-_]plugin[-_]toolkit(?:\s|[<>=!~;\[]|$)", dependency)
+            for dependency in metadata.get("dependency-groups", {}).get("dev", [])
+            if isinstance(dependency, str)
+        )
         subprocess.run(
             [
                 "uv",
                 "add",
                 "--no-sync",
                 "--no-build",
+                *(["--dev"] if development else []),
                 "jellyfin-plugin-toolkit @ " + url,
             ],
             cwd=staged,
             check=True,
         )
         selected_record = record(staged, release=True)
+        project = staged / "pyproject.toml"
+        if "mypy" in tomllib.loads(project.read_text()).get("tool", {}):
+            from jellyfin_plugin_toolkit.typing_policy import materialize
+
+            policy = released_policy(
+                selected_record["source"], selected_record["sha256"]
+            )
+            project.write_text(materialize(project.read_text(), policy))
         new = {"repository": REPOSITORY, "version": tag, "revision": revision}
         if base_ref:
             old_lock = tomllib.loads(
@@ -291,7 +326,7 @@ def plan(
         ):
             if entry.get("type") == "file":
                 files[entry["path"]] = b"workflow"
-        changes = []
+        changes: list[Change | None] = []
         for name in ("pyproject.toml", "uv.lock"):
             changes.append(change_for(root, name, (staged / name).read_bytes()))
         for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
@@ -312,6 +347,22 @@ def plan(
                 )
             )
         return [change for change in changes if change]
+
+
+def released_policy(url: str, digest: str) -> bytes:
+    """Read a known data member from the resolved wheel, never import proposed code."""
+    with urllib.request.urlopen(url, timeout=30) as response:
+        payload = response.read()
+    if hashlib.sha256(payload).hexdigest() != digest:
+        raise ValueError("Released policy wheel differs from its locked SHA256")
+    member = "jellyfin_plugin_toolkit/resources/configs/mypy.toml"
+    with zipfile.ZipFile(io.BytesIO(payload)) as wheel:
+        matches = [entry for entry in wheel.infolist() if entry.filename == member]
+        if len(matches) != 1 or matches[0].file_size > 65536:
+            raise ValueError(
+                "Released wheel has no unambiguous supported typing policy"
+            )
+        return wheel.read(matches[0])
 
 
 def transaction_path(root: Path) -> Path:
@@ -345,7 +396,7 @@ def recover(root: Path) -> None:
     manifest = json.loads(
         safe_path(root, ".build/binding-transaction/manifest.json").read_text()
     )
-    originals = []
+    originals: list[tuple[Path, bytes | None, int]] = []
     for item in manifest:
         name = item["name"]
         if name not in {
@@ -452,7 +503,7 @@ def check_integrations(root: Path, config: Configuration) -> None:
     tooling = "tooling" in checks and not replaces(config, "check-tooling")
     frontend = config.frontend
     frontend_checks = "frontend" in checks and not replaces(config, "check-frontend")
-    expected = []
+    expected: list[tuple[str, str]] = []
     if tooling:
         expected.extend(
             [

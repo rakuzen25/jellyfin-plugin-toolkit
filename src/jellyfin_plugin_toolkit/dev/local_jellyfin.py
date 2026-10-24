@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING, Any
 
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array
+
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
 
@@ -68,9 +70,7 @@ def media_paths(ctx: Context, requested: list[str] | None) -> list[str]:
         if settings.exists()
         else []
     )
-    if not isinstance(values, list) or not all(
-        isinstance(value, str) for value in values
-    ):
+    if not is_json_array(values) or not all(isinstance(value, str) for value in values):
         raise ValueError(
             "Invalid saved media mounts. Use --clear-media-mounts to clear them."
         )

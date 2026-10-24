@@ -8,14 +8,18 @@ export function createConfig({ js, defineConfig, prettier, globals, tseslint }, 
             languageOptions: { globals: { ...globals.browser, ...globals.node } },
             rules: { "no-template-curly-in-string": "error", "no-useless-rename": "error" },
         },
-        {
-            files: typescriptFiles,
-            extends: [tseslint.configs.recommended],
-            rules: {
-                "@typescript-eslint/consistent-type-imports": "error",
-                "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-            },
-        },
+        ...(tseslint
+            ? [
+                  {
+                      files: typescriptFiles,
+                      extends: [tseslint.configs.recommended],
+                      rules: {
+                          "@typescript-eslint/consistent-type-imports": "error",
+                          "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+                      },
+                  },
+              ]
+            : []),
         prettier,
     );
 }

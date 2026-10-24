@@ -1,6 +1,7 @@
 """Assemble declared payloads, notices and corresponding source deterministically."""
 
-from typing import TYPE_CHECKING, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
@@ -21,7 +22,7 @@ from jellyfin_plugin_toolkit.provenance import record
 
 
 def archive(target: Path, files: Sequence[tuple[Path, Path]]) -> Path:
-    seen = set()
+    seen: set[str] = set()
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as output:
         for source, relative_name in sorted(files, key=lambda pair: str(pair[1])):
             name = output_name(str(relative_name))
@@ -84,8 +85,8 @@ def assemble(ctx: Context, staging: Path, release_mode: bool = False) -> list[Pa
             raise ValueError("Missing payload notice: " + str(source))
         shutil.copy2(source, notices / payload.name)
     license_entries = distribution.licenses
-    inventory = []
-    dependencies = {}
+    inventory: list[dict[str, Any]] = []
+    dependencies: dict[str, Any] = {}
     lock = root / ctx.config.backend.entry
     lock = lock.parent / "packages.lock.json"
     if lock.exists():

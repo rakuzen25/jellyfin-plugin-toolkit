@@ -8,9 +8,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Iterator
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import Iterator
 from unittest.mock import Mock, patch
 
 from typer import TyperException

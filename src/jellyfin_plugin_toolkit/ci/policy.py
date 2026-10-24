@@ -1,6 +1,7 @@
 """Consumer-declared impact policy with conservative input and evidence fingerprints."""
 
-from typing import TYPE_CHECKING, Any, Self, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
@@ -8,10 +9,10 @@ if TYPE_CHECKING:
 import fnmatch
 import json
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
 
 from jellyfin_plugin_toolkit.common.artifacts import digest
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
@@ -72,8 +73,8 @@ def metadata_path(path: str) -> bool:
 
 def classification(ctx: Context, path: str) -> tuple[str, set[str]]:
     rules = ctx.config.validation.rules
-    selected = set()
-    matched = []
+    selected: set[str] = set()
+    matched: list[str] = []
     for rule in rules:
         if any(fnmatch.fnmatchcase(path, p) for p in rule.patterns):
             matched.append(rule.name)
@@ -101,7 +102,7 @@ def tracked_files(root: Path) -> list[str]:
 
 def check_classification(ctx: Context, changed: Sequence[str]) -> list[dict[str, Any]]:
     root = ctx.root
-    unknown = []
+    unknown: list[str] = []
     for path in sorted(set(tracked_files(root)) | set(changed)):
         if not path:
             continue

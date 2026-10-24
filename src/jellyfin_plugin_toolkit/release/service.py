@@ -103,7 +103,7 @@ def artifact_hashes(
     }
     if ctx.config.distribution.web:
         expected.add(f"{prefix}-web-{release.version}.zip")
-    hashes = {}
+    hashes: dict[str, str] = {}
     for line in (directory / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split("  ", 1)
         if (
@@ -220,7 +220,7 @@ def upload(root: Path, directory: Path, repository: str, tag: str) -> None:
     names = [asset["name"] for asset in release.get("assets", [])]
     if len(set(names)) != len(names):
         raise ValueError("Duplicate existing release assets")
-    missing = []
+    missing: list[str] = []
     with tempfile.TemporaryDirectory(
         prefix="jellyfin-plugin-existing-assets-"
     ) as temporary:

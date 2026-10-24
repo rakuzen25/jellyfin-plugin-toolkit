@@ -1,7 +1,10 @@
 """Fixture-only browser test identity, independent of unrelated build inputs."""
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.configuration import BrowserInputs
@@ -28,7 +31,7 @@ def fingerprint(value: object) -> str:
 
 
 def test_inputs(ctx: Context, spec: BrowserInputs, maintained: Sequence[Path]) -> str:
-    selected = set()
+    selected: set[Path] = set()
     for pattern in spec.files:
         matches = {
             path for path in maintained if fnmatch.fnmatchcase(path.as_posix(), pattern)
@@ -59,7 +62,7 @@ def capture(ctx: Context) -> dict[str, dict[str, Any]]:
         return {}
     maintained = source_files(ctx.root)
     source = digest(ctx.root, frontend_inputs(ctx, maintained))
-    files = {}
+    files: dict[str, str] = {}
     for path in sorted((ctx.root / "dist/web").rglob("*")):
         if path.is_symlink():
             raise ValueError("Browser assets cannot contain symlinks")
@@ -67,9 +70,9 @@ def capture(ctx: Context) -> dict[str, dict[str, Any]]:
             files[path.relative_to(ctx.root / "dist/web").as_posix()] = hashlib.sha256(
                 path.read_bytes()
             ).hexdigest()
-    result = {}
+    result: dict[str, dict[str, Any]] = {}
     for group, spec in ctx.config.validation.browser_inputs.items():
-        assets = {}
+        assets: dict[str, str] = {}
         for pattern in spec.assets:
             matched = {
                 name: value
@@ -97,16 +100,16 @@ def capture(ctx: Context) -> dict[str, dict[str, Any]]:
 def verify(ctx: Context, proofs: dict[str, Any]) -> dict[str, str]:
     """Validate a trusted receipt without rebuilding assets in the publication job."""
     specs = ctx.config.validation.browser_inputs
-    if not isinstance(proofs, dict) or set(proofs) != set(specs):
+    if not is_json_object(proofs) or set(proofs) != set(specs):
         raise ValueError("Browser evidence does not match configured groups")
     if not specs:
         return {}
     maintained = source_files(ctx.root)
     source = digest(ctx.root, frontend_inputs(ctx, maintained))
-    results = {}
+    results: dict[str, str] = {}
     for group, spec in specs.items():
         proof = proofs[group]
-        if not isinstance(proof, dict) or set(proof) != {
+        if not is_json_object(proof) or set(proof) != {
             "source",
             "tests",
             "assets",
@@ -121,7 +124,7 @@ def verify(ctx: Context, proofs: dict[str, Any]) -> dict[str, str]:
         ):
             raise ValueError("Browser source or execution inputs changed")
         assets = proof["assets"]
-        if not isinstance(assets, dict) or not assets:
+        if not is_json_object(assets) or not assets:
             raise ValueError("Browser evidence has no built assets")
         for name, value in assets.items():
             output_name(name)
@@ -137,7 +140,7 @@ def verify(ctx: Context, proofs: dict[str, Any]) -> dict[str, str]:
             raise ValueError("Browser asset inventory does not match configuration")
         runner = proof["runner_image"]
         if (
-            not isinstance(runner, dict)
+            not is_json_object(runner)
             or set(runner) != {"ImageOS", "ImageVersion", "RUNNER_ARCH", "RUNNER_OS"}
             or any(not isinstance(value, str) for value in runner.values())
         ):

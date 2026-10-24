@@ -15,7 +15,7 @@ from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT, relative
 
 
 def toml(config: Configuration | dict[str, Any]) -> str:
-    return tomli_w.dumps(config.data() if hasattr(config, "data") else config)
+    return tomli_w.dumps(config.data() if isinstance(config, Configuration) else config)
 
 
 def generate(
@@ -61,7 +61,7 @@ def generate(
         ["frontend", "workflow"] if admin else []
     )
     test = "tests/backend/Host/Plugin.Tests.csproj"
-    config = {
+    config: dict[str, Any] = {
         "schema": 1,
         "advisories": {"waivers": []},
         "plugin": {
@@ -318,9 +318,14 @@ def generate(
             '\n[tool.ruff]\nextend = ".build/jpt/configs/ruff.toml"\ntarget-version = "py315"\ninclude = ["scripts/**/*.py", "tests/**/*.py"]\n'
         )
     with project.open("a") as output:
+        output.write('\n[tool.mypy]\npython_version = "3.15"\nfiles = ["tests"]\n')
+    with project.open("a") as output:
         output.write(
-            '\n[tool.mypy]\npython_version = "3.15"\nfiles = ["tests"]\nstrict = true\n'
+            '\n[tool.basedpyright]\nextends = ".build/jpt/configs/basedpyright.toml"\nvenvPath = "."\nvenv = ".venv"\npythonVersion = "3.15"\ninclude = ["tests"]\n'
         )
+    from jellyfin_plugin_toolkit.typing_policy import materialize
+
+    project.write_text(materialize(project.read_text()))
     source = release_url(selected)
     if toolkit_wheel is not None:
         wheel = Path(toolkit_wheel).resolve()
@@ -336,7 +341,15 @@ def generate(
         source = "./" + (TOOLKIT_DIST / wheel.name).as_posix()
     subprocess.run(["uv", "add", "--no-sync", source], cwd=destination, check=True)
     subprocess.run(
-        ["uv", "add", "--dev", "--no-sync", "ruff>=0.17.1,<0.18", "mypy>=2.4,<3"],
+        [
+            "uv",
+            "add",
+            "--dev",
+            "--no-sync",
+            "ruff>=0.17.1,<0.18",
+            "mypy>=2.4,<3",
+            "basedpyright>=1.40.2,<2",
+        ],
         cwd=destination,
         check=True,
     )

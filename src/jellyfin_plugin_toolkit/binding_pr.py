@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from jellyfin_plugin_toolkit import bindings
 from jellyfin_plugin_toolkit.automation import check_renovate, commit_identity
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
 
 
 def api(
@@ -130,6 +131,13 @@ def validate_project_update(before: bytes, after: bytes) -> None:
     sanitized.setdefault("tool", {}).setdefault("uv", {}).setdefault("sources", {})[
         "jellyfin-plugin-toolkit"
     ] = trusted_source
+    trusted_mypy = trusted.get("tool", {}).get("mypy")
+    proposed_mypy = sanitized.get("tool", {}).get("mypy")
+    if is_json_object(trusted_mypy) and is_json_object(proposed_mypy):
+        if "strict" in trusted_mypy:
+            proposed_mypy["strict"] = trusted_mypy["strict"]
+        else:
+            proposed_mypy.pop("strict", None)
     if sanitized != trusted:
         raise ValueError("Toolkit update changed unrelated Python project settings")
 
@@ -227,7 +235,7 @@ def commit(root: Path, repository: str, proposal: dict[str, Any], bot: str) -> N
         return
     identity = commit_identity()
     check_renovate(root, identity)
-    tree = []
+    tree: list[dict[str, Any]] = []
     for item in proposal["changes"]:
         blob = api(
             repository,

@@ -1,7 +1,10 @@
 """Authenticated GitHub evidence, receipt validation and reuse trust rules."""
 
+from collections.abc import Iterator
 from http.client import HTTPMessage
-from typing import IO, TYPE_CHECKING, Any, Iterator, cast
+from typing import IO, TYPE_CHECKING, Any, cast
+
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
@@ -12,7 +15,6 @@ import json
 import os
 import re
 import subprocess
-import urllib.error
 import urllib.request
 import zipfile
 from datetime import UTC, datetime
@@ -67,8 +69,9 @@ def api(repository: str, endpoint: str, binary: bool = False) -> Any:
 
 def trusted(run: dict[str, Any], repository: str) -> bool:
     return (
-        (run.get("repository") or {}).get("full_name") == repository
-        and (run.get("head_repository") or {}).get("full_name") == repository
+        (run.get("repository") or dict[str, Any]()).get("full_name") == repository
+        and (run.get("head_repository") or dict[str, Any]()).get("full_name")
+        == repository
         and run.get("event")
         in {"push", "workflow_dispatch", "schedule", "pull_request"}
         and (
@@ -97,16 +100,18 @@ def merged_pull_request(run: dict[str, Any], repository: str) -> bool:
     request = api(repository, f"/pulls/{requests[0]['number']}")
     return (
         request.get("merged") is True
-        and (request.get("head", {}).get("repo") or {}).get("full_name") == repository
+        and (request.get("head", {}).get("repo") or dict[str, Any]()).get("full_name")
+        == repository
         and request.get("head", {}).get("sha") == run.get("head_sha")
-        and (request.get("base", {}).get("repo") or {}).get("full_name") == repository
+        and (request.get("base", {}).get("repo") or dict[str, Any]()).get("full_name")
+        == repository
         and request.get("base", {}).get("ref") == "main"
     )
 
 
 def valid_receipt(receipt: dict[str, Any]) -> bool:
     """Reject malformed evidence before trust decisions inspect nested fields."""
-    if not isinstance(receipt, dict):
+    if not is_json_object(receipt):
         return False
     if any(
         key in receipt and not isinstance(receipt[key], bool)
@@ -115,27 +120,27 @@ def valid_receipt(receipt: dict[str, Any]) -> bool:
         return False
     for key in ("inputs", "groups", "artifacts"):
         value = receipt.get(key, {})
-        if not isinstance(value, dict) or any(
-            not isinstance(k, str) or not isinstance(v, str) for k, v in value.items()
+        if not is_json_object(value) or any(
+            not isinstance(v, str) for v in value.values()
         ):
             return False
     required = receipt.get("required")
     if (
-        not isinstance(required, list)
+        not is_json_array(required)
         or any(not isinstance(g, str) for g in required)
         or len(set(required)) != len(required)
     ):
         return False
     for key in ("coverage", "reused", "full_baseline"):
-        if not isinstance(receipt.get(key, {}), dict):
+        if not is_json_object(receipt.get(key, {})):
             return False
     for proof in receipt.get("reused", {}).values():
-        if not isinstance(proof, dict) or not isinstance(proof.get("run_id"), str):
+        if not is_json_object(proof) or not isinstance(proof.get("run_id"), str):
             return False
     baseline = receipt.get("full_baseline", {})
     for key in ("inputs", "origins"):
         value = baseline.get(key, {})
-        if not isinstance(value, dict) or any(
+        if not is_json_object(value) or any(
             not isinstance(v, str) for v in value.values()
         ):
             return False
@@ -178,11 +183,11 @@ def read_receipt(repository: str, run: dict[str, Any]) -> dict[str, Any] | None:
     ):
         return None
     if (
-        not isinstance(receipt.get("inputs"), dict)
-        or not isinstance(receipt.get("groups"), dict)
-        or not isinstance(receipt.get("required"), list)
+        not is_json_object(receipt.get("inputs"))
+        or not is_json_object(receipt.get("groups"))
+        or not is_json_array(receipt.get("required"))
         or not isinstance(receipt.get("policy"), str)
-        or not isinstance(receipt.get("coverage", {}), dict)
+        or not is_json_object(receipt.get("coverage", {}))
     ):
         return None
     # head_sha is the orchestrating source; a receipt also records the checked tag.
@@ -341,10 +346,9 @@ def completed_group_origin(
     matches = [
         job for job in cache[key] if job.get("name", "").split(" / ")[-1] in expected
     ]
-    if (
-        len(matches) != len(expected)
-        or {job["name"].split(" / ")[-1] for job in matches} != expected
-    ):
+    if len(matches) != len(expected) or {
+        job["name"].split(" / ")[-1] for job in matches
+    } != set(expected):
         return None
     if not all(
         job.get("status") == "completed"
@@ -364,8 +368,8 @@ def evidence(
     full_only: bool = False,
 ) -> dict[str, dict[str, Any]]:
     validation = ci_policy.ValidationPolicy.from_context(ctx)
-    result = {}
-    seen = set()
+    result: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
     cache: dict[tuple[str, str], Any] = {}
     runs = recent_runs(repository)
     for run in runs:  # newest first: a matching failure must block older green reuse

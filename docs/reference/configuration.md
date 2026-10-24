@@ -36,7 +36,7 @@ An operation declares exactly one of `commands` (replace the operation) or `afte
 
 ```toml
 [operations.check-tooling]
-after = [["{python}", "-m", "mypy"]]
+after = [["{python}", "-m", "scripts.check_boundaries"]]
 ```
 
 The optional repository-relative `cwd` applies only to declared commands. Supported placeholders are `{python}`, `{root}`, `{toolkit}`, `{pnpm}`, and `{dotnet}`. Arguments are passed directly without a shell. Operation names include `check-frontend`, `test-tooling`, `test-installation`, and the corresponding command/target names. Extra test arguments reach the standard operation or replacement commands, never the `after` commands. Standard tooling tests discover Python tests under `tests/tooling` when that directory exists; consumers without tooling tests do not need a synthetic framework test.
@@ -84,6 +84,20 @@ Optional `validation.job_names` and `validation.aggregate_jobs` map enabled grou
 ## Shared presets and synchronization
 
 Keep native configuration entrypoints in the consumer so editors and tools discover them normally: `eslint.config.mjs` passes its native ESLint dependency imports to `createConfig({ js, defineConfig, prettier, globals, tseslint })` from `.build/jpt/configs/eslint.mjs`; `[tool.ruff]` extends `.build/jpt/configs/ruff.toml`; `.prettierrc.mjs` imports `.build/jpt/configs/prettier.mjs`; frontend TypeScript configuration extends `../.build/jpt/configs/tsconfig.json`. Keep file-selection paths, language-version selections, and plugin-specific overrides in those native files. Native dependency imports remain visible to editors and dependency analyzers; the factory contains the shared rules. Consumer dependency manifests and lockfiles remain authoritative.
+
+Python tooling checks run Ruff defaults, strict mypy, and strict basedpyright. `[tool.basedpyright]` extends `.build/jpt/configs/basedpyright.toml`; its paths, Python version, and environment remain native repository settings. The shared mypy policy is materialized into `[tool.mypy]` by `jpt toolkit sync`; checks reject stale policy without editing tracked files. Keep mypy file selection, plugins, and import paths local. After restoring dependencies, run `jpt prepare` once before direct checker or editor use.
+
+Repositories without `plugin.toml` use the same `jpt check [tooling|docs]` and `jpt format [tooling|docs]` commands. Declare their applicable checks in native Python metadata:
+
+```toml
+[tool.jpt.quality]
+checks = ["python", "javascript", "docs", "workflows", "renovate"]
+toolchain_file = "toolchain.json"
+```
+
+Supported checks are `python`, `javascript`, `typescript`, `docs`, `workflows`, and `renovate`. TypeScript requires `typescript_projects`, a list of native tsconfig paths. Workflow and Renovate checks require digest-pinned `actionlint` and `renovate` entries, either in the existing JSON `toolchain_file` or `[tool.jpt.quality.images]`. Optional `workflow_ignores` contains narrowly scoped actionlint diagnostic patterns for syntax supported by GitHub but not the pinned validator. Formatting uses native presets and ignores; `format` does not run type checkers. `jpt test advisories` applies the same report-only default to standalone repositories.
+
+Standalone consumers may install the canonical toolkit wheel in the `dev` dependency group. Synchronization preserves that placement and updates native typing policy, wheel locks, workflow references, and Renovate presets together. Resource preparation does not require plugin metadata or install packages.
 
 Synchronization preserves workflow triggers, permissions, schedules, extra jobs, Renovate policy and surrounding formatting. It updates the native toolkit dependency and lockfile, static toolkit `uses` references, their release-version comments and existing top-level toolkit presets. Ambiguous syntax, drift and unavailable releases stop without partial changes. Interrupted writes retain a recovery journal under `.build`; `toolkit recover` refuses to discard newer edits.
 

@@ -56,7 +56,7 @@ class NativeAgePolicyTests(unittest.TestCase):
         }
 
         class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args: object) -> None:
+            def log_message(self, format: str, *args: object) -> None:
                 pass
 
             def do_HEAD(self) -> None:
@@ -136,6 +136,7 @@ class NativeAgePolicyTests(unittest.TestCase):
                     ],
                     cwd=root,
                     capture_output=True,
+                    check=False,
                 )
                 self.assertEqual(0, resolved.returncode, resolved.stderr.decode())
                 before = (root / "uv.lock").read_bytes()
@@ -152,6 +153,7 @@ class NativeAgePolicyTests(unittest.TestCase):
                     ["uv", "add", "--no-sync", "jpt-age-probe>=1"],
                     cwd=root,
                     capture_output=True,
+                    check=False,
                 )
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual(before, (root / "uv.lock").read_bytes())

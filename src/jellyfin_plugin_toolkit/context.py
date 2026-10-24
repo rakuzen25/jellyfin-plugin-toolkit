@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING, Self
 
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
+
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.configuration import Plugin
 
@@ -19,7 +21,7 @@ from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT
 TOOLKIT_ROOT = RESOURCE_ROOT
 
 
-def relative(root: Path, value: str) -> Path:
+def relative(root: Path, value: object) -> Path:
     if not isinstance(value, str) or not value or "\\" in value:
         raise ValueError("Configured path must be a nonempty relative path")
     path = root / value
@@ -112,7 +114,7 @@ class Context:
     config: Configuration
 
     def __post_init__(self) -> None:
-        if isinstance(self.config, dict):
+        if is_json_object(self.config):
             object.__setattr__(
                 self, "config", Configuration.model_validate(self.config)
             )

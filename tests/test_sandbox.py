@@ -166,7 +166,7 @@ class LocalSandboxTests(ConsumerTestCase):
             other.mkdir()
             database = data / "config/test.db"
             database.write_text("retained")
-            calls = []
+            calls: list[str] = []
 
             def publish(ctx: Context, output: Path, web: Path, **kwargs: Any) -> None:
                 calls.append("build")
@@ -182,15 +182,16 @@ class LocalSandboxTests(ConsumerTestCase):
                 if startup_fails and calls.count("start") == 1:
                     raise RuntimeError("startup error")
 
+            def mock_stop(ctx: Context) -> Any:
+                return calls.append("stop")
+
             with (
                 patch.object(
                     self, "ctx", create_consumer(Path(directory), self.ctx.config)
                 ),
                 patch.object(sandbox, "publish", side_effect=publish),
                 patch.object(sandbox, "inspect", return_value={"owned": True}),
-                patch.object(
-                    sandbox, "stop", side_effect=lambda ctx: calls.append("stop")
-                ),
+                patch.object(sandbox, "stop", side_effect=mock_stop),
                 patch.object(sandbox, "start", side_effect=start),
             ):
                 if build_fails or startup_fails:

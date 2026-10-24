@@ -1,8 +1,8 @@
 """One bounded source inventory for clean builds, source archives and CI inputs."""
 
 import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from jellyfin_plugin_toolkit.context import Context
 
@@ -65,7 +65,7 @@ def maintained_file(root: Path, path: Path) -> Path:
 def source_files(root: Path) -> list[Path]:
     root = root.resolve()
     ctx = Context.load(root)
-    files = []
+    files: list[Path] = []
     for directory in ctx.config.source.roots:
         base = ctx.path(directory)
         for parent in [base, *base.parents]:
@@ -113,7 +113,7 @@ def frontend_inputs(ctx: Context, maintained: Sequence[Path]) -> list[Path]:
     frontend = ctx.config.frontend
     directory = frontend.directory
     roots = [directory, frontend.assets or directory + "/assets"]
-    explicit = []
+    explicit: list[str] = []
     if frontend.enabled:
         if frontend.build:
             explicit.append(frontend.build)

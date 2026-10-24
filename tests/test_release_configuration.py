@@ -195,7 +195,7 @@ class ReleaseConfigurationTests(unittest.TestCase):
     def test_malformed_and_unsupported_configurations_have_actionable_errors(
         self,
     ) -> None:
-        for data, message in [
+        cases_data_message: list[tuple[Any, str]] = [
             ([], "single '.' entry"),
             ({"packages": {"a": {}, "b": {}}}, "single '.' package"),
             ({"release-type": "node", "packages": {".": {}}}, "release-type 'simple'"),
@@ -207,7 +207,8 @@ class ReleaseConfigurationTests(unittest.TestCase):
                 {"release-type": "simple", "packages": {".": {"extra-files": [None]}}},
                 "require a path",
             ),
-        ]:
+        ]
+        for data, message in cases_data_message:
             with self.subTest(data=data), self.assertRaisesRegex(ValueError, message):
                 configuration.generated_config(self.ctx, data)
         (self.root / configuration.FILENAME).write_text("{")

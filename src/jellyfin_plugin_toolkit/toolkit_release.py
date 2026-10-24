@@ -111,7 +111,7 @@ def upload(directory: Path, repository: str, tag: str, sha: str) -> None:
     names = [asset["name"] for asset in release.get("assets", [])]
     if len(names) != len(set(names)) or set(names) - set(hashes):
         raise ValueError("Unexpected or duplicate toolkit release assets")
-    missing = []
+    missing: list[str] = []
     with tempfile.TemporaryDirectory(prefix="toolkit-release-assets-") as temporary:
         for name, digest in hashes.items():
             if name not in names:

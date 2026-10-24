@@ -130,7 +130,9 @@ class ToolkitReleaseTests(unittest.TestCase):
         for corrupt in [False, True]:
             with self.subTest(corrupt=corrupt):
 
-                def download(command: list[str], **kwargs: Any) -> None:
+                def download(
+                    command: list[str], corrupt: bool = corrupt, **kwargs: Any
+                ) -> None:
                     name = command[command.index("--pattern") + 1]
                     target = Path(command[command.index("--dir") + 1]) / name
                     target.write_bytes(

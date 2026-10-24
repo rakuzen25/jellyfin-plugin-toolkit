@@ -160,7 +160,7 @@ def distributions(root: Path) -> list[Path]:
                 release_url(selected["version"], "SHA256SUMS"), timeout=60
             ) as response:
                 checksums.write_bytes(response.read())
-        expected = {}
+        expected: dict[str, str] = {}
         for line in checksums.read_text().splitlines():
             match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.-]+)", line)
             if not match or match[2] in expected:

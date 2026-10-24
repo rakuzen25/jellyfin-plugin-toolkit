@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,7 @@ def check(root: Path) -> list[str]:
         check=True,
         text=True,
         capture_output=True,
+        env={**os.environ, "JELLYFIN_PLUGIN_ROOT": str(root)},
     )
     errors: list[str] = json.loads(result.stdout)
     return errors

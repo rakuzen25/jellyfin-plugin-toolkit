@@ -1,7 +1,8 @@
 """Explicit consumer context, executable selection, and checked subprocesses."""
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Mapping, TextIO
+from typing import TYPE_CHECKING, TextIO
 
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context

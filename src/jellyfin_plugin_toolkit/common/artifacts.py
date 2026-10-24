@@ -2,8 +2,9 @@
 
 import hashlib
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from jellyfin_plugin_toolkit.common.source_inventory import (
     frontend_inputs,

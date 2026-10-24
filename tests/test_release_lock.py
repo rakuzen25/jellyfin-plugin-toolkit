@@ -38,14 +38,12 @@ class ReleaseLockTests(unittest.TestCase):
                     ],
                 ) as api,
                 patch.object(
-                    subprocess,
-                    "check_output",
-                    return_value=("a" * 40).encode(),
+                    subprocess, "check_output", return_value=("a" * 40).encode()
                 ),
                 patch.object(subprocess, "run") as run,
+                self.assertRaisesRegex(ValueError, "beyond package version"),
             ):
-                with self.assertRaisesRegex(ValueError, "beyond package version"):
-                    release_lock.refresh(root, "example/toolkit", 1, "release[bot]")
+                release_lock.refresh(root, "example/toolkit", 1, "release[bot]")
             run.assert_not_called()
             self.assertEqual(2, api.call_count)
 
@@ -72,7 +70,7 @@ class ReleaseLockTests(unittest.TestCase):
                 "base": {"sha": "a" * 40, "repo": repo},
                 "head": {"sha": "b" * 40, "ref": "release", "repo": repo},
             }
-            writes = []
+            writes: list[tuple[str, dict[str, Any]]] = []
 
             def api(
                 repository: str,

@@ -70,7 +70,7 @@ jobs:
       - run: uv sync --locked
       - run: pnpm install --frozen-lockfile
       - run: uv run --no-sync jpt prepare
-      - run: uv run --no-sync python scripts/quality.py check
+      - run: uv run --no-sync jpt check
       - run: uv run --no-sync python -m unittest discover -s tests
       - run: node --test src/jellyfin_plugin_toolkit/resources/ui/lifecycle.test.ts tests/*.test.mjs
       - name: Check out the pinned Release Please runtime for updater tests
@@ -92,10 +92,6 @@ jobs:
           docker run --rm --network none --entrypoint node -v "$PWD:/toolkit:ro"
           ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21
           /toolkit/tests/renovate-attachments.mjs
-      - name: Validate workflows
-        run: >-
-          docker run --rm --network none -v "$PWD:/work:ro" -w /work
-          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
   starter:
     if: github.event_name != 'schedule'
     needs: candidate
@@ -179,7 +175,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: uv run --no-sync python -c "from jellyfin_plugin_toolkit.advisories import audit_toolkit; audit_toolkit()"
+        run: uv run --no-sync jpt test advisories
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

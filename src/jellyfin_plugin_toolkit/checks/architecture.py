@@ -2,15 +2,15 @@
 
 import ast
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Iterable, Mapping
 
 from jellyfin_plugin_toolkit.context import Context
 
 
 def check_graph(graph: Mapping[str, Iterable[str]]) -> None:
-    active = set()
-    complete = set()
+    active: set[str] = set()
+    complete: set[str] = set()
 
     def visit(node: str) -> None:
         if node in active:
@@ -35,7 +35,7 @@ def toolkit_graph(root: Path) -> dict[str, set[str]]:
         ): path
         for path in (root / "jellyfin_plugin_toolkit").rglob("*.py")
     }
-    graph = {}
+    graph: dict[str, set[str]] = {}
     for name, path in modules.items():
         dependencies: set[str] = set()
         tree = ast.parse(path.read_text())
@@ -78,7 +78,7 @@ def check_projects(root: Path) -> dict[str, set[str]]:
     ctx = Context.load(root)
     declared = ctx.config.architecture
     edges = declared.edges
-    graph = {}
+    graph: dict[str, set[str]] = {}
     for name, dependencies in edges.items():
         path = ctx.path(name)
         tree = ET.parse(path)

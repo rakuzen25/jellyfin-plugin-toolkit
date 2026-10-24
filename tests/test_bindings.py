@@ -42,9 +42,8 @@ class BindingTests(unittest.TestCase):
                 raise OSError("injected")
             return original(source, target)
 
-        with patch.object(os, "replace", side_effect=fail):
-            with self.assertRaises(OSError):
-                bindings.apply(self.root, changes)
+        with patch.object(os, "replace", side_effect=fail), self.assertRaises(OSError):
+            bindings.apply(self.root, changes)
         self.assertEqual("before", (self.root / "pyproject.toml").read_text())
         self.assertFalse((self.root / "uv.lock").exists())
 
@@ -110,6 +109,7 @@ class ReleaseBindingPlanTests(unittest.TestCase):
         self.url = "https://github.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/v0.3.0/jellyfin_plugin_toolkit-0.3.0-py3-none-any.whl"
         (self.root / "pyproject.toml").write_text(
             '[project]\nname="fixture"\ndependencies=["jellyfin-plugin-toolkit"]\n'
+            '[tool.mypy]\nfiles=["src"]\nstrict=false\n'
             '[tool.uv.sources]\njellyfin-plugin-toolkit={url="' + self.url + '"}\n'
         )
         self.old_lock = (
@@ -137,13 +137,14 @@ class ReleaseBindingPlanTests(unittest.TestCase):
         self,
     ) -> None:
         original = (self.root / "uv.lock").read_bytes()
-        for release in [
+        cases_release: list[dict[str, Any] | None] = [
             None,
             {"draft": True, "assets": self.assets},
             {"draft": False, "assets": []},
             {"draft": False, "assets": self.assets[:1]},
             {"draft": False, "assets": self.assets * 2},
-        ]:
+        ]
+        for release in cases_release:
             with (
                 self.subTest(release=release),
                 patch(
@@ -178,6 +179,9 @@ class ReleaseBindingPlanTests(unittest.TestCase):
             self.assertTrue(check)
             (cwd / "uv.lock").write_text(self.old_lock.replace("0.2.0", "0.3.0"))
 
+        def mock_tag_commit(_: object, tag: str) -> Any:
+            return ("b" if tag == "v0.3.0" else "a") * 40
+
         with (
             patch(
                 "jellyfin_plugin_toolkit.release.service.release_for_tag",
@@ -185,7 +189,7 @@ class ReleaseBindingPlanTests(unittest.TestCase):
             ),
             patch(
                 "jellyfin_plugin_toolkit.release.service.tag_commit",
-                side_effect=lambda _, tag: ("b" if tag == "v0.3.0" else "a") * 40,
+                side_effect=mock_tag_commit,
             ),
             patch(
                 "jellyfin_plugin_toolkit.release.service.github_json",
@@ -194,11 +198,19 @@ class ReleaseBindingPlanTests(unittest.TestCase):
                 ],
             ),
             patch.object(subprocess, "run", side_effect=resolve),
+            patch.object(
+                bindings, "released_policy", return_value=b"[tool.mypy]\nstrict=true\n"
+            ),
         ):
             changes = bindings.plan(self.root)
         self.assertEqual(original, {p: p.read_bytes() for p in original})
         self.assertEqual(
-            {"uv.lock", "renovate.json", ".github/workflows/validate.yml"},
+            {
+                "pyproject.toml",
+                "uv.lock",
+                "renovate.json",
+                ".github/workflows/validate.yml",
+            },
             {item.name for item in changes},
         )
         bindings.apply(self.root, changes)
@@ -224,3 +236,49 @@ class ReleaseBindingPlanTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "preset differs"):
                 check_pins(self.root)
+
+    def test_development_wheel_is_not_promoted_to_runtime(self) -> None:
+        project = self.root / "pyproject.toml"
+        text = project.read_text().replace(
+            'dependencies=["jellyfin-plugin-toolkit"]',
+            'dependencies=[]\n[dependency-groups]\ndev=["jellyfin-plugin-toolkit"]',
+        )
+        project.write_text(text)
+
+        def resolve(command: list[str], *, cwd: Path, check: bool) -> None:
+            self.assertIn("--dev", command)
+            self.assertTrue(check)
+            (cwd / "uv.lock").write_text(self.old_lock.replace("0.2.0", "0.3.0"))
+
+        def tag(_: str, version: str) -> str:
+            return ("b" if version == "v0.3.0" else "a") * 40
+
+        with (
+            patch(
+                "jellyfin_plugin_toolkit.release.service.release_for_tag",
+                return_value={"draft": False, "assets": self.assets},
+            ),
+            patch(
+                "jellyfin_plugin_toolkit.release.service.tag_commit", side_effect=tag
+            ),
+            patch(
+                "jellyfin_plugin_toolkit.release.service.github_json",
+                return_value=[
+                    {"type": "file", "path": ".github/workflows/validate.yml"}
+                ],
+            ),
+            patch.object(
+                bindings, "released_policy", return_value=b"[tool.mypy]\nstrict=true\n"
+            ),
+            patch.object(subprocess, "run", side_effect=resolve),
+        ):
+            changes = bindings.plan(self.root)
+        bindings.apply(self.root, changes)
+        import tomllib
+
+        metadata = tomllib.loads(project.read_text())
+        self.assertEqual([], metadata["project"]["dependencies"])
+        self.assertEqual(
+            ["jellyfin-plugin-toolkit"], metadata["dependency-groups"]["dev"]
+        )
+        self.assertTrue(metadata["tool"]["mypy"]["strict"])
