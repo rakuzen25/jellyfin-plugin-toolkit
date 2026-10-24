@@ -25,7 +25,7 @@ def documents(root: Path) -> list[Path]:
     ]
 
 
-def check(root: Path) -> list[str]:
+def check(root: Path, *, dependency_root: Path | None = None) -> list[str]:
     root = root.resolve()
     result = subprocess.run(
         [
@@ -37,7 +37,7 @@ def check(root: Path) -> list[str]:
         check=True,
         text=True,
         capture_output=True,
-        env={**os.environ, "JELLYFIN_PLUGIN_ROOT": str(root)},
+        env={**os.environ, "JELLYFIN_PLUGIN_ROOT": str(dependency_root or root)},
     )
     errors: list[str] = json.loads(result.stdout)
     return errors
