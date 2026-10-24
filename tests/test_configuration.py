@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from consumer_fixture import config
 
@@ -11,7 +12,7 @@ from jellyfin_plugin_toolkit.context import Context, relative
 
 
 class ConfigurationTests(unittest.TestCase):
-    def test_strict_configuration_rejects_coercions_and_unknown_fields(self):
+    def test_strict_configuration_rejects_coercions_and_unknown_fields(self) -> None:
         for section, key, value in [
             ("frontend", "enabled", "true"),
             ("frontend", "enabeld", True),
@@ -25,7 +26,7 @@ class ConfigurationTests(unittest.TestCase):
             with self.subTest(schema=value), self.assertRaises(ValueError):
                 Configuration.model_validate({**config, "schema": value})
 
-    def test_editor_schema_matches_runtime_models(self):
+    def test_editor_schema_matches_runtime_models(self) -> None:
         schema = (
             Path(__file__).resolve().parents[1]
             / "src/jellyfin_plugin_toolkit/resources/configs/plugin.schema.json"
@@ -34,26 +35,26 @@ class ConfigurationTests(unittest.TestCase):
             Configuration.model_json_schema(), json.loads(schema.read_text())
         )
 
-    def test_toml_round_trip_preserves_nested_values_and_escaping(self):
+    def test_toml_round_trip_preserves_nested_values_and_escaping(self) -> None:
         import tomllib
 
         from jellyfin_plugin_toolkit.scaffold import toml
 
-        values = {
+        values: dict[str, Any] = {
             "schema": 1,
             "plugin": {"name": 'Café "live"\\mix\nsecond line'},
             "operations": {"test": {"commands": [["node", "a b", "${literal}"]]}},
         }
         self.assertEqual(values, tomllib.loads(toml(values)))
 
-    def test_paths_cannot_escape_consumer_root(self):
+    def test_paths_cannot_escape_consumer_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ["../secret", "/tmp/secret"]:
                 with self.subTest(name=name), self.assertRaises(ValueError):
                     relative(root, name)
 
-    def test_consumer_root_is_not_the_toolkit_installation(self):
+    def test_consumer_root_is_not_the_toolkit_installation(self) -> None:
         from scaffold_fixture import generate
 
         with tempfile.TemporaryDirectory() as directory:

@@ -1,5 +1,10 @@
 """Consumer formatting without task orchestration dependencies."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 from jellyfin_plugin_toolkit.build.backend import maintained_csharp, reference_directory
 from jellyfin_plugin_toolkit.common.process import executable, python_checks, run
 from jellyfin_plugin_toolkit.dev.references import verify
@@ -11,7 +16,7 @@ FRONTEND_FORMAT = [
 DOCS_FORMAT = ["*.md", "docs/**/*.md"]
 
 
-def dotnet_format(ctx, fix=False):
+def dotnet_format(ctx: Context, fix: bool = False) -> None:
     if not verify(ctx, reference_directory(ctx)):
         raise ValueError("Verified references are missing; run uv run jpt bootstrap")
     files = [str(p) for p in maintained_csharp(ctx, "*.cs")]
@@ -32,7 +37,7 @@ def dotnet_format(ctx, fix=False):
         )
 
 
-def format_target(ctx, target, fix):
+def format_target(ctx: Context, target: str, fix: bool) -> None:
     if target == "backend":
         dotnet_format(ctx, fix)
     else:

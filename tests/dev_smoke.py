@@ -10,12 +10,15 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 
-def exercise_edits(root, log, child, base):
+def exercise_edits(
+    root: Path, log: Path, child: subprocess.Popen[bytes], base: str
+) -> None:
     """Observe actual filesystem events, failed compilation and backend deployment."""
 
-    def wait_for(marker, offset):
+    def wait_for(marker: str, offset: int) -> None:
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline:
             if child.poll() is not None:
@@ -60,13 +63,13 @@ def exercise_edits(root, log, child, base):
         source.write_bytes(original)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("consumer", type=Path)
     parser.add_argument("--edits", action="store_true")
     args = parser.parse_args()
     root = args.consumer.resolve()
-    env = {**os.environ, "JELLYFIN_PLUGIN_ROOT": str(root)}
+    env: dict[str, Any] = {**os.environ, "JELLYFIN_PLUGIN_ROOT": str(root)}
     with socket.socket() as address:
         address.bind(("127.0.0.1", 0))
         port = address.getsockname()[1]

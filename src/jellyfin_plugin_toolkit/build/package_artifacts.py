@@ -1,5 +1,10 @@
 """Assemble declared payloads, notices and corresponding source deterministically."""
 
+from typing import TYPE_CHECKING, Sequence
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import hashlib
 import json
 import os
@@ -15,11 +20,11 @@ from jellyfin_plugin_toolkit.context import output_name
 from jellyfin_plugin_toolkit.provenance import record
 
 
-def archive(target, files):
+def archive(target: Path, files: Sequence[tuple[Path, Path]]) -> Path:
     seen = set()
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as output:
-        for source, name in sorted(files, key=lambda pair: str(pair[1])):
-            name = output_name(str(name))
+        for source, relative_name in sorted(files, key=lambda pair: str(pair[1])):
+            name = output_name(str(relative_name))
             if name in seen:
                 raise ValueError("Duplicate distribution path: " + name)
             seen.add(name)
@@ -33,7 +38,7 @@ def archive(target, files):
     return target
 
 
-def assemble(ctx, staging, release_mode=False):
+def assemble(ctx: Context, staging: Path, release_mode: bool = False) -> list[Path]:
     root = ctx.root
     release = load_release(root)
     version = release.version
@@ -67,17 +72,17 @@ def assemble(ctx, staging, release_mode=False):
         if binary.name.startswith(HOST_LIBRARIES):
             binary.unlink()
     distribution = ctx.config.distribution
-    for entry in distribution.notices:
-        source = ctx.path(entry.source)
-        destination = notices / (entry.name or source.name)
+    for notice in distribution.notices:
+        source = ctx.path(notice.source)
+        destination = notices / (notice.name or source.name)
         if not source.is_file():
             raise ValueError("Missing distribution notice: " + str(source))
         shutil.copy2(source, destination)
-    for entry in distribution.payload_notices:
-        source = plugin / entry.source
+    for payload in distribution.payload_notices:
+        source = plugin / payload.source
         if not source.is_file():
             raise ValueError("Missing payload notice: " + str(source))
-        shutil.copy2(source, notices / entry.name)
+        shutil.copy2(source, notices / payload.name)
     license_entries = distribution.licenses
     inventory = []
     dependencies = {}
@@ -107,9 +112,9 @@ def assemble(ctx, staging, release_mode=False):
         if entry is None:
             continue
         required = entry.notices
-        for notice in required:
-            if not (notices / notice).is_file():
-                raise ValueError("Missing required notice: " + notice)
+        for required_notice in required:
+            if not (notices / required_notice).is_file():
+                raise ValueError("Missing required notice: " + required_notice)
         package = entry.package
         inventory.append(
             {

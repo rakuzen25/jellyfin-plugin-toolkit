@@ -3,7 +3,7 @@
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -39,13 +39,13 @@ class Plugin(Model):
 
     @field_validator("guid")
     @classmethod
-    def valid_guid(cls, value):
+    def valid_guid(cls, value: str) -> str:
         uuid.UUID(value)
         return value
 
     @field_validator("name", "assembly", "owner", "description", "overview", "category")
     @classmethod
-    def not_blank(cls, value):
+    def not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Plugin identity cannot be blank")
         return value
@@ -254,20 +254,20 @@ class AdvisoryWaiver(Model):
 
     @field_validator("package", "version", "reason")
     @classmethod
-    def nonblank(cls, value):
+    def nonblank(cls, value: str) -> str:
         if not value.strip() or value != value.strip():
             raise ValueError("Waiver values must be nonblank and trimmed")
         return value
 
     @staticmethod
-    def timestamp(value):
+    def timestamp(value: str) -> datetime:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if "T" not in value or parsed.utcoffset() != timedelta(0):
             raise ValueError("Waiver timestamps must include a UTC timezone")
         return parsed
 
     @property
-    def scope(self):
+    def scope(self) -> tuple[str, str, str, str]:
         package = self.package.casefold() if self.ecosystem == "nuget" else self.package
         return self.ecosystem, package, self.version, self.ghsa
 
@@ -323,7 +323,7 @@ class Configuration(Model):
 
     @field_validator("schema_version", mode="before")
     @classmethod
-    def integer_schema(cls, value):
+    def integer_schema(cls, value: object) -> int:
         # Literal equality otherwise accepts True and 1.0 even in strict models.
         if type(value) is not int:
             raise ValueError("Configuration schema must be an integer")
@@ -336,7 +336,7 @@ class Configuration(Model):
                 raise ValueError("After hook requires a standard operation: " + name)
         return self
 
-    def data(self):
+    def data(self) -> dict[str, Any]:
         return self.model_dump(
             mode="json", by_alias=True, exclude_none=True, exclude_unset=True
         )

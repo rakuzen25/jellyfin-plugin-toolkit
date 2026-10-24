@@ -3,7 +3,9 @@
 import re
 
 
-def render(repository, revision, catalog=None, *, version):
+def render(
+    repository: str, revision: str, catalog: str | None = None, *, version: str
+) -> dict[str, str]:
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Workflow generation requires an immutable toolkit revision")
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", version):
@@ -150,8 +152,12 @@ jobs:
 
 
 def render_sync(
-    repository, revision, *, version, validation_workflow="Validate release candidate"
-):
+    repository: str,
+    revision: str,
+    *,
+    version: str,
+    validation_workflow: str = "Validate release candidate",
+) -> str:
     """Optional consumer-owned caller; synchronization only maintains its toolkit pin."""
     # Reuse the same validation as the standard workflow bindings.
     render(repository, revision, version=version)

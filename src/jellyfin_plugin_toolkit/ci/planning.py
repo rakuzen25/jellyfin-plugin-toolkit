@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from datetime import UTC, datetime
+from typing import Any
 
 import jellyfin_plugin_toolkit.ci.evidence as ci_evidence
 import jellyfin_plugin_toolkit.ci.policy as ci_policy
@@ -17,7 +18,7 @@ from jellyfin_plugin_toolkit.provenance import record
 
 def plan(
     ctx: Context, base: str, full: bool, release: bool, reuse: bool, scheduled: bool
-) -> dict:
+) -> dict[str, Any]:
     root = ctx.root
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     ci_policy.browser_inventory(ctx)
@@ -36,7 +37,7 @@ def plan(
     cumulative = (
         os.environ.get("GITHUB_EVENT_NAME") == "push" and not release and not scheduled
     )
-    baseline: dict = {}
+    baseline: dict[str, Any] = {}
     comparison_mode = "push-baseline" if cumulative else "changed-inputs"
     fallback_reason = ""
     require_all = False
@@ -87,7 +88,7 @@ def plan(
         required |= {
             g for g in validation.code if baseline.get("inputs", {}).get(g) != inputs[g]
         }
-    proofs: dict[str, dict] = {}
+    proofs: dict[str, dict[str, Any]] = {}
     if reuse and (required or scheduled) and repository and os.environ.get("GH_TOKEN"):
         try:
             proofs = ci_evidence.evidence(ctx, repository, inputs, policy, scheduled)
@@ -158,7 +159,9 @@ def plan(
     }
 
 
-def finish(ctx: Context, selection: dict, jobs: dict) -> dict:
+def finish(
+    ctx: Context, selection: dict[str, Any], jobs: dict[str, Any]
+) -> dict[str, Any]:
     root = ctx.root
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     results = {}

@@ -7,7 +7,9 @@ import sys
 import traceback
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Sequence
+
+import typer
 
 from jellyfin_plugin_toolkit.commands.internal import internal
 from jellyfin_plugin_toolkit.commands.maintenance import (
@@ -23,13 +25,12 @@ from jellyfin_plugin_toolkit.commands.runtime import (
     current,
     exclusive,
     state,
-    typer,
 )
 
 app = application(help="Build, develop, and validate independent Jellyfin plugins.")
 
 
-def version(value: bool):
+def version(value: bool) -> None:
     if value:
         from jellyfin_plugin_toolkit.provenance import package_version
 
@@ -53,14 +54,14 @@ def configure(
     show_version: Annotated[
         bool, typer.Option("--version", callback=version, is_eager=True)
     ] = False,
-):
+) -> None:
     selected = State((root or Path.cwd()).resolve(), debug)
     ctx.obj = selected
     current.set(selected)
 
 
 @app.command()
-def bootstrap(ctx: typer.Context):
+def bootstrap(ctx: typer.Context) -> None:
     """Prepare Node, .NET, Jellyfin and shared resources."""
     from jellyfin_plugin_toolkit import tasks
 
@@ -68,7 +69,7 @@ def bootstrap(ctx: typer.Context):
 
 
 @app.command()
-def doctor(ctx: typer.Context):
+def doctor(ctx: typer.Context) -> None:
     """Verify tooling and print project identity as JSON."""
     from jellyfin_plugin_toolkit import tasks
 
@@ -88,7 +89,7 @@ def doctor(ctx: typer.Context):
 
 
 @app.command()
-def prepare(ctx: typer.Context):
+def prepare(ctx: typer.Context) -> None:
     """Expose wheel resources without installing dependencies."""
     from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
     from jellyfin_plugin_toolkit.resources_api import prepare as export
@@ -111,7 +112,7 @@ def dev(
     watch: Annotated[bool, typer.Option("--watch/--no-watch")] = True,
     media_mount: Annotated[list[str] | None, typer.Option()] = None,
     clear_media_mounts: Annotated[bool, typer.Option("--clear-media-mounts")] = False,
-):
+) -> None:
     """Build, watch and run the disposable Jellyfin development session."""
     exclusive(
         **{"--media-mount": media_mount, "--clear-media-mounts": clear_media_mounts}
@@ -138,7 +139,7 @@ def build(
     target: Annotated[BuildTarget | None, typer.Argument()] = None,
     release: Annotated[bool, typer.Option("--release")] = False,
     prepared_web: Annotated[bool, typer.Option("--prepared-web")] = False,
-):
+) -> None:
     """Build one component or cleanly package the complete plugin."""
     if target and (release or prepared_web):
         raise typer.BadParameter("Release options apply only to complete builds")
@@ -158,7 +159,9 @@ def build(
 
 
 @app.command()
-def check(ctx: typer.Context, target: Annotated[str | None, typer.Argument()] = None):
+def check(
+    ctx: typer.Context, target: Annotated[str | None, typer.Argument()] = None
+) -> None:
     """Check one consumer-defined target or all configured targets."""
     from jellyfin_plugin_toolkit import tasks
 
@@ -170,7 +173,7 @@ def check(ctx: typer.Context, target: Annotated[str | None, typer.Argument()] = 
 @app.command("format")
 def format_command(
     ctx: typer.Context, target: Annotated[str | None, typer.Argument()] = None
-):
+) -> None:
     """Format one consumer-defined target or all configured targets."""
     from jellyfin_plugin_toolkit import tasks
 
@@ -182,7 +185,9 @@ def format_command(
 @app.command(
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False}
 )
-def test(ctx: typer.Context, target: Annotated[str | None, typer.Argument()] = None):
+def test(
+    ctx: typer.Context, target: Annotated[str | None, typer.Argument()] = None
+) -> None:
     """Run configured unit tests, or TARGET -- RUNNER_ARGUMENTS."""
     if (target and target.startswith("-")) or (
         ctx.args and (not target or ctx.args[0] != "--")
@@ -199,7 +204,7 @@ def test(ctx: typer.Context, target: Annotated[str | None, typer.Argument()] = N
 
 
 @app.command()
-def validate(ctx: typer.Context):
+def validate(ctx: typer.Context) -> None:
     """Run all local checks, unit tests, packaging and acceptance tests."""
     from jellyfin_plugin_toolkit import tasks
     from jellyfin_plugin_toolkit.build.clean_package import clean_package
@@ -228,7 +233,7 @@ def new(
     host_project: str = "src/Host/Plugin.csproj",
     toolkit_wheel: Path | None = None,
     toolkit_revision: str | None = None,
-):
+) -> None:
     """Generate an independent uv consumer without App credentials."""
     from jellyfin_plugin_toolkit.scaffold import generate
 
@@ -247,7 +252,7 @@ def new(
 
 
 @app.command()
-def paths(ctx: typer.Context):
+def paths(ctx: typer.Context) -> None:
     """Print editor and toolkit paths as JSON without checking bindings."""
     from jellyfin_plugin_toolkit.maintenance import paths as inspect
 
@@ -261,7 +266,7 @@ app.add_typer(automation, name="automation")
 app.add_typer(internal, name="internal", hidden=True)
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
     """Shared console/module boundary with stable status and diagnostic handling."""
     token = current.set(None)
     exported = {
@@ -280,7 +285,7 @@ def main(argv=None):
         typer.echo("Aborted.", err=True)
         return 130
     except typer.TyperException as error:
-        error.show()
+        typer.echo("Error: " + error.format_message(), err=True)
         return error.exit_code
     except Exception as error:
         selected = current.get()

@@ -1,5 +1,10 @@
 """Build distributions from a captured source inventory and the exact toolkit distributions."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import json
 import os
 import shutil
@@ -12,7 +17,9 @@ from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.provenance import TOOLKIT_DIST, record
 
 
-def clean_package(ctx, release=False, prepared_web=False):
+def clean_package(
+    ctx: Context, release: bool = False, prepared_web: bool = False
+) -> None:
     repository = ctx.root
     files = source_files(repository)
     captured = digest(repository, files)
@@ -70,8 +77,8 @@ def clean_package(ctx, release=False, prepared_web=False):
             archive = Path(tempfile.mkdtemp(prefix="previous-", dir=out))
             for p in previous:
                 shutil.move(p, archive / p.name)
-        for name in products:
-            shutil.copy2(root / "dist" / name, out / name)
+        for product_name in products:
+            shutil.copy2(root / "dist" / product_name, out / product_name)
         if not prepared_web and (root / "dist/web").exists():
             shutil.copytree(root / "dist/web", out / "web", dirs_exist_ok=True)
         (out / "clean-build.json").write_text(

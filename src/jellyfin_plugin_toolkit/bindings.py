@@ -1,5 +1,10 @@
 """Bounded, data-only synchronization of toolkit bindings in consumer checkouts."""
 
+from typing import TYPE_CHECKING, Sequence
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.configuration import Configuration
+
 import difflib
 import fcntl
 import json
@@ -17,7 +22,7 @@ from jellyfin_plugin_toolkit.operations import replaces
 from jellyfin_plugin_toolkit.provenance import REPOSITORY, record, wheel_name
 
 
-def safe_path(root, name):
+def safe_path(root: Path, name: str | Path) -> Path:
     path = root / name
     if not path.is_relative_to(root) or ".." in Path(name).parts:
         raise ValueError("Unsafe binding path: " + str(name))
@@ -29,11 +34,11 @@ def safe_path(root, name):
     return path
 
 
-def git(root, *args):
+def git(root: Path, *args: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(root), *args])
 
 
-def base_revision(root, ref):
+def base_revision(root: Path, ref: str) -> str:
     return (
         git(root, "rev-parse", "--verify", "--end-of-options", ref + "^{commit}")
         .decode()
@@ -41,7 +46,7 @@ def base_revision(root, ref):
     )
 
 
-def workflow_references(text, repository):
+def workflow_references(text: str, repository: str) -> list[re.Match[str]]:
     pattern = re.compile(
         r"^(?P<prefix>[ \t]*(?:-[ \t]+)?uses:[ \t]*)(?P<quote>['\"]?)"
         + re.escape(repository)
@@ -62,11 +67,13 @@ def workflow_references(text, repository):
     return matches
 
 
-def reference_tag(match):
+def reference_tag(match: re.Match[str]) -> re.Match[str] | None:
     return re.search(r"(?<!\S)v\d+\.\d+\.\d+(?:-[\w.]+)?(?!\S)", match["comment"] or "")
 
 
-def rewrite_workflow(text, old, new, files):
+def rewrite_workflow(
+    text: str, old: dict[str, str], new: dict[str, str], files: dict[str, bytes]
+) -> str:
     metadata = json.loads(files["toolkit-release.json"])
     revision = metadata.get("revision", "")
     if not re.fullmatch(r"[a-f0-9]{40}", revision):
@@ -96,13 +103,13 @@ def rewrite_workflow(text, old, new, files):
     return text
 
 
-def skip_space(text, index):
+def skip_space(text: str, index: int) -> int:
     while index < len(text) and text[index].isspace():
         index += 1
     return index
 
 
-def preset_span(text):
+def preset_span(text: str) -> tuple[int, int] | None:
     """Locate the top-level extends value without reserializing unrelated JSON."""
     decoder = json.JSONDecoder()
     index = text.index("{") + 1
@@ -136,7 +143,7 @@ def preset_span(text):
     return found
 
 
-def rewrite_preset(text, old, new):
+def rewrite_preset(text: str, old: dict[str, str], new: dict[str, str]) -> str:
     if not isinstance(json.loads(text), dict):
         raise ValueError("Renovate configuration must be an object")
     span = preset_span(text)
@@ -148,7 +155,7 @@ def rewrite_preset(text, old, new):
         "github>" + new["repository"] + ":tooling#",
     )
 
-    def replace(match):
+    def replace(match: re.Match[str]) -> str:
         value = json.loads(match[0])
         prefix = next((item for item in prefixes if value.startswith(item)), None)
         if prefix is None:
@@ -173,7 +180,9 @@ class Change:
     mode: int
 
 
-def change_for(root, name, after, mode=None):
+def change_for(
+    root: Path, name: str, after: bytes, mode: int | None = None
+) -> Change | None:
     path = safe_path(root, name)
     before = path.read_bytes() if path.exists() else None
     before_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
@@ -183,7 +192,7 @@ def change_for(root, name, after, mode=None):
     return Change(name, before, after, before_mode, mode)
 
 
-def target(root):
+def target(root: Path) -> tuple[str, str]:
     data = tomllib.loads(safe_path(root, "pyproject.toml").read_text())
     sources = data.get("tool", {}).get("uv", {}).get("sources", {})
     source = sources.get("jellyfin-plugin-toolkit", {})
@@ -205,7 +214,13 @@ def target(root):
     return url, match[1]
 
 
-def plan(root, base_ref=None, *, download=False, git_root=None):
+def plan(
+    root: Path,
+    base_ref: str | None = None,
+    *,
+    download: bool = False,
+    git_root: Path | None = None,
+) -> list[Change]:
     from jellyfin_plugin_toolkit.release.service import (
         github_json,
         release_for_tag,
@@ -299,11 +314,11 @@ def plan(root, base_ref=None, *, download=False, git_root=None):
         return [change for change in changes if change]
 
 
-def transaction_path(root):
+def transaction_path(root: Path) -> Path:
     return safe_path(root, ".build/binding-transaction")
 
 
-def write_durable(path, data, mode=0o644):
+def write_durable(path: Path, data: bytes, mode: int = 0o644) -> None:
     with path.open("wb") as stream:
         stream.write(data)
         stream.flush()
@@ -311,7 +326,7 @@ def write_durable(path, data, mode=0o644):
     path.chmod(mode)
 
 
-def validate_original(root, item):
+def validate_original(root: Path, item: Change) -> None:
     path = safe_path(root, item.name)
     actual = path.read_bytes() if path.exists() else None
     mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
@@ -319,7 +334,7 @@ def validate_original(root, item):
         raise ValueError("Binding changed during synchronization: " + item.name)
 
 
-def recover(root):
+def recover(root: Path) -> None:
     """Explicitly finish rollback after a process interruption; never discard new edits."""
     folder = transaction_path(root)
     if not folder.exists():
@@ -359,7 +374,7 @@ def recover(root):
     shutil.rmtree(folder)
 
 
-def apply(root, changes):
+def apply(root: Path, changes: Sequence[Change]) -> None:
     """Stage all bytes and journal originals before replacement; recover interrupted writes."""
     if not changes:
         return
@@ -412,7 +427,7 @@ def apply(root, changes):
                     shutil.rmtree(folder)
 
 
-def preview(changes):
+def preview(changes: Sequence[Change]) -> None:
     for item in changes:
         print(
             "".join(
@@ -431,7 +446,7 @@ def preview(changes):
         print("Toolkit bindings are synchronized.")
 
 
-def check_integrations(root, config):
+def check_integrations(root: Path, config: Configuration) -> None:
     """Check bindings for default components; consumer overrides retain ownership."""
     checks = config.validation.check_targets
     tooling = "tooling" in checks and not replaces(config, "check-tooling")

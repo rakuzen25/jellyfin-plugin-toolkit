@@ -1,3 +1,7 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
 import tempfile
 from pathlib import Path
 
@@ -8,7 +12,7 @@ from jellyfin_plugin_toolkit.common.process import executable, run
 from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
 
 
-def package(ctx, release=False, prepared_web=False):
+def package(ctx: Context, release: bool = False, prepared_web: bool = False) -> None:
     if release:
         from jellyfin_plugin_toolkit.checks.pins import check_pins
 

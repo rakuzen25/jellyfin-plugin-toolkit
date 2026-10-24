@@ -1,5 +1,10 @@
 """Ensure a verified cache extracted from the pinned official Jellyfin image."""
 
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import hashlib
 import json
 import shutil
@@ -11,7 +16,7 @@ from jellyfin_plugin_toolkit.common.process import run
 from jellyfin_plugin_toolkit.common.release_metadata import load_identity
 
 
-def inventory(ctx, directory: Path) -> dict:
+def inventory(ctx: Context, directory: Path) -> dict[str, Any]:
     files = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted(directory.iterdir())
@@ -36,16 +41,15 @@ def inventory(ctx, directory: Path) -> dict:
     }
 
 
-def verify(ctx, directory: Path) -> bool:
+def verify(ctx: Context, directory: Path) -> bool:
     try:
-        return json.loads(
-            (directory / "cache-integrity.json").read_text()
-        ) == inventory(ctx, directory)
+        stored: object = json.loads((directory / "cache-integrity.json").read_text())
+        return stored == inventory(ctx, directory)
     except OSError, ValueError:
         return False
 
 
-def ensure(ctx, directory: Path | None = None) -> Path:
+def ensure(ctx: Context, directory: Path | None = None) -> Path:
     directory = directory or ctx.root / ".build/jellyfin"
     if verify(ctx, directory):
         return directory

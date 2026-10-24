@@ -5,6 +5,7 @@ import difflib
 import json
 import re
 from pathlib import Path
+from typing import Any, Iterable
 
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.context import Context
@@ -14,7 +15,7 @@ PREFIX = "$['dependencies'][*][?(@.type === 'Project')]['dependencies'][?("
 SUFFIX = ")]"
 
 
-def selector(assemblies):
+def selector(assemblies: Iterable[str]) -> str:
     return (
         PREFIX
         + " || ".join(
@@ -24,7 +25,7 @@ def selector(assemblies):
     )
 
 
-def canonical_rule(rule):
+def canonical_rule(rule: object) -> bool:
     if not isinstance(rule, dict) or set(rule) != {"type", "path", "jsonpath"}:
         return False
     expression = rule.get("jsonpath")
@@ -36,7 +37,9 @@ def canonical_rule(rule):
     return bool(names) and expression == selector({json.loads(name) for name in names})
 
 
-def internal_references(ctx):
+def internal_references(
+    ctx: Context,
+) -> tuple[set[str], dict[str, list[tuple[str, str, str, str]]]]:
     """Return lockfile paths and their (framework, project, dependency, range) rows."""
     assemblies = set(ctx.config.backend.project_assemblies)
     assemblies.add(ctx.identity.assembly)
@@ -64,7 +67,7 @@ def internal_references(ctx):
     return assemblies, locks
 
 
-def generated_config(ctx, data):
+def generated_config(ctx: Context, data: object) -> dict[str, Any]:
     """Preserve consumer settings, replacing only canonical internal-reference rules."""
     if not isinstance(data, dict) or not isinstance(data.get("packages"), dict):
         raise ValueError(
@@ -116,7 +119,7 @@ def generated_config(ctx, data):
     return result
 
 
-def proposal(root):
+def proposal(root: Path) -> tuple[str, str]:
     path = root / FILENAME
     try:
         before = path.read_text()
@@ -128,7 +131,7 @@ def proposal(root):
     return before, after
 
 
-def check(root):
+def check(root: Path) -> None:
     before, after = proposal(root)
     if before != after:
         raise ValueError(
@@ -137,7 +140,7 @@ def check(root):
         )
 
 
-def configure(root, *, apply=False, verify=False):
+def configure(root: Path, *, apply: bool = False, verify: bool = False) -> None:
     before, after = proposal(root)
     if verify:
         check(root)

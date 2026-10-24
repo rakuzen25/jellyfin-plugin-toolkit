@@ -9,7 +9,7 @@ from jellyfin_plugin_toolkit.context import Context
 
 
 class StarterTests(unittest.TestCase):
-    def test_backend_only_starter_has_no_empty_layers_or_frontend(self):
+    def test_backend_only_starter_has_no_empty_layers_or_frontend(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "plugin"
             generate(None, root, "example", "Example", "example/plugin")
@@ -23,7 +23,7 @@ class StarterTests(unittest.TestCase):
             self.assertFalse((root / "frontend").exists())
             self.assertFalse((root / "src/Core").exists())
 
-    def test_administrator_starter_and_project_override(self):
+    def test_administrator_starter_and_project_override(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "plugin"
             generate(
@@ -46,7 +46,7 @@ class StarterTests(unittest.TestCase):
             self.assertTrue((root / "frontend/admin/config.ts").exists())
             self.assertFalse(context.config.distribution.web)
 
-    def test_both_variants_generate_without_github_identity_requests(self):
+    def test_both_variants_generate_without_github_identity_requests(self) -> None:
         with (
             tempfile.TemporaryDirectory() as folder,
             patch(
@@ -67,7 +67,7 @@ class StarterTests(unittest.TestCase):
                 )
             lookup.assert_not_called()
 
-    def test_existing_destination_and_escaping_project_are_rejected(self):
+    def test_existing_destination_and_escaping_project_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
                 generate(None, Path(directory), "example", "Example", "example/plugin")
@@ -82,7 +82,7 @@ class StarterTests(unittest.TestCase):
                     "../Outside.csproj",
                 )
 
-    def test_generated_repository_ignores_execution_reports(self):
+    def test_generated_repository_ignores_execution_reports(self) -> None:
         import subprocess
 
         with tempfile.TemporaryDirectory() as directory:
@@ -113,7 +113,9 @@ class StarterTests(unittest.TestCase):
             )
             self.assertEqual(1, maintained.returncode)
 
-    def test_starter_inherits_quality_tools_and_development_adapter_contract(self):
+    def test_starter_inherits_quality_tools_and_development_adapter_contract(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "plugin"
             generate(None, root, "example", "Example", "example/plugin", True)

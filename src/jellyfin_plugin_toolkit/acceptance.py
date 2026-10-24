@@ -1,5 +1,10 @@
 """Check actual distribution bytes independently of package assembly."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import hashlib
 import json
 import zipfile
@@ -10,7 +15,7 @@ from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.provenance import TOOLKIT_DIST, record
 
 
-def members(package):
+def members(package: zipfile.ZipFile) -> set[str]:
     names = package.namelist()
     if len(names) != len(set(names)):
         raise ValueError("Duplicate distribution member")
@@ -21,7 +26,7 @@ def members(package):
     return set(names)
 
 
-def inventory(ctx):
+def inventory(ctx: Context) -> None:
     dist = ctx.root / "dist"
     binary = f"{ctx.prefix}-{ctx.version}.zip"
     source = f"{ctx.prefix}-source-{ctx.version}.zip"

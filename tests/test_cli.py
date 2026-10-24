@@ -10,12 +10,16 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import Iterator
 from unittest.mock import Mock, patch
+
+from typer import TyperException
+from typer._click.core import Command
 
 from jellyfin_plugin_toolkit.cli import app, main
 
 
-def invoke(arguments):
+def invoke(arguments: list[str]) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         code = main(arguments)
@@ -23,10 +27,10 @@ def invoke(arguments):
 
 
 class CliTests(unittest.TestCase):
-    def test_complete_help_discovery_needs_no_consumer(self):
+    def test_complete_help_discovery_needs_no_consumer(self) -> None:
         from typer.main import get_command
 
-        def walk(command, prefix):
+        def walk(command: Command, prefix: list[str]) -> Iterator[list[str]]:
             yield prefix
             for name, child in getattr(command, "commands", {}).items():
                 yield from walk(child, [*prefix, name])
@@ -49,7 +53,7 @@ class CliTests(unittest.TestCase):
         ]:
             self.assertIn(name, invoke(["internal", "--help"])[1])
 
-    def test_version_and_completion_need_no_configuration_or_credentials(self):
+    def test_version_and_completion_need_no_configuration_or_credentials(self) -> None:
         with patch("jellyfin_plugin_toolkit.context.Context.load") as load:
             self.assertEqual(0, invoke(["--version"])[0])
             code, out, err = invoke(["--show-completion", "bash"])
@@ -57,7 +61,7 @@ class CliTests(unittest.TestCase):
             self.assertIn("_jpt_completion", out)
             load.assert_not_called()
 
-    def test_root_precedence_and_machine_output(self):
+    def test_root_precedence_and_machine_output(self) -> None:
         with (
             tempfile.TemporaryDirectory() as directory,
             patch.dict(os.environ, {"JELLYFIN_PLUGIN_ROOT": directory}),
@@ -80,7 +84,7 @@ class CliTests(unittest.TestCase):
                     json.loads(invoke(["paths"])[1])["toolkit"],
                 )
 
-    def test_stale_binding_and_editor_maintenance_skip_consumer_setup(self):
+    def test_stale_binding_and_editor_maintenance_skip_consumer_setup(self) -> None:
         with (
             tempfile.TemporaryDirectory() as directory,
             patch("jellyfin_plugin_toolkit.context.Context.load") as load,
@@ -93,7 +97,7 @@ class CliTests(unittest.TestCase):
                 )
             load.assert_not_called()
 
-    def test_usage_errors_precede_work(self):
+    def test_usage_errors_precede_work(self) -> None:
         invalid = [
             ["dev", "--port", "0"],
             ["internal", "ci", "verify", "--run-id", "0"],
@@ -141,7 +145,7 @@ class CliTests(unittest.TestCase):
                     self.assertNotIn("\x1b[", err)
             load.assert_not_called()
 
-    def test_runner_tokens_are_preserved_after_first_separator(self):
+    def test_runner_tokens_are_preserved_after_first_separator(self) -> None:
         tokens = [
             "--help",
             "two words",
@@ -160,7 +164,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(0, invoke(["test", "custom-target", "--", *tokens])[0])
             run.assert_called_once_with(selected, "custom-target", tokens)
 
-    def test_failures_debug_and_child_status(self):
+    def test_failures_debug_and_child_status(self) -> None:
         with patch(
             "jellyfin_plugin_toolkit.maintenance.paths",
             side_effect=ValueError("Fix the configured path"),
@@ -176,6 +180,7 @@ class CliTests(unittest.TestCase):
             (subprocess.CalledProcessError(7, "runner"), 7),
             (subprocess.CalledProcessError(-15, "runner"), 143),
             (KeyboardInterrupt(), 130),
+            (TyperException("Invalid command state"), 1),
         ]:
             with (
                 self.subTest(error=error),
@@ -183,7 +188,7 @@ class CliTests(unittest.TestCase):
             ):
                 self.assertEqual(expected, invoke(["paths"])[0])
 
-    def test_generation_does_not_load_a_consumer(self):
+    def test_generation_does_not_load_a_consumer(self) -> None:
         with (
             patch("jellyfin_plugin_toolkit.scaffold.generate") as generate,
             patch("jellyfin_plugin_toolkit.context.Context.load") as load,
@@ -206,7 +211,7 @@ class CliTests(unittest.TestCase):
             generate.assert_called_once()
             load.assert_not_called()
 
-    def test_module_and_console_entries_and_terminal_help(self):
+    def test_module_and_console_entries_and_terminal_help(self) -> None:
         environment = dict(os.environ, CI="true")
         for executable in [
             [sys.executable, "-I", "-m", "jellyfin_plugin_toolkit"],

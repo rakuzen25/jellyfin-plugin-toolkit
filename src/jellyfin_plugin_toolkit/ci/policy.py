@@ -1,5 +1,10 @@
 """Consumer-declared impact policy with conservative input and evidence fingerprints."""
 
+from typing import TYPE_CHECKING, Any, Self, Sequence
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import fnmatch
 import json
 import subprocess
@@ -26,10 +31,10 @@ class ValidationPolicy:
     aggregate_jobs: Mapping[str, tuple[str, ...]]
 
     @classmethod
-    def from_context(cls, ctx):
+    def from_context(cls, ctx: Context) -> Self:
         validation = ctx.config.validation
         groups = ctx.groups
-        validation.valid_groups()
+        type(validation).model_validate(validation.model_dump())
         code = tuple(g for g in groups if g != "artifacts")
         return cls(
             groups,
@@ -51,11 +56,11 @@ class ValidationPolicy:
         )
 
 
-def git(root, *args):
+def git(root: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
 
 
-def metadata_path(path):
+def metadata_path(path: str) -> bool:
     return (
         path in {"renovate.json", ".github/jpt-automation.json"}
         or path == ".github/CODEOWNERS"
@@ -65,7 +70,7 @@ def metadata_path(path):
     )
 
 
-def classification(ctx, path):
+def classification(ctx: Context, path: str) -> tuple[str, set[str]]:
     rules = ctx.config.validation.rules
     selected = set()
     matched = []
@@ -80,11 +85,11 @@ def classification(ctx, path):
     return "+".join(matched), selected
 
 
-def impacts(ctx, path):
+def impacts(ctx: Context, path: str) -> set[str]:
     return classification(ctx, path)[1]
 
 
-def tracked_files(root):
+def tracked_files(root: Path) -> list[str]:
     if not (root / ".git").exists():
         return [str(p) for p in source_files(root)]
     return (
@@ -94,7 +99,7 @@ def tracked_files(root):
     )
 
 
-def check_classification(ctx, changed):
+def check_classification(ctx: Context, changed: Sequence[str]) -> list[dict[str, Any]]:
     root = ctx.root
     unknown = []
     for path in sorted(set(tracked_files(root)) | set(changed)):
@@ -116,7 +121,7 @@ def check_classification(ctx, changed):
     ]
 
 
-def browser_inventory(ctx):
+def browser_inventory(ctx: Context) -> None:
     browser = ctx.config.browser
     if not browser.groups:
         return
@@ -134,7 +139,9 @@ def browser_inventory(ctx):
         raise ValueError("Every browser spec must belong to exactly one group")
 
 
-def fingerprints(ctx, browser=None):
+def fingerprints(
+    ctx: Context, browser: dict[str, dict[str, Any]] | None = None
+) -> dict[str, str]:
     root = ctx.root
     files = source_files(root)
     shared = {Path(p) for p in POLICY} | {
@@ -172,7 +179,7 @@ def fingerprints(ctx, browser=None):
     return result
 
 
-def policy_fingerprint(ctx):
+def policy_fingerprint(ctx: Context) -> str:
     from jellyfin_plugin_toolkit.ci.browser import fingerprint
 
     return fingerprint(
@@ -197,7 +204,7 @@ def policy_fingerprint(ctx):
     )
 
 
-def metadata_check(ctx):
+def metadata_check(ctx: Context) -> None:
     root = ctx.root
     for name in tracked_files(root):
         if metadata_path(name) and name.endswith(".json") and (root / name).exists():

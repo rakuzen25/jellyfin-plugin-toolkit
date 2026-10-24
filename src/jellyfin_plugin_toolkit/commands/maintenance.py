@@ -3,11 +3,12 @@
 from pathlib import Path
 from typing import Annotated
 
+import typer
+
 from jellyfin_plugin_toolkit.commands.runtime import (
     application,
     exclusive,
     state,
-    typer,
 )
 
 editor = application(help="Configure editor integrations.")
@@ -19,7 +20,9 @@ automation = application(help="Configure the connected repository App.")
 
 
 @editor.command()
-def vscode(ctx: typer.Context, apply: Annotated[bool, typer.Option("--apply")] = False):
+def vscode(
+    ctx: typer.Context, apply: Annotated[bool, typer.Option("--apply")] = False
+) -> None:
     """Preview or apply VS Code settings while preserving unrelated settings."""
     from jellyfin_plugin_toolkit.maintenance import editor as configure
 
@@ -32,7 +35,7 @@ def sync(
     base_ref: str | None = None,
     apply: Annotated[bool, typer.Option("--apply")] = False,
     check: Annotated[bool, typer.Option("--check")] = False,
-):
+) -> None:
     """Preview, check or apply native toolkit synchronization."""
     exclusive(**{"--check": check, "--apply": apply})
     from jellyfin_plugin_toolkit import bindings
@@ -47,7 +50,7 @@ def sync(
 
 
 @toolkit.command()
-def recover(ctx: typer.Context):
+def recover(ctx: typer.Context) -> None:
     """Recover an interrupted synchronization without discarding later edits."""
     from jellyfin_plugin_toolkit.bindings import recover as restore
 
@@ -59,7 +62,7 @@ def setup(
     ctx: typer.Context,
     repository: Annotated[str, typer.Option()],
     retry_closed: Annotated[bool, typer.Option("--retry-closed")] = False,
-):
+) -> None:
     """Open or update the reviewed configuration PR using the connected App."""
     from jellyfin_plugin_toolkit.automation_setup import setup as configure
 
@@ -71,7 +74,7 @@ def release_config(
     ctx: typer.Context,
     apply: Annotated[bool, typer.Option("--apply")] = False,
     check: Annotated[bool, typer.Option("--check")] = False,
-):
+) -> None:
     """Preview, check or write Release Please rules."""
     exclusive(**{"--check": check, "--apply": apply})
     from jellyfin_plugin_toolkit.release.configuration import configure
@@ -80,7 +83,7 @@ def release_config(
 
 
 @release_app.command("check")
-def release_check(ctx: typer.Context, tag: str = ""):
+def release_check(ctx: typer.Context, tag: str = "") -> None:
     """Verify plugin version, changelog and package metadata consistency."""
     from jellyfin_plugin_toolkit.release.service import check_identity
 
@@ -93,7 +96,7 @@ def prepare(
     repository: Annotated[str, typer.Option()],
     environment: Annotated[Path, typer.Option()],
     tag: str = "",
-):
+) -> None:
     """Resolve release validation settings into the workflow environment file."""
     from jellyfin_plugin_toolkit.release.service import prepare as resolve
 
@@ -105,7 +108,7 @@ def resume_draft(
     ctx: typer.Context,
     repository: Annotated[str, typer.Option()],
     environment: Annotated[Path, typer.Option()],
-):
+) -> None:
     """Resume an existing matching unpublished plugin draft."""
     from jellyfin_plugin_toolkit.release.service import resume_draft as resume
 
@@ -118,7 +121,7 @@ def upload(
     repository: Annotated[str, typer.Option()],
     tag: Annotated[str, typer.Option()],
     directory: Path = Path("dist"),
-):
+) -> None:
     """Verify and attach tested assets to an existing draft; never publish."""
     from jellyfin_plugin_toolkit.release.service import upload as attach
 

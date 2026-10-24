@@ -6,7 +6,7 @@ from jellyfin_plugin_toolkit.common.process import run
 from jellyfin_plugin_toolkit.context import Context
 
 
-def check_workflows(root: Path):
+def check_workflows(root: Path) -> None:
     context = Context.load(root)
     paths = sorted(
         str(path.relative_to(root))

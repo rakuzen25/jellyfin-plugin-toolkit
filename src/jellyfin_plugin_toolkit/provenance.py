@@ -7,31 +7,32 @@ import tomllib
 import urllib.request
 from importlib.metadata import version
 from pathlib import Path
+from typing import Any
 
 REPOSITORY = "rakuzen25/jellyfin-plugin-toolkit"
 NAME = "jellyfin-plugin-toolkit"
 TOOLKIT_DIST = Path(".build/toolkit-dist")
 
 
-def package_version():
+def package_version() -> str:
     return version(NAME)
 
 
-def wheel_name(selected=None):
+def wheel_name(selected: str | None = None) -> str:
     return f"jellyfin_plugin_toolkit-{selected or package_version()}-py3-none-any.whl"
 
 
-def release_url(selected=None, filename=None):
+def release_url(selected: str | None = None, filename: str | None = None) -> str:
     selected = selected or package_version()
     return f"https://github.com/{REPOSITORY}/releases/download/v{selected}/{filename or wheel_name(selected)}"
 
 
-def public_revision(selected):
+def public_revision(selected: str) -> str:
     """Resolve a public published dependency; draft-release inspection stays authenticated."""
     if not re.fullmatch(r"\d+\.\d+\.\d+", selected):
         raise ValueError("Expected a stable toolkit version")
 
-    def get(endpoint):
+    def get(endpoint: str) -> Any:
         request = urllib.request.Request(
             f"https://api.github.com/repos/{REPOSITORY}{endpoint}",
             headers={"Accept": "application/vnd.github+json", "User-Agent": "jpt"},
@@ -47,14 +48,14 @@ def public_revision(selected):
         if reference.get("type") == "commit" and re.fullmatch(
             r"[0-9a-f]{40}", reference.get("sha", "")
         ):
-            return reference["sha"]
+            return str(reference["sha"])
         if reference.get("type") != "tag":
             break
         reference = get("/git/tags/" + reference["sha"])["object"]
     raise ValueError("Toolkit release tag does not resolve to a commit")
 
 
-def record(root, *, release=False):
+def record(root: Path, *, release: bool = False) -> dict[str, Any]:
     root = Path(root)
     payload = (root / "uv.lock").read_bytes()
     lock = tomllib.loads(payload.decode())
@@ -109,12 +110,12 @@ def record(root, *, release=False):
     }
 
 
-def identity(root):
+def identity(root: Path) -> dict[str, str]:
     """The validator package changes policy; unrelated Python dev dependencies do not."""
     return {k: v for k, v in record(root).items() if k != "python_lock_sha256"}
 
 
-def distribution_directory(root):
+def distribution_directory(root: Path) -> Path:
     """Validate retained distribution parents before reading or writing artifacts."""
     root = Path(root).resolve()
     directory = root / TOOLKIT_DIST
@@ -126,7 +127,7 @@ def distribution_directory(root):
     return directory
 
 
-def distributions(root):
+def distributions(root: Path) -> list[Path]:
     root = Path(root).resolve()
     selected = record(root)
     directory = distribution_directory(root)

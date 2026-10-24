@@ -7,7 +7,7 @@ from pathlib import Path
 from jellyfin_plugin_toolkit import bindings
 
 
-def paths(root):
+def paths(root: Path) -> dict[str, str]:
     python = Path(sys.executable)
     return {
         "toolkit": str(root / ".build/jpt"),
@@ -18,7 +18,7 @@ def paths(root):
     }
 
 
-def editor(root, write=False):
+def editor(root: Path, write: bool = False) -> None:
     selected = paths(root)
     path = bindings.safe_path(root, ".vscode/settings.json")
     original = json.loads(path.read_text()) if path.exists() else {}

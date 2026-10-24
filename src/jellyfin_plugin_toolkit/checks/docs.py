@@ -1,5 +1,10 @@
 """Run remark's repository-wide link checks with toolkit navigation policy."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import json
 import subprocess
 from pathlib import Path
@@ -32,10 +37,11 @@ def check(root: Path) -> list[str]:
         text=True,
         capture_output=True,
     )
-    return json.loads(result.stdout)
+    errors: list[str] = json.loads(result.stdout)
+    return errors
 
 
-def main(ctx) -> None:
+def main(ctx: Context) -> None:
     errors = check(ctx.root)
     if errors:
         raise ValueError("\n".join(errors))

@@ -1,5 +1,11 @@
 """Authenticated GitHub evidence, receipt validation and reuse trust rules."""
 
+from http.client import HTTPMessage
+from typing import IO, TYPE_CHECKING, Any, Iterator, cast
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import hashlib
 import io
 import json
@@ -20,16 +26,26 @@ from jellyfin_plugin_toolkit.provenance import record
 class SafeRedirect(urllib.request.HTTPRedirectHandler):
     """Never forward the Actions token to the signed artifact-storage origin."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes] | None,
+        code: int,
+        msg: str,
+        headers: HTTPMessage | dict[str, str],
+        newurl: str,
+    ) -> urllib.request.Request | None:
         if urlparse(newurl).scheme != "https":
             raise ValueError("Artifact redirect must use HTTPS")
-        request = super().redirect_request(req, fp, code, msg, headers, newurl)
+        request = super().redirect_request(
+            req, cast(IO[bytes], fp), code, msg, cast(HTTPMessage, headers), newurl
+        )
         if request and urlparse(req.full_url).netloc != urlparse(newurl).netloc:
             request.remove_header("Authorization")
         return request
 
 
-def api(repository: str, endpoint: str, binary: bool = False):
+def api(repository: str, endpoint: str, binary: bool = False) -> Any:
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repository):
         raise ValueError("Invalid repository identity")
     request = urllib.request.Request(
@@ -49,7 +65,7 @@ def api(repository: str, endpoint: str, binary: bool = False):
     return data if binary else json.loads(data)
 
 
-def trusted(run: dict, repository: str) -> bool:
+def trusted(run: dict[str, Any], repository: str) -> bool:
     return (
         (run.get("repository") or {}).get("full_name") == repository
         and (run.get("head_repository") or {}).get("full_name") == repository
@@ -72,7 +88,7 @@ def trusted(run: dict, repository: str) -> bool:
     )
 
 
-def merged_pull_request(run: dict, repository: str) -> bool:
+def merged_pull_request(run: dict[str, Any], repository: str) -> bool:
     if run.get("event") != "pull_request":
         return True
     requests = run.get("pull_requests", [])
@@ -88,7 +104,7 @@ def merged_pull_request(run: dict, repository: str) -> bool:
     )
 
 
-def valid_receipt(receipt):
+def valid_receipt(receipt: dict[str, Any]) -> bool:
     """Reject malformed evidence before trust decisions inspect nested fields."""
     if not isinstance(receipt, dict):
         return False
@@ -132,7 +148,7 @@ def valid_receipt(receipt):
     )
 
 
-def read_receipt(repository: str, run: dict) -> dict | None:
+def read_receipt(repository: str, run: dict[str, Any]) -> dict[str, Any] | None:
     # No cache, fork or caller-controlled URL is an evidence source.
     if not trusted(run, repository) or not merged_pull_request(run, repository):
         return None
@@ -152,7 +168,7 @@ def read_receipt(repository: str, run: dict) -> dict | None:
             raise ValueError("Receipt exceeds size limit")
         if archive.namelist().count("validation.json") != 1:
             raise ValueError("Duplicate receipt member")
-        receipt = json.loads(archive.read("validation.json"))
+        receipt: dict[str, Any] = json.loads(archive.read("validation.json"))
     if not valid_receipt(receipt):
         return None
     if (
@@ -177,7 +193,7 @@ def read_receipt(repository: str, run: dict) -> dict | None:
     return receipt
 
 
-def recent_runs(repository: str):
+def recent_runs(repository: str) -> Iterator[dict[str, Any]]:
     """Bound lookup cost while allowing busy repositories to find older evidence."""
     for page in range(1, 4):
         runs = api(repository, f"/actions/runs?per_page=100&page={page}")[
@@ -188,7 +204,7 @@ def recent_runs(repository: str):
             break
 
 
-def coverage_identity(receipt: dict) -> str:
+def coverage_identity(receipt: dict[str, Any]) -> str:
     return hashlib.sha256(
         json.dumps(
             {key: receipt.get(key) for key in ("commit", "tree", "policy", "inputs")},
@@ -197,7 +213,9 @@ def coverage_identity(receipt: dict) -> str:
     ).hexdigest()
 
 
-def validated_ancestor(ctx, repository: str, branch: str, policy: str) -> dict:
+def validated_ancestor(
+    ctx: Context, repository: str, branch: str, policy: str
+) -> dict[str, Any]:
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     root = ctx.root
     for run in recent_runs(repository):
@@ -251,14 +269,14 @@ def validated_ancestor(ctx, repository: str, branch: str, policy: str) -> dict:
 
 
 def completed_group_origin(
-    ctx,
+    ctx: Context,
     repository: str,
-    run: dict,
-    receipt: dict,
+    run: dict[str, Any],
+    receipt: dict[str, Any],
     group: str,
     policy: str,
     fingerprint: str,
-    cache: dict,
+    cache: dict[tuple[str, str], Any],
 ) -> str | None:
     """Resolve one direct origin and verify its authenticated original jobs."""
     validation = ci_policy.ValidationPolicy.from_context(ctx)
@@ -339,12 +357,16 @@ def completed_group_origin(
 
 
 def evidence(
-    ctx, repository: str, inputs: dict[str, str], policy: str, full_only: bool = False
-) -> dict[str, dict]:
+    ctx: Context,
+    repository: str,
+    inputs: dict[str, str],
+    policy: str,
+    full_only: bool = False,
+) -> dict[str, dict[str, Any]]:
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     result = {}
     seen = set()
-    cache: dict = {}
+    cache: dict[tuple[str, str], Any] = {}
     runs = recent_runs(repository)
     for run in runs:  # newest first: a matching failure must block older green reuse
         if run.get("path") not in {
@@ -407,7 +429,7 @@ def evidence(
     return result
 
 
-def verify(ctx, receipt: dict, repository: str, run_id: str) -> None:
+def verify(ctx: Context, receipt: dict[str, Any], repository: str, run_id: str) -> None:
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     root = ctx.root
     if not valid_receipt(receipt):
@@ -436,7 +458,7 @@ def verify(ctx, receipt: dict, repository: str, run_id: str) -> None:
         raise ValueError("Tested artifact hashes do not match")
 
 
-def verify_run(repository: str, run_id: str, receipt: dict) -> None:
+def verify_run(repository: str, run_id: str, receipt: dict[str, Any]) -> None:
     if not re.fullmatch(r"[0-9]+", run_id):
         raise ValueError("Validation run ID must be numeric")
     run = api(repository, f"/actions/runs/{run_id}")

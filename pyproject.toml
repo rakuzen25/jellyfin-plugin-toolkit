@@ -39,3 +39,9 @@ source-include = [
   "MPL-2.0.txt",
   "licenses.spdx.json",
 ]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+python_version = "3.15"
+files = ["src", "scripts", "tests"]
+strict = true

@@ -1,54 +1,63 @@
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit import bindings
 
 
+def required_change(root: Path, name: str, after: bytes) -> bindings.Change:
+    change = bindings.change_for(root, name, after)
+    assert change is not None
+    return change
+
+
 class BindingTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
         (self.root / "pyproject.toml").write_text("before")
 
-    def test_transaction_rejects_concurrent_edits(self):
-        change = bindings.change_for(self.root, "pyproject.toml", b"after")
+    def test_transaction_rejects_concurrent_edits(self) -> None:
+        change = required_change(self.root, "pyproject.toml", b"after")
         (self.root / "pyproject.toml").write_text("user edit")
         with self.assertRaises(ValueError):
             bindings.apply(self.root, [change])
         self.assertEqual("user edit", (self.root / "pyproject.toml").read_text())
 
-    def test_failed_replacement_restores_originals(self):
+    def test_failed_replacement_restores_originals(self) -> None:
         changes = [
-            bindings.change_for(self.root, "pyproject.toml", b"after"),
-            bindings.change_for(self.root, "uv.lock", b"new"),
+            required_change(self.root, "pyproject.toml", b"after"),
+            required_change(self.root, "uv.lock", b"new"),
         ]
-        original = bindings.os.replace
+        original = os.replace
 
-        def fail(source, target):
+        def fail(source: str | Path, target: str | Path) -> None:
             if str(source).endswith("/1"):
                 raise OSError("injected")
             return original(source, target)
 
-        with patch.object(bindings.os, "replace", side_effect=fail):
+        with patch.object(os, "replace", side_effect=fail):
             with self.assertRaises(OSError):
                 bindings.apply(self.root, changes)
         self.assertEqual("before", (self.root / "pyproject.toml").read_text())
         self.assertFalse((self.root / "uv.lock").exists())
 
-    def test_apply_is_idempotent_and_preserves_unrelated_files(self):
+    def test_apply_is_idempotent_and_preserves_unrelated_files(self) -> None:
         (self.root / "unrelated").write_text("keep")
         bindings.apply(
-            self.root, [bindings.change_for(self.root, "pyproject.toml", b"after")]
+            self.root, [required_change(self.root, "pyproject.toml", b"after")]
         )
         self.assertIsNone(bindings.change_for(self.root, "pyproject.toml", b"after"))
         self.assertEqual("keep", (self.root / "unrelated").read_text())
 
-    def test_quoted_workflow_reference_preserves_formatting(self):
-        old = {
+    def test_quoted_workflow_reference_preserves_formatting(self) -> None:
+        old: dict[str, Any] = {
             "repository": "rakuzen25/jellyfin-plugin-toolkit",
             "version": "v0.2.0",
             "revision": "a" * 40,
@@ -59,7 +68,7 @@ class BindingTests(unittest.TestCase):
             + "a" * 40
             + "' # v0.2.0\r\n"
         )
-        files = {
+        files: dict[str, Any] = {
             ".github/workflows/validate.yml": b"workflow",
             "toolkit-release.json": json.dumps(
                 {"version": "0.3.0", "revision": "b" * 40}
@@ -69,8 +78,13 @@ class BindingTests(unittest.TestCase):
         self.assertIn("b" * 40, updated)
         self.assertTrue(updated.endswith("\r\n"))
 
-    def test_named_preset_drift_stops_rewrite_and_unrelated_presets_are_preserved(self):
-        old = {"repository": "rakuzen25/jellyfin-plugin-toolkit", "version": "v0.2.0"}
+    def test_named_preset_drift_stops_rewrite_and_unrelated_presets_are_preserved(
+        self,
+    ) -> None:
+        old: dict[str, Any] = {
+            "repository": "rakuzen25/jellyfin-plugin-toolkit",
+            "version": "v0.2.0",
+        }
         new = dict(old, version="v0.3.0")
         config = '{"extends": ["github>example/policy#v9.0.0", "github>rakuzen25/jellyfin-plugin-toolkit:tooling#v0.1.0"]}'
         with self.assertRaisesRegex(ValueError, "preset drift"):
@@ -80,7 +94,7 @@ class BindingTests(unittest.TestCase):
         self.assertIn("github>example/policy#v9.0.0", updated)
         self.assertIn(":tooling#v0.3.0", updated)
 
-    def test_source_update_requires_canonical_github_wheel(self):
+    def test_source_update_requires_canonical_github_wheel(self) -> None:
         (self.root / "pyproject.toml").write_text(
             '[tool.uv.sources]\njellyfin-plugin-toolkit = {url="https://attacker.invalid/tool.whl"}'
         )
@@ -89,7 +103,7 @@ class BindingTests(unittest.TestCase):
 
 
 class ReleaseBindingPlanTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -119,7 +133,9 @@ class ReleaseBindingPlanTests(unittest.TestCase):
             {"name": "jellyfin_plugin_toolkit-0.3.0.tar.gz"},
         ]
 
-    def test_draft_or_incomplete_release_stops_before_resolution_and_writes(self):
+    def test_draft_or_incomplete_release_stops_before_resolution_and_writes(
+        self,
+    ) -> None:
         original = (self.root / "uv.lock").read_bytes()
         for release in [
             None,
@@ -134,19 +150,21 @@ class ReleaseBindingPlanTests(unittest.TestCase):
                     "jellyfin_plugin_toolkit.release.service.release_for_tag",
                     return_value=release,
                 ),
-                patch.object(bindings.subprocess, "run") as uv,
+                patch.object(subprocess, "run") as uv,
                 self.assertRaises(ValueError),
             ):
                 bindings.plan(self.root)
             uv.assert_not_called()
             self.assertEqual(original, (self.root / "uv.lock").read_bytes())
 
-    def test_wheel_only_proposal_derives_lock_workflows_and_preset_atomically(self):
+    def test_wheel_only_proposal_derives_lock_workflows_and_preset_atomically(
+        self,
+    ) -> None:
         from jellyfin_plugin_toolkit.checks.pins import check_pins
 
         original = {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
 
-        def resolve(command, *, cwd, check):
+        def resolve(command: list[str], *, cwd: Path, check: bool) -> None:
             self.assertEqual(
                 [
                     "uv",
@@ -175,7 +193,7 @@ class ReleaseBindingPlanTests(unittest.TestCase):
                     {"type": "file", "path": ".github/workflows/validate.yml"}
                 ],
             ),
-            patch.object(bindings.subprocess, "run", side_effect=resolve),
+            patch.object(subprocess, "run", side_effect=resolve),
         ):
             changes = bindings.plan(self.root)
         self.assertEqual(original, {p: p.read_bytes() for p in original})

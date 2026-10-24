@@ -1,5 +1,10 @@
 """Common commands with explicit, consumer-owned feature operations."""
 
+from typing import TYPE_CHECKING, Callable, Sequence
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
 import json
 import os
 import shutil
@@ -22,7 +27,9 @@ from jellyfin_plugin_toolkit.context import TOOLKIT_ROOT
 from jellyfin_plugin_toolkit.operations import supports_default
 
 
-def operation(ctx, name, extra=(), *, kind="commands"):
+def operation(
+    ctx: Context, name: str, extra: Sequence[str] = (), *, kind: str = "commands"
+) -> bool:
     spec = ctx.config.operations.get(name)
     if spec is None or getattr(spec, kind) is None:
         return False
@@ -48,7 +55,9 @@ def operation(ctx, name, extra=(), *, kind="commands"):
     return True
 
 
-def dispatch_operation(ctx, name, default, extra=()):
+def dispatch_operation(
+    ctx: Context, name: str, default: Callable[[], None], extra: Sequence[str] = ()
+) -> None:
     if operation(ctx, name, extra):
         return
     spec = ctx.config.operations.get(name)
@@ -58,7 +67,7 @@ def dispatch_operation(ctx, name, default, extra=()):
     operation(ctx, name, kind="after")
 
 
-def verify_tools(ctx):
+def verify_tools(ctx: Context) -> None:
     commands = ["docker", executable("dotnet"), "node"]
     if (ctx.root / "package.json").exists():
         commands += [executable("pnpm")]
@@ -104,7 +113,7 @@ def verify_tools(ctx):
             raise ValueError(f"Node {expected} required; found {actual}")
 
 
-def bootstrap(ctx):
+def bootstrap(ctx: Context) -> None:
     verify_tools(ctx)
     ctx.generated()
     if (ctx.root / "package.json").exists():
@@ -112,7 +121,7 @@ def bootstrap(ctx):
     prepare(ctx)
 
 
-def frontend_build(ctx):
+def frontend_build(ctx: Context) -> None:
     ctx.generated()
     if ctx.config.frontend.enabled:
         run(
@@ -122,7 +131,7 @@ def frontend_build(ctx):
         )
 
 
-def format_target(ctx, target, fix):
+def format_target(ctx: Context, target: str, fix: bool) -> None:
     from jellyfin_plugin_toolkit.checks.formatting import format_target as format_files
 
     dispatch_operation(
@@ -132,11 +141,11 @@ def format_target(ctx, target, fix):
     )
 
 
-def check(ctx, target):
+def check(ctx: Context, target: str) -> None:
     dispatch_operation(ctx, "check-" + target, lambda: check_default(ctx, target))
 
 
-def check_default(ctx, target):
+def check_default(ctx: Context, target: str) -> None:
     if target == "backend":
         from jellyfin_plugin_toolkit.checks.architecture import check_projects
 
@@ -178,7 +187,7 @@ def check_default(ctx, target):
         raise ValueError("Unknown check target: " + target)
 
 
-def backend_tests(ctx, extra):
+def backend_tests(ctx: Context, extra: Sequence[str]) -> None:
     ctx.generated()
     frontend = ctx.config.frontend
     if frontend.enabled and any(
@@ -212,7 +221,7 @@ def backend_tests(ctx, extra):
         )
 
 
-def browser_tests(ctx, extra):
+def browser_tests(ctx: Context, extra: Sequence[str]) -> None:
     directory = ctx.config.browser.directory
     results = Path(tempfile.mkdtemp(prefix="results-run.", dir=ctx.root / directory))
     run(
@@ -244,13 +253,13 @@ def browser_tests(ctx, extra):
     )
 
 
-def test(ctx, target, extra):
+def test(ctx: Context, target: str, extra: Sequence[str]) -> None:
     dispatch_operation(
         ctx, "test-" + target, lambda: test_default(ctx, target, extra), extra
     )
 
 
-def test_default(ctx, target, extra):
+def test_default(ctx: Context, target: str, extra: Sequence[str]) -> None:
     if target == "reproducibility":
         from jellyfin_plugin_toolkit.reproducibility import main
 

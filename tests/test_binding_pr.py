@@ -1,14 +1,19 @@
 import copy
+import subprocess
 import unittest
+from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit import binding_pr
 
 
 class GitHubApiTests(unittest.TestCase):
-    def test_repository_metadata_uses_the_root_endpoint_without_a_trailing_slash(self):
+    def test_repository_metadata_uses_the_root_endpoint_without_a_trailing_slash(
+        self,
+    ) -> None:
         with patch.object(
-            binding_pr.subprocess,
+            subprocess,
             "check_output",
             return_value=b'{"default_branch":"main"}',
         ) as request:
@@ -19,10 +24,8 @@ class GitHubApiTests(unittest.TestCase):
             ["gh", "api", "--method", "GET", "repos/example/plugin"], input=None
         )
 
-    def test_nested_endpoint_retains_method_and_write_body(self):
-        with patch.object(
-            binding_pr.subprocess, "check_output", return_value=b"{}"
-        ) as request:
+    def test_nested_endpoint_retains_method_and_write_body(self) -> None:
+        with patch.object(subprocess, "check_output", return_value=b"{}") as request:
             binding_pr.api("example/plugin", "pulls/17", "PATCH", {"state": "open"})
         request.assert_called_once_with(
             [
@@ -39,8 +42,8 @@ class GitHubApiTests(unittest.TestCase):
 
 
 class BindingPRTests(unittest.TestCase):
-    def fixture(self):
-        repo = {"full_name": "example/plugin"}
+    def fixture(self) -> dict[str, Any]:
+        repo: dict[str, Any] = {"full_name": "example/plugin"}
         return {
             "state": "open",
             "number": 17,
@@ -49,7 +52,7 @@ class BindingPRTests(unittest.TestCase):
             "base": {"sha": "b" * 40, "repo": repo},
         }
 
-    def test_only_same_repository_bot_prs_are_eligible(self):
+    def test_only_same_repository_bot_prs_are_eligible(self) -> None:
         pr = self.fixture()
         self.assertTrue(binding_pr.eligible(pr, "example/plugin", "renovate[bot]"))
         for changed in [
@@ -63,8 +66,8 @@ class BindingPRTests(unittest.TestCase):
         fork["head"]["repo"] = {"full_name": "fork/plugin"}
         self.assertFalse(binding_pr.eligible(fork, "example/plugin", "renovate[bot]"))
 
-    def test_tampered_proposal_is_rejected_before_writing(self):
-        proposal = {
+    def test_tampered_proposal_is_rejected_before_writing(self) -> None:
+        proposal: dict[str, Any] = {
             "schema": 1,
             "repository": "example/plugin",
             "number": 17,
@@ -77,11 +80,13 @@ class BindingPRTests(unittest.TestCase):
             ),
         ):
             with self.assertRaises(ValueError):
-                binding_pr.commit(None, "example/plugin", proposal, "renovate[bot]")
+                binding_pr.commit(
+                    Path("."), "example/plugin", proposal, "renovate[bot]"
+                )
         self.assertTrue(all(len(call.args) < 3 for call in api.call_args_list))
 
-    def test_identity_failure_stops_before_any_write(self):
-        proposal = {
+    def test_identity_failure_stops_before_any_write(self) -> None:
+        proposal: dict[str, Any] = {
             "schema": 1,
             "repository": "example/plugin",
             "number": 17,
@@ -97,12 +102,14 @@ class BindingPRTests(unittest.TestCase):
             ),
         ):
             with self.assertRaisesRegex(ValueError, "App identity"):
-                binding_pr.commit(None, "example/plugin", proposal, "renovate[bot]")
+                binding_pr.commit(
+                    Path("."), "example/plugin", proposal, "renovate[bot]"
+                )
         self.assertTrue(all(len(call.args) < 3 for call in api.call_args_list))
 
-    def test_app_is_both_author_and_committer(self):
+    def test_app_is_both_author_and_committer(self) -> None:
         pr = self.fixture()
-        proposal = {
+        proposal: dict[str, Any] = {
             "schema": 1,
             "repository": "example/plugin",
             "number": 17,
@@ -110,14 +117,20 @@ class BindingPRTests(unittest.TestCase):
             "base": pr["base"]["sha"],
             "changes": [{"name": "uv.lock", "after": "", "mode": 0o644}],
         }
-        identity = {
+        identity: dict[str, Any] = {
             "name": "fixture-app[bot]",
             "email": "123+fixture-app[bot]@users.noreply.github.com",
         }
         writes = []
 
-        def api(repository, endpoint, method="GET", body=None):
+        def api(
+            repository: str,
+            endpoint: str,
+            method: str = "GET",
+            body: dict[str, Any] | None = None,
+        ) -> Any:
             if method != "GET":
+                assert body is not None
                 writes.append((endpoint, body))
                 return {"sha": "c" * 40}
             if endpoint.startswith("pulls/"):
@@ -130,21 +143,21 @@ class BindingPRTests(unittest.TestCase):
             patch.object(binding_pr, "commit_identity", return_value=identity),
             patch.object(binding_pr, "check_renovate"),
         ):
-            binding_pr.commit(None, "example/plugin", proposal, "renovate[bot]")
+            binding_pr.commit(Path("."), "example/plugin", proposal, "renovate[bot]")
         created = next(body for endpoint, body in writes if endpoint == "git/commits")
         self.assertEqual(identity, created["author"])
         self.assertEqual(identity, created["committer"])
         self.assertFalse(writes[-1][1]["force"])
 
-    def test_invalid_proposal_is_rejected_without_github_access(self):
+    def test_invalid_proposal_is_rejected_without_github_access(self) -> None:
         with patch.object(binding_pr, "api") as api:
             with self.assertRaises(ValueError):
-                binding_pr.commit(None, "example/plugin", {}, "renovate[bot]")
+                binding_pr.commit(Path("."), "example/plugin", {}, "renovate[bot]")
         api.assert_not_called()
 
 
 class NativeResolverBoundaryTests(unittest.TestCase):
-    def test_only_canonical_toolkit_source_can_change(self):
+    def test_only_canonical_toolkit_source_can_change(self) -> None:
         before = b'[project]\nname="example"\ndependencies=["jellyfin-plugin-toolkit"]\n[tool.uv.sources]\njellyfin-plugin-toolkit={url="old"}\n'
         after = before.replace(b'url="old"', b'url="new"')
         binding_pr.validate_project_update(before, after)

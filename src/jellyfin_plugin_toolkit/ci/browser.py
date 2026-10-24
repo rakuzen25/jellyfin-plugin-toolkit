@@ -1,5 +1,12 @@
 """Fixture-only browser test identity, independent of unrelated build inputs."""
 
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Sequence
+
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.configuration import BrowserInputs
+    from jellyfin_plugin_toolkit.context import Context
+
 import fnmatch
 import hashlib
 import json
@@ -14,13 +21,13 @@ from jellyfin_plugin_toolkit.common.source_inventory import (
 from jellyfin_plugin_toolkit.context import output_name
 
 
-def fingerprint(value):
+def fingerprint(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
 
 
-def test_inputs(ctx, spec, maintained):
+def test_inputs(ctx: Context, spec: BrowserInputs, maintained: Sequence[Path]) -> str:
     selected = set()
     for pattern in spec.files:
         matches = {
@@ -34,7 +41,7 @@ def test_inputs(ctx, spec, maintained):
     return digest(ctx.root, selected)
 
 
-def settings(ctx, group, spec):
+def settings(ctx: Context, group: str, spec: BrowserInputs) -> dict[str, Any]:
     return {
         "group": group,
         "projects": spec.projects,
@@ -47,7 +54,7 @@ def settings(ctx, group, spec):
     }
 
 
-def capture(ctx):
+def capture(ctx: Context) -> dict[str, dict[str, Any]]:
     if not ctx.config.validation.browser_inputs:
         return {}
     maintained = source_files(ctx.root)
@@ -87,7 +94,7 @@ def capture(ctx):
     return result
 
 
-def verify(ctx, proofs):
+def verify(ctx: Context, proofs: dict[str, Any]) -> dict[str, str]:
     """Validate a trusted receipt without rebuilding assets in the publication job."""
     specs = ctx.config.validation.browser_inputs
     if not isinstance(proofs, dict) or set(proofs) != set(specs):
@@ -142,7 +149,9 @@ def verify(ctx, proofs):
     return results
 
 
-def verify_execution(ctx, selection, group, project, workers):
+def verify_execution(
+    ctx: Context, selection: dict[str, Any], group: str, project: str, workers: int
+) -> None:
     spec = ctx.config.validation.browser_inputs.get(group)
     if spec is None:
         return

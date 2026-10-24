@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["check", "format"])
     fix = parser.parse_args().command == "format"
@@ -27,6 +27,7 @@ def main():
     if not fix:
         commands += [
             [python, "-m", "ruff", "check", "."],
+            [python, "-m", "mypy"],
             ["pnpm", "exec", "eslint", ".", "--max-warnings", "0"],
             ["pnpm", "exec", "tsc", "--noEmit"],
         ]

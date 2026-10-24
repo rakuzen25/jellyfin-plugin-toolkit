@@ -12,11 +12,12 @@ import zipfile
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 
 class NativeAgePolicyTests(unittest.TestCase):
-    def test_uv_excludes_fresh_release_and_rejects_required_fresh_version(self):
-        files = {}
+    def test_uv_excludes_fresh_release_and_rejects_required_fresh_version(self) -> None:
+        files: dict[str, Any] = {}
         for version in ["0.1.0", "1.0.0"]:
             stream = io.BytesIO()
             prefix = f"jpt_age_probe-{version}.dist-info/"
@@ -32,7 +33,7 @@ class NativeAgePolicyTests(unittest.TestCase):
                 wheel.writestr(prefix + "RECORD", "")
             files[f"jpt_age_probe-{version}-py3-none-any.whl"] = stream.getvalue()
         now = datetime.now(UTC)
-        listing = {
+        listing: dict[str, Any] = {
             "meta": {"api-version": "1.1"},
             "name": "jpt-age-probe",
             "files": [
@@ -55,13 +56,13 @@ class NativeAgePolicyTests(unittest.TestCase):
         }
 
         class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args):
+            def log_message(self, *args: object) -> None:
                 pass
 
-            def do_HEAD(self):
+            def do_HEAD(self) -> None:
                 self.do_GET()
 
-            def do_GET(self):
+            def do_GET(self) -> None:
                 filename = self.path.lstrip("/")
                 package = self.path == "/simple/jpt-age-probe/"
                 payload = (
@@ -110,8 +111,8 @@ class NativeAgePolicyTests(unittest.TestCase):
                 settings = tomllib.loads((source / "pyproject.toml").read_text())[
                     "tool"
                 ]["uv"]
-                with (root / "pyproject.toml").open("a") as stream:
-                    stream.write(
+                with (root / "pyproject.toml").open("a") as settings_output:
+                    settings_output.write(
                         "\n[tool.uv]\n"
                         + "\n".join(
                             key + " = " + json.dumps(settings[key])

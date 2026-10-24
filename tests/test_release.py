@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from consumer_fixture import config
@@ -23,7 +24,7 @@ REPOSITORY = "example/plugin"
 
 
 class ReleaseTests(unittest.TestCase):
-    def fixture(self, root):
+    def fixture(self, root: Path) -> None:
         selected = copy.deepcopy(config)
         selected["distribution"]["web"] = True
         selected["backend"]["project_assemblies"] = ["Example.Core"]
@@ -58,7 +59,7 @@ class ReleaseTests(unittest.TestCase):
         )
         configure(root, apply=True)
 
-    def artifacts(self, root: Path):
+    def artifacts(self, root: Path) -> tuple[Path, str]:
         directory = root / "dist"
         directory.mkdir()
         metadata = load_release(root)
@@ -105,7 +106,9 @@ class ReleaseTests(unittest.TestCase):
         )
         return directory, tag
 
-    def test_matching_existing_draft_resumes_without_creating_or_moving_tags(self):
+    def test_matching_existing_draft_resumes_without_creating_or_moving_tags(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.fixture(root)
@@ -120,7 +123,7 @@ class ReleaseTests(unittest.TestCase):
                         {"object": {"type": "commit", "sha": "same"}},
                     ],
                 ),
-                patch.object(release.subprocess, "check_output", return_value="same\n"),
+                patch.object(subprocess, "check_output", return_value="same\n"),
             ):
                 release.resume_draft(root, REPOSITORY, output)
             self.assertIn("release_created=true", output.read_text())
@@ -133,7 +136,7 @@ class ReleaseTests(unittest.TestCase):
                         {"object": {"type": "commit", "sha": "moved"}},
                     ],
                 ),
-                patch.object(release.subprocess, "check_output", return_value="same\n"),
+                patch.object(subprocess, "check_output", return_value="same\n"),
                 self.assertRaisesRegex(ValueError, "does not match"),
             ):
                 release.resume_draft(root, REPOSITORY, output)
@@ -147,7 +150,7 @@ class ReleaseTests(unittest.TestCase):
             ):
                 release.resume_draft(root, REPOSITORY, output)
 
-    def test_identity_changelog_and_preparation(self):
+    def test_identity_changelog_and_preparation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.fixture(root)
@@ -164,7 +167,7 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Conflicting version"):
                 release.check_identity(root)
 
-    def test_changelog_extracts_only_matching_release_please_section(self):
+    def test_changelog_extracts_only_matching_release_please_section(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "CHANGELOG.md").write_text(
@@ -176,7 +179,7 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Missing changelog"):
                 changelog_for_version(root, "0.1.2")
 
-    def test_stale_lock_metadata_is_rejected(self):
+    def test_stale_lock_metadata_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.fixture(root)
@@ -189,7 +192,7 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "stale"):
                 release.check_identity(root)
 
-    def test_checksums_and_public_url_are_required(self):
+    def test_checksums_and_public_url_are_required(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.fixture(root)
@@ -203,19 +206,21 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "checksum"):
                 release.artifact_hashes(root, directory, REPOSITORY, tag)
 
-    def test_draft_upload_retries_without_overwriting(self):
+    def test_draft_upload_retries_without_overwriting(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.fixture(root)
             directory, tag = self.artifacts(root)
             hashes = release.artifact_hashes(root, directory, REPOSITORY, tag)
-            draft = {
+            draft: dict[str, Any] = {
                 "draft": True,
                 "tag_name": tag,
                 "assets": [{"name": name} for name in [*hashes, "validation.json"]],
             }
 
-            def download(command, **kwargs):
+            def download(
+                command: list[str], **kwargs: Any
+            ) -> subprocess.CompletedProcess[Any]:
                 name = command[command.index("--pattern") + 1]
                 target = Path(command[command.index("--dir") + 1]) / name
                 shutil.copyfile(directory / name, target)
@@ -230,10 +235,8 @@ class ReleaseTests(unittest.TestCase):
                         {"object": {"type": "commit", "sha": "fixture"}},
                     ],
                 ),
-                patch.object(
-                    release.subprocess, "check_output", return_value="fixture\n"
-                ),
-                patch.object(release.subprocess, "run", side_effect=download) as run,
+                patch.object(subprocess, "check_output", return_value="fixture\n"),
+                patch.object(subprocess, "run", side_effect=download) as run,
             ):
                 release.upload(root, directory, REPOSITORY, tag)
                 self.assertTrue(
@@ -241,7 +244,9 @@ class ReleaseTests(unittest.TestCase):
                 )
             conflict = copy.deepcopy(draft)
 
-            def corrupted_download(command, **kwargs):
+            def corrupted_download(
+                command: list[str], **kwargs: Any
+            ) -> subprocess.CompletedProcess[Any]:
                 name = command[command.index("--pattern") + 1]
                 (Path(command[command.index("--dir") + 1]) / name).write_bytes(
                     b"conflict"
@@ -257,15 +262,13 @@ class ReleaseTests(unittest.TestCase):
                         {"object": {"type": "commit", "sha": "fixture"}},
                     ],
                 ),
-                patch.object(
-                    release.subprocess, "check_output", return_value="fixture\n"
-                ),
-                patch.object(release.subprocess, "run", side_effect=corrupted_download),
+                patch.object(subprocess, "check_output", return_value="fixture\n"),
+                patch.object(subprocess, "run", side_effect=corrupted_download),
                 self.assertRaisesRegex(ValueError, "Conflicting"),
             ):
                 release.upload(root, directory, REPOSITORY, tag)
 
-    def test_public_receipt_mismatch_stops_before_remote_upload(self):
+    def test_public_receipt_mismatch_stops_before_remote_upload(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.fixture(root)
@@ -280,7 +283,7 @@ class ReleaseTests(unittest.TestCase):
                 release.upload(root, directory, REPOSITORY, tag)
             remote.assert_not_called()
 
-    def test_initial_upload_attaches_only_required_assets(self):
+    def test_initial_upload_attaches_only_required_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.fixture(root)
@@ -294,10 +297,8 @@ class ReleaseTests(unittest.TestCase):
                         {"object": {"type": "commit", "sha": "tested"}},
                     ],
                 ),
-                patch.object(
-                    release.subprocess, "check_output", return_value="tested\n"
-                ),
-                patch.object(release.subprocess, "run") as run,
+                patch.object(subprocess, "check_output", return_value="tested\n"),
+                patch.object(subprocess, "run") as run,
             ):
                 release.upload(root, directory, REPOSITORY, tag)
                 command = run.call_args.args[0]
@@ -306,14 +307,14 @@ class ReleaseTests(unittest.TestCase):
                 self.assertNotIn("--draft=false", command)
                 self.assertEqual(len(command[4:-2]), 6)
 
-    def test_missing_release_date_fails_before_packaging(self):
+    def test_missing_release_date_fails_before_packaging(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "CHANGELOG.md").write_text("## 0.1.0\n\nUndated notes\n")
             with self.assertRaisesRegex(ValueError, "release date"):
                 changelog_for_version(root, "0.1.0")
 
-    def test_published_release_and_moved_tag_are_rejected(self):
+    def test_published_release_and_moved_tag_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.fixture(root)
@@ -336,9 +337,7 @@ class ReleaseTests(unittest.TestCase):
                         {"object": {"type": "commit", "sha": "changed"}},
                     ],
                 ),
-                patch.object(
-                    release.subprocess, "check_output", return_value="tested\n"
-                ),
+                patch.object(subprocess, "check_output", return_value="tested\n"),
                 self.assertRaisesRegex(ValueError, "moved"),
             ):
                 release.upload(root, directory, REPOSITORY, tag)

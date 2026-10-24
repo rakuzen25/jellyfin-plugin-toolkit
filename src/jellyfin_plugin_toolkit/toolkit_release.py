@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from jellyfin_plugin_toolkit.provenance import package_version, wheel_name
 from jellyfin_plugin_toolkit.release.service import (
@@ -18,7 +19,7 @@ from jellyfin_plugin_toolkit.release.service import (
 )
 
 
-def resolve(repository: str, tag: str, sha: str = "") -> tuple[dict, str]:
+def resolve(repository: str, tag: str, sha: str = "") -> tuple[dict[str, Any], str]:
     repository_name(repository)
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise ValueError("Expected a toolkit vMAJOR.MINOR.PATCH tag")
@@ -40,7 +41,7 @@ def resolve(repository: str, tag: str, sha: str = "") -> tuple[dict, str]:
     return release, revision
 
 
-def manifest(directory, sha):
+def manifest(directory: Path, sha: str) -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Expected an immutable source revision")
     selected = package_version()
@@ -93,7 +94,10 @@ def artifact_hashes(directory: Path, tag: str, sha: str) -> dict[str, str]:
         ]
         if len(names_in_source) != 1:
             raise ValueError("Invalid source distribution metadata")
-        info = email.message_from_bytes(package.extractfile(names_in_source[0]).read())
+        member = package.extractfile(names_in_source[0])
+        if member is None:
+            raise ValueError("Missing source distribution metadata")
+        info = email.message_from_bytes(member.read())
         if info["Name"] != "jellyfin-plugin-toolkit" or info["Version"] != selected:
             raise ValueError("Source distribution identity differs")
     for name in ["SHA256SUMS", "build-provenance.json"]:

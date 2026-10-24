@@ -4,17 +4,22 @@ import json
 import signal
 import subprocess
 import tempfile
+import time
+import urllib.request
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from consumer_fixture import ConsumerTestCase, create_consumer
 
+from jellyfin_plugin_toolkit.common.release_metadata import load_identity
+from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.dev import local_jellyfin as sandbox
 from jellyfin_plugin_toolkit.dev.references import inventory, verify
 
 
 class LocalSandboxTests(ConsumerTestCase):
-    def test_interruption_stops_child_and_cleans_up_before_propagating(self):
+    def test_interruption_stops_child_and_cleans_up_before_propagating(self) -> None:
         child = MagicMock()
         child.wait.side_effect = [KeyboardInterrupt(), 0]
         child.poll.return_value = 0
@@ -23,7 +28,7 @@ class LocalSandboxTests(ConsumerTestCase):
             patch("jellyfin_plugin_toolkit.tasks.verify_tools"),
             patch("jellyfin_plugin_toolkit.dev.references.ensure"),
             patch("pathlib.Path.exists", return_value=True),
-            patch.object(sandbox.subprocess, "Popen", return_value=child),
+            patch.object(subprocess, "Popen", return_value=child),
             patch.object(sandbox, "stop") as stop,
             self.assertRaises(KeyboardInterrupt),
         ):
@@ -31,7 +36,7 @@ class LocalSandboxTests(ConsumerTestCase):
         child.send_signal.assert_called_once_with(signal.SIGINT)
         stop.assert_called_once_with(self.ctx)
 
-    def test_dev_forwards_no_watch_to_supervisor(self):
+    def test_dev_forwards_no_watch_to_supervisor(self) -> None:
         for no_watch in (False, True):
             with (
                 self.subTest(no_watch=no_watch),
@@ -48,9 +53,7 @@ class LocalSandboxTests(ConsumerTestCase):
                     patch("jellyfin_plugin_toolkit.tasks.verify_tools"),
                     patch("jellyfin_plugin_toolkit.dev.references.ensure"),
                     patch("pathlib.Path.exists", return_value=True),
-                    patch.object(
-                        sandbox.subprocess, "Popen", return_value=child
-                    ) as spawn,
+                    patch.object(subprocess, "Popen", return_value=child) as spawn,
                     patch.object(sandbox, "stop"),
                 ):
                     sandbox.dev(
@@ -61,7 +64,7 @@ class LocalSandboxTests(ConsumerTestCase):
 
     def test_readiness_waits_for_healthy_body_and_retries_startup_connection_resets(
         self,
-    ):
+    ) -> None:
         degraded, healthy = MagicMock(), MagicMock()
         degraded.__enter__.return_value.status = 200
         degraded.__enter__.return_value.read.return_value = b"Degraded"
@@ -69,17 +72,17 @@ class LocalSandboxTests(ConsumerTestCase):
         healthy.__enter__.return_value.read.return_value = b"Healthy"
         with (
             patch.object(
-                sandbox.urllib.request,
+                urllib.request,
                 "urlopen",
                 side_effect=[degraded, ConnectionResetError("starting"), healthy],
             ) as request,
-            patch.object(sandbox.time, "sleep") as sleep,
+            patch.object(time, "sleep") as sleep,
         ):
             sandbox.wait_ready(self.ctx, 18096)
         self.assertEqual(3, request.call_count)
         self.assertEqual(2, sleep.call_count)
 
-    def test_another_session_cannot_take_the_checkout_lock(self):
+    def test_another_session_cannot_take_the_checkout_lock(self) -> None:
         import fcntl
 
         with tempfile.TemporaryDirectory() as directory:
@@ -97,7 +100,7 @@ class LocalSandboxTests(ConsumerTestCase):
                     sandbox.dev(self.ctx)
                 tools.assert_not_called()
 
-    def test_media_mounts_are_deduplicated_and_retained(self):
+    def test_media_mounts_are_deduplicated_and_retained(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / ".build/local-jellyfin"
             root.mkdir(parents=True)
@@ -117,7 +120,7 @@ class LocalSandboxTests(ConsumerTestCase):
                     with self.assertRaises(ValueError):
                         sandbox.media_paths(self.ctx, [invalid])
 
-    def test_missing_media_fails_before_build(self):
+    def test_missing_media_fails_before_build(self) -> None:
         with patch.object(sandbox, "publish") as publish:
             with self.assertRaises(ValueError):
                 sandbox.deploy(
@@ -125,10 +128,10 @@ class LocalSandboxTests(ConsumerTestCase):
                 )
             publish.assert_not_called()
 
-    def test_foreign_container_is_never_adopted(self):
+    def test_foreign_container_is_never_adopted(self) -> None:
         with (
             patch.object(
-                sandbox.subprocess,
+                subprocess,
                 "check_output",
                 side_effect=["id", json.dumps([{"Config": {"Labels": {}}}])],
             ),
@@ -136,10 +139,10 @@ class LocalSandboxTests(ConsumerTestCase):
         ):
             sandbox.inspect(self.ctx)
 
-    def test_daemon_errors_are_not_treated_as_absence(self):
+    def test_daemon_errors_are_not_treated_as_absence(self) -> None:
         with (
             patch.object(
-                sandbox.subprocess,
+                subprocess,
                 "check_output",
                 side_effect=subprocess.CalledProcessError(1, "docker"),
             ),
@@ -147,14 +150,16 @@ class LocalSandboxTests(ConsumerTestCase):
         ):
             sandbox.inspect(self.ctx)
 
-    def replacement(self, *, build_fails=False, startup_fails=False):
+    def replacement(
+        self, *, build_fails: bool = False, startup_fails: bool = False
+    ) -> list[str]:
         with tempfile.TemporaryDirectory() as directory:
             data = Path(directory) / ".build/local-jellyfin"
             data.mkdir(parents=True)
             plugins = data / "config/plugins"
             previous = plugins / (self.ctx.identity.name + "_previous")
             previous.mkdir(parents=True)
-            release = sandbox.load_identity(self.ctx.root)
+            release = load_identity(self.ctx.root)
             (previous / "meta.json").write_text(json.dumps({"guid": release.guid}))
             (previous / "old.dll").write_text("last working plugin")
             other = plugins / "OtherPlugin"
@@ -163,7 +168,7 @@ class LocalSandboxTests(ConsumerTestCase):
             database.write_text("retained")
             calls = []
 
-            def publish(ctx, output, web, **kwargs):
+            def publish(ctx: Context, output: Path, web: Path, **kwargs: Any) -> None:
                 calls.append("build")
                 if build_fails:
                     raise ValueError("compile error")
@@ -172,7 +177,7 @@ class LocalSandboxTests(ConsumerTestCase):
                     "new plugin"
                 )
 
-            def start(ctx, mounts):
+            def start(ctx: Context, mounts: list[str]) -> None:
                 calls.append("start")
                 if startup_fails and calls.count("start") == 1:
                     raise RuntimeError("startup error")
@@ -208,19 +213,21 @@ class LocalSandboxTests(ConsumerTestCase):
             self.assertEqual("retained", database.read_text())
             return calls
 
-    def test_successful_replacement_builds_before_stopping_and_preserves_data(self):
+    def test_successful_replacement_builds_before_stopping_and_preserves_data(
+        self,
+    ) -> None:
         self.assertEqual(["build", "stop", "start"], self.replacement())
 
-    def test_compile_failure_keeps_running_installation(self):
+    def test_compile_failure_keeps_running_installation(self) -> None:
         self.assertEqual(["build"], self.replacement(build_fails=True))
 
-    def test_startup_failure_rolls_back_and_restarts_previous_plugin(self):
+    def test_startup_failure_rolls_back_and_restarts_previous_plugin(self) -> None:
         self.assertEqual(
             ["build", "stop", "start", "stop", "start"],
             self.replacement(startup_fails=True),
         )
 
-    def test_reference_integrity_detects_corruption_and_image_changes(self):
+    def test_reference_integrity_detects_corruption_and_image_changes(self) -> None:
         images = self.ctx.images
 
         with tempfile.TemporaryDirectory() as directory:

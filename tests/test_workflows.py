@@ -5,17 +5,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.workflows import render
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_validation_has_no_publication_credentials(self):
+    def test_validation_has_no_publication_credentials(self) -> None:
         workflow = render("example/toolkit", "a" * 40, version="v1.0.0")["validate.yml"]
         self.assertNotIn("secrets:", workflow)
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
-    def test_advisory_job_is_fresh_even_when_artifacts_are_not_selected(self):
+    def test_advisory_job_is_fresh_even_when_artifacts_are_not_selected(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
         ).read_text()
@@ -26,7 +27,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("if: always()", advisory)
         self.assertNotIn("reuse", advisory)
 
-    def test_release_build_can_verify_the_toolkit_tag_with_read_only_token(self):
+    def test_release_build_can_verify_the_toolkit_tag_with_read_only_token(
+        self,
+    ) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
         ).read_text()
@@ -39,7 +42,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("  contents: read\n", workflow)
         self.assertNotIn("contents: write", workflow)
 
-    def test_browser_jobs_forward_runner_options_after_separator(self):
+    def test_browser_jobs_forward_runner_options_after_separator(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
         ).read_text()
@@ -53,7 +56,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("uv run --no-sync jpt test browser -- --project", command)
             self.assertIn("--workers=", command)
 
-    def test_app_setup_caller_is_always_generated_and_default_branch_only(self):
+    def test_app_setup_caller_is_always_generated_and_default_branch_only(self) -> None:
         caller = render("example/toolkit", "a" * 40, version="v1.0.0")["app-setup.yml"]
         self.assertIn("push:\n    branches: [main]\n    paths:", caller)
         for path in [
@@ -69,29 +72,29 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("app_slug", caller)
         self.assertNotIn("contents: write", caller)
 
-    def test_mutable_revision_and_invalid_catalog_rejected(self):
+    def test_mutable_revision_and_invalid_catalog_rejected(self) -> None:
         with self.assertRaises(ValueError):
             render("example/toolkit", "main", version="v1.0.0")
         with self.assertRaises(ValueError):
             render("example/toolkit", "a" * 40, "owner/repo/extra", version="v1.0.0")
 
-    def test_source_distribution_workflows_do_not_require_git_metadata(self):
+    def test_source_distribution_workflows_do_not_require_git_metadata(self) -> None:
         from types import SimpleNamespace
 
         from jellyfin_plugin_toolkit.checks import workflows as checker
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            directory = root / ".github/workflows"
-            directory.mkdir(parents=True)
-            (directory / "validate.yml").write_text("name: Fixture\n")
+            workflow_directory = root / ".github/workflows"
+            workflow_directory.mkdir(parents=True)
+            (workflow_directory / "validate.yml").write_text("name: Fixture\n")
             context = SimpleNamespace(
                 config=SimpleNamespace(
                     images={"actionlint": "fixture@sha256:" + "a" * 64}
                 )
             )
             with (
-                patch.object(checker.Context, "load", return_value=context),
+                patch.object(Context, "load", return_value=context),
                 patch.object(checker, "run") as run,
             ):
                 checker.check_workflows(root)
@@ -102,7 +105,7 @@ class WorkflowTests(unittest.TestCase):
 
 
 class OptionalSyncWorkflowTests(unittest.TestCase):
-    def test_consumer_caller_is_opt_in_and_handles_failed_validation(self):
+    def test_consumer_caller_is_opt_in_and_handles_failed_validation(self) -> None:
         from jellyfin_plugin_toolkit.workflows import render_sync
 
         caller = render_sync(

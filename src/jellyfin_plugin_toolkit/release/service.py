@@ -12,6 +12,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 from jellyfin_plugin_toolkit.common.release_metadata import load_release
 from jellyfin_plugin_toolkit.context import Context
@@ -67,7 +68,7 @@ def prepare(root: Path, repository: str, tag: str, environment: Path) -> None:
         )
 
 
-def github_json(repository: str, endpoint: str):
+def github_json(repository: str, endpoint: str) -> Any:
     token = os.environ.get("GH_TOKEN", "")
     if not token:
         raise ValueError("GH_TOKEN is required to inspect the draft release")
@@ -140,8 +141,8 @@ def artifact_hashes(
     return hashes
 
 
-def release_for_tag(repository: str, tag: str) -> dict | None:
-    matches: list[dict] = []
+def release_for_tag(repository: str, tag: str) -> dict[str, Any] | None:
+    matches: list[dict[str, Any]] = []
     page = 1
     while True:
         releases = github_json(repository, f"/releases?per_page=100&page={page}")
@@ -164,7 +165,7 @@ def tag_commit(repository: str, tag: str) -> str:
         reference = github_json(repository, "/git/tags/" + reference["sha"])["object"]
     if reference["type"] != "commit":
         raise ValueError("Release tag does not identify a commit")
-    return reference["sha"]
+    return str(reference["sha"])
 
 
 def resume_draft(root: Path, repository: str, output: Path) -> None:

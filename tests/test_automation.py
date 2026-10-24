@@ -5,17 +5,23 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.request
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from jellyfin_plugin_toolkit import automation, cli
 
 
 class AutomationTests(unittest.TestCase):
-    def test_identity_comes_from_verified_bot_account(self):
-        payload = {"login": "fixture-app[bot]", "id": 123, "type": "Bot"}
+    def test_identity_comes_from_verified_bot_account(self) -> None:
+        payload: dict[str, Any] = {
+            "login": "fixture-app[bot]",
+            "id": 123,
+            "type": "Bot",
+        }
         with patch.object(
-            automation.urllib.request,
+            urllib.request,
             "urlopen",
             return_value=io.BytesIO(json.dumps(payload).encode()),
         ) as request:
@@ -32,7 +38,7 @@ class AutomationTests(unittest.TestCase):
             request.call_args.args[0].full_url,
         )
 
-    def test_unexpected_accounts_are_rejected(self):
+    def test_unexpected_accounts_are_rejected(self) -> None:
         for payload in [
             {"login": "other[bot]", "id": 123, "type": "Bot"},
             {"login": "fixture-app[bot]", "id": 123, "type": "User"},
@@ -42,7 +48,7 @@ class AutomationTests(unittest.TestCase):
             with (
                 self.subTest(payload=payload),
                 patch.object(
-                    automation.urllib.request,
+                    urllib.request,
                     "urlopen",
                     return_value=io.BytesIO(json.dumps(payload).encode()),
                 ),
@@ -50,17 +56,17 @@ class AutomationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     automation.resolve_bot("fixture-app")
 
-    def test_missing_token_or_slug_stops_before_network_access(self):
+    def test_missing_token_or_slug_stops_before_network_access(self) -> None:
         for environment in [{}, {"GH_TOKEN": "fixture-token"}]:
             with (
                 patch.dict(os.environ, environment, clear=True),
-                patch.object(automation.urllib.request, "urlopen") as network,
+                patch.object(urllib.request, "urlopen") as network,
             ):
                 with self.assertRaises(ValueError):
                     automation.commit_identity()
                 network.assert_not_called()
 
-    def test_new_needs_no_app_identity(self):
+    def test_new_needs_no_app_identity(self) -> None:
         with (
             patch("jellyfin_plugin_toolkit.scaffold.generate") as generate,
             patch.object(automation, "resolve_bot") as lookup,
@@ -80,10 +86,10 @@ class AutomationTests(unittest.TestCase):
         self.assertNotIn("app_slug", generate.call_args.kwargs)
         lookup.assert_not_called()
 
-    def test_renovate_must_recognize_actual_app(self):
+    def test_renovate_must_recognize_actual_app(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            identity = {
+            identity: dict[str, Any] = {
                 "name": "fixture-app[bot]",
                 "email": "123+fixture-app[bot]@users.noreply.github.com",
             }
@@ -105,7 +111,7 @@ class AutomationTests(unittest.TestCase):
 
 
 class WorkflowIdentityTests(unittest.TestCase):
-    def test_draft_inspection_uses_the_app_token_with_push_access(self):
+    def test_draft_inspection_uses_the_app_token_with_push_access(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for filename, step in [
             ("toolkit-release-please.yml", "Resolve the matching unpublished draft"),
@@ -118,7 +124,7 @@ class WorkflowIdentityTests(unittest.TestCase):
                 self.assertNotIn("github.token", inspection)
                 self.assertIn("permission-contents: write", workflow)
 
-    def test_writers_require_app_tokens(self):
+    def test_writers_require_app_tokens(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for filename in [
             "prepare-release.yml",
@@ -144,7 +150,7 @@ class WorkflowIdentityTests(unittest.TestCase):
             )
             self.assertIn("PLUGIN_APP_PRIVATE_KEY:", callers[filename])
 
-    def test_shared_preset_does_not_invent_an_identity(self):
+    def test_shared_preset_does_not_invent_an_identity(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for filename in [
             "default.json",

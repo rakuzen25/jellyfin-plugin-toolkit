@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Sequence
 
 from jellyfin_plugin_toolkit.context import Context
 
@@ -48,7 +49,7 @@ CONFIGS = {
 }
 
 
-def maintained_file(root, path):
+def maintained_file(root: Path, path: Path) -> Path:
     """Source capture never follows a symlink, even when its target stays inside."""
     relative = path.relative_to(root)
     for part in [path, *path.parents]:
@@ -61,7 +62,7 @@ def maintained_file(root, path):
     return path.resolve().relative_to(root)
 
 
-def source_files(root):
+def source_files(root: Path) -> list[Path]:
     root = root.resolve()
     ctx = Context.load(root)
     files = []
@@ -107,7 +108,7 @@ def source_files(root):
     return sorted(set(files))
 
 
-def frontend_inputs(ctx, maintained):
+def frontend_inputs(ctx: Context, maintained: Sequence[Path]) -> list[Path]:
     """Exact declared frontend sources and toolchain inputs, including external assets."""
     frontend = ctx.config.frontend
     directory = frontend.directory

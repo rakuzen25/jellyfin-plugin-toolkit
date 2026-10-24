@@ -9,7 +9,7 @@ from pathlib import Path
 RESOURCE_ROOT = Path(str(files("jellyfin_plugin_toolkit").joinpath("resources")))
 
 
-def prepare(root):
+def prepare(root: Path) -> Path:
     root = Path(root).resolve()
     build = root / ".build"
     target = build / "jpt"
