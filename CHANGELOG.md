@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.3...v0.5.0) (2026-10-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tooling:** share quality policy and enforce strict Python checks ([#16](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/16))
+
+### Features
+
+* **tooling:** share quality policy and enforce strict Python checks ([#16](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/16)) ([7eb4d4f](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/7eb4d4f3d3f2b9dc74d7657d44ba8a4539b07ca3))
+
+
+### Bug Fixes
+
+* report dependency advisories without blocking validation by default ([#14](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/14)) ([4599f4c](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/4599f4c040db4b4d62f5dbc1cbbf41f6aa15c030))
+
 ## [0.4.3](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.2...v0.4.3) (2026-10-23)
 
 
