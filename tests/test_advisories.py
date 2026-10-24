@@ -272,6 +272,49 @@ class AdvisoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown fix status"):
             audit.evaluate(findings, [], NOW)
 
+    def test_findings_warn_by_default_and_enforcement_is_opt_in(self):
+        for enforce in (False, True):
+            with (
+                self.subTest(enforce=enforce),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                (root / "pnpm-lock.yaml").touch()
+                summary = root / "summary.md"
+                ctx = SimpleNamespace(
+                    root=root,
+                    config=SimpleNamespace(
+                        backend=SimpleNamespace(projects={}, tests=[]),
+                        advisories=Advisories(fail_on_findings=True)
+                        if enforce
+                        else Advisories(),
+                    ),
+                )
+
+                def node(_ctx, findings):
+                    findings.append(entry([">=4.0.0"]))
+
+                with (
+                    patch.object(audit, "node_findings", side_effect=node),
+                    patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}),
+                ):
+                    if enforce:
+                        with self.assertRaisesRegex(
+                            ValueError, "Advisory audit failed"
+                        ):
+                            audit.audit(ctx)
+                    else:
+                        audit.audit(ctx)
+                report = json.loads(
+                    (root / "dist/evidence/advisories.json").read_text()
+                )
+                self.assertEqual(not enforce, report["success"])
+                self.assertEqual(enforce, report["fail_on_findings"])
+                self.assertEqual(enforce, report["findings"][0]["blocking"])
+                self.assertEqual("published", report["findings"][0]["fix_status"])
+                self.assertIn(ID, summary.read_text())
+                self.assertIn("ERROR:" if enforce else "WARNING:", summary.read_text())
+
     def test_failures_keep_partial_findings_and_always_write_report(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

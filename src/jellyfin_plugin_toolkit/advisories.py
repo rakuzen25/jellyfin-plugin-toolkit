@@ -262,7 +262,7 @@ def scope(entry):
     return entry["ecosystem"], package, entry["version"], entry["ghsa"]
 
 
-def evaluate(findings, waivers, now):
+def evaluate(findings, waivers, now, *, fail_on_findings=True):
     unique = {}
     for entry in findings:
         if entry["fix_status"] not in {"published", "unavailable"}:
@@ -290,7 +290,9 @@ def evaluate(findings, waivers, now):
         waiver = next((waiver for waiver in waivers if waiver.scope == key), None)
         active = waiver is not None and waiver.timestamp(waiver.expires_at) > now
         entry["waiver_status"] = "active" if active else "expired" if waiver else "none"
-        entry["blocking"] = entry["fix_status"] == "published" and not active
+        entry["blocking"] = (
+            fail_on_findings and entry["fix_status"] == "published" and not active
+        )
         if waiver:
             entry["waiver"] = waiver.model_dump()
     return sorted(unique.values(), key=scope), warnings
@@ -301,6 +303,7 @@ def audit(ctx):
     report = {
         "schema": 1,
         "checked_at": now.isoformat(),
+        "fail_on_findings": ctx.config.advisories.fail_on_findings,
         "findings": [],
         "warnings": [],
         "errors": [],
@@ -341,7 +344,10 @@ def audit(ctx):
             report["errors"].append(label + ": " + message)
     try:
         report["findings"], report["warnings"] = evaluate(
-            findings, ctx.config.advisories.waivers, now
+            findings,
+            ctx.config.advisories.waivers,
+            now,
+            fail_on_findings=ctx.config.advisories.fail_on_findings,
         )
     except ValueError as error:
         report["findings"] = findings

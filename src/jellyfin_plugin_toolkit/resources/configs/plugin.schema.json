@@ -3,6 +3,11 @@
         "Advisories": {
             "additionalProperties": false,
             "properties": {
+                "fail_on_findings": {
+                    "default": false,
+                    "title": "Fail On Findings",
+                    "type": "boolean"
+                },
                 "waivers": {
                     "items": {
                         "$ref": "#/$defs/AdvisoryWaiver"

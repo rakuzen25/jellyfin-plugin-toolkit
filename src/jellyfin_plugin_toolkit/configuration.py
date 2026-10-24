@@ -294,6 +294,7 @@ class AdvisoryWaiver(Model):
 
 
 class Advisories(Model):
+    fail_on_findings: bool = False
     waivers: list[AdvisoryWaiver] = Field(default_factory=list)
 
     @model_validator(mode="after")
