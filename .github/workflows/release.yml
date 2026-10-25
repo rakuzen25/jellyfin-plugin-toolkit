@@ -74,11 +74,14 @@ jobs:
           verifier="$RUNNER_TEMP/jpt-release-verifier"
           cp -a .release-tools "$verifier"
           echo "JPT_VERIFIER_PROJECT=$verifier" >> "$GITHUB_ENV"
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version-file: .release-tools/pyproject.toml
           enable-cache: true
-          cache-dependency-glob: .release-tools/uv.lock
+          cache-dependency-glob: |
+            .release-tools/.python-version
+            .release-tools/pyproject.toml
+            .release-tools/uv.lock
       - run: uv sync --project "$JPT_VERIFIER_PROJECT" --locked
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:

@@ -32,34 +32,30 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow)
 
-    def test_consumer_jobs_install_the_pinned_interpreter_before_uv_sync(self) -> None:
+    def test_native_uv_owns_python_and_cache_identity_in_every_python_job(self) -> None:
         import re
 
         root = Path(__file__).resolve().parents[1] / ".github/workflows"
-        for filename in [
-            "sync-bindings.yml",
-            "setup-automation.yml",
-            "prepare-release.yml",
-            "validate.yml",
-        ]:
-            workflow = (root / filename).read_text()
+        for path in root.glob("*.yml"):
+            workflow = path.read_text()
+            self.assertNotIn("actions/setup-python@", workflow, path.name)
             jobs = re.split(
                 r"(?m)^  ([a-z][a-z-]*):\n", workflow.split("jobs:\n", 1)[1]
             )
             for name, job in zip(jobs[1::2], jobs[2::2], strict=True):
-                if "uv sync --locked" not in job:
+                if "uv sync" not in job:
                     continue
-                with self.subTest(workflow=filename, job=name):
-                    before_sync = job.split("uv sync --locked", 1)[0]
+                with self.subTest(workflow=path.name, job=name):
+                    before_sync = job.split("uv sync", 1)[0]
                     self.assertRegex(
-                        before_sync, r"uses: actions/setup-python@[0-9a-f]{40}"
+                        before_sync, r"uses: astral-sh/setup-uv@[0-9a-f]{40}"
                     )
-                    self.assertIn("python-version-file: .python-version", before_sync)
-                    # The interpreter belongs to the checked-out consumer, including
-                    # trusted default-branch checkouts in privileged automation.
+                    self.assertNotIn("python-version:", before_sync)
+                    for pin in (".python-version", "pyproject.toml", "uv.lock"):
+                        self.assertIn(pin, before_sync)
                     self.assertLess(
                         before_sync.index("uses: actions/checkout@"),
-                        before_sync.index("uses: actions/setup-python@"),
+                        before_sync.index("uses: astral-sh/setup-uv@"),
                     )
 
     def test_validation_has_no_publication_credentials(self) -> None:

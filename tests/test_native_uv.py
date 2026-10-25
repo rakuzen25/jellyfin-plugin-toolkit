@@ -1,9 +1,11 @@
 """Native uv package, cold environment, lock and resource integration contracts."""
 
 import hashlib
+import json
 import os
 import subprocess
 import tempfile
+import tomllib
 import unittest
 import zipfile
 from pathlib import Path
@@ -34,6 +36,90 @@ class NativeUvTests(unittest.TestCase):
         self.assertFalse(
             any("_vendor/" in name or name.endswith("bootstrap.py") for name in names)
         )
+
+    def test_cold_managed_python_cannot_be_replaced_by_a_system_interpreter(
+        self,
+    ) -> None:
+        import shutil
+
+        with tempfile.TemporaryDirectory(dir=ROOT / ".build") as folder:
+            root = Path(folder)
+            for name in ("pyproject.toml", "uv.lock", ".python-version"):
+                shutil.copy2(ROOT / name, root / name)
+            # Use an empty, independent native project: no toolkit source or project
+            # install is needed to verify interpreter selection.
+            settings = tomllib.loads((root / "pyproject.toml").read_text())["tool"][
+                "uv"
+            ]
+            (root / "pyproject.toml").write_text(
+                '[project]\nname = "python-probe"\nversion = "0.0.0"\nrequires-python = ">=3.15,<3.16"\n'
+                + "\n[tool.uv]\n"
+                + "\n".join(
+                    key + " = " + json.dumps(settings[key])
+                    for key in ("required-version", "python-preference")
+                )
+                + "\n"
+            )
+            (root / "uv.lock").unlink()
+            environment = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith("UV_")
+                and key not in {"VIRTUAL_ENV", "PYTHONPATH"}
+            }
+            environment.update(
+                UV_CACHE_DIR=str(root / "cache"),
+                UV_PYTHON_INSTALL_DIR=str(root / "interpreters"),
+                UV_PYTHON_DOWNLOADS="never",
+            )
+            result = subprocess.run(
+                ["uv", "sync"],
+                cwd=root,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("managed installations", result.stderr)
+            environment["UV_PYTHON_DOWNLOADS"] = "automatic"
+            subprocess.run(
+                ["uv", "sync"],
+                cwd=root,
+                env=environment,
+                check=True,
+                capture_output=True,
+            )
+            lock = (root / "uv.lock").read_bytes()
+            subprocess.run(
+                ["uv", "sync", "--locked"],
+                cwd=root,
+                env=environment,
+                check=True,
+                capture_output=True,
+            )
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "--no-sync",
+                    "python",
+                    "-c",
+                    "import json,sys;print(json.dumps([sys.base_prefix,sys.version_info[:3]]))",
+                ],
+                cwd=root,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            prefix, version = json.loads(result.stdout)
+            self.assertTrue(Path(prefix).is_relative_to(root / "interpreters"))
+            self.assertEqual(
+                ".".join(map(str, version)),
+                (root / ".python-version").read_text().strip(),
+            )
+            self.assertEqual(lock, (root / "uv.lock").read_bytes())
 
     def test_native_build_is_repeatable(self) -> None:
         first = candidate().read_bytes()

@@ -1,6 +1,6 @@
 # Develop a plugin
 
-Install uv at the version required by `pyproject.toml`, plus Node, pnpm and the .NET SDK declared by the plugin's native pin files. Docker must be available to your user. The supported host is Linux x64; uv downloads and selects the pinned Python 3.15.0.
+Install uv at the version required by `pyproject.toml`, plus Node, pnpm and the .NET SDK declared by the plugin's native pin files. Docker must be available to your user. The supported host is Linux x64; uv downloads and selects the exact Python version in `.python-version`. The exact uv version in `pyproject.toml` must support that interpreter; system interpreters are not used.
 
 From an existing consumer checkout:
 
@@ -94,3 +94,7 @@ uv run jpt editor vscode --apply
 `uv run jpt test advisories` reports dependency findings as warnings by default, including findings with published fixes, so unrelated advisories do not block dependency updates or automerge. Set `[advisories] fail_on_findings = true` to block validation on unwaived findings with published fixes, regardless of severity or current dependency constraints. Findings explicitly lacking a published fix remain warnings. Incomplete metadata and audit service/configuration failures fail validation. The fresh report is saved to `dist/evidence/advisories.json`; CI runs it on every validation and daily safety check. See [advisory waivers](../reference/configuration.md#advisory-waivers) for reviewed, temporary exceptions.
 
 The versioned `tooling` Renovate preset supplies the shared maintenance policy. Generated plugins extend it alongside the plugin preset; toolkit synchronization advances both tags with the wheel and workflow references. Standalone tools such as the catalog may extend only `github>rakuzen25/jellyfin-plugin-toolkit:tooling#VERSION` and review preset upgrades independently. Routine third-party updates automerge after checks and the one-day delay; major and runtime/compiler/package-manager minor upgrades require review. Repository-specific exceptions remain local.
+
+Python and uv updates arrive together in a dedicated **Python toolchain** Renovate PR. Each repository owns its pins and lockfile; toolkit synchronization preserves them. All repositories share the tooling preset: routine patch/minor updates may automerge after required checks, while major updates and interpreter/package-manager minor upgrades require review. Package-specific review restrictions still apply. A mixed toolchain group requires review if any update does.
+
+If uv cannot install the pinned Python version, update the Python/uv pair to supported releases and retry `uv sync --locked`. Do not bypass managed-Python selection or upgrade uv implicitly in CI. CI uses the same native setup as local development: pinned `astral-sh/setup-uv`, then locked synchronization.

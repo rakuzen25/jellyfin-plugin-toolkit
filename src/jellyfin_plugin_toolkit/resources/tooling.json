@@ -50,8 +50,27 @@
             "groupName": null
         },
         {
+            "description": ["Python and uv form one tested toolchain, separate from routine dependencies."],
+            "matchPackageNames": ["python", "uv", "astral-sh/uv"],
+            "groupName": "Python toolchain",
+            "groupSlug": "python-toolchain",
+            "separateMajorMinor": false,
+            "separateMinorPatch": false
+        },
+        {
             "matchManagers": ["github-actions"],
             "pinDigests": true
+        }
+    ],
+    "customManagers": [
+        {
+            "customType": "regex",
+            "managerFilePatterns": ["/^pyproject\\.toml$/"],
+            "matchStrings": ["required-version = \"==(?<currentValue>[^\"\\r\\n]+)\""],
+            "depNameTemplate": "uv",
+            "packageNameTemplate": "astral-sh/uv",
+            "datasourceTemplate": "github-releases",
+            "versioningTemplate": "pep440"
         }
     ]
 }

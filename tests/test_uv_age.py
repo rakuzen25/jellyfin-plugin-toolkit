@@ -102,7 +102,7 @@ class NativeAgePolicyTests(unittest.TestCase):
                         "--name",
                         "age-fixture",
                         "--python",
-                        "3.15.0",
+                        (source / ".python-version").read_text().strip(),
                         str(root),
                     ],
                     check=True,

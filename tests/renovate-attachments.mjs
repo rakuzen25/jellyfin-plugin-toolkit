@@ -235,3 +235,105 @@ const groupedTitle = generateBranchConfig(
 ).prTitle;
 assert.equal(groupedTitle, "chore(deps): update routine dependency updates to 1.0.1");
 console.log("PASS: shared tooling policy keeps routine, runtime and policy updates separate");
+
+// The executable and interpreter pins form one native Renovate group.
+const uvProject = '[tool.uv]\nrequired-version = "==0.13.5"\npython-preference = "only-managed"\n';
+assert.equal(tooling.customManagers.length, 1);
+const uvDependencies = (await extractPackageFile(uvProject, "pyproject.toml", tooling.customManagers[0])).deps;
+assert.equal(uvDependencies.length, 1);
+const uvDependency = uvDependencies[0];
+assert.equal(uvDependency.depName, "uv");
+assert.equal(uvDependency.packageName, "astral-sh/uv");
+assert.equal(uvDependency.currentValue, "0.13.5");
+const uvReplacement = uvProject.replace(uvDependency.replaceString, uvDependency.replaceString.replace("0.13.5", "0.13.6"));
+assert.equal((await extractPackageFile(uvReplacement, "pyproject.toml", tooling.customManagers[0])).deps[0].currentValue, "0.13.6");
+const { extractPackageFile: extractPyenv } = await import("/usr/local/renovate/dist/modules/manager/pyenv/index.js");
+const pythonDeps = (await extractPyenv("3.15.1\n", ".python-version", {})).deps;
+assert.equal(pythonDeps.length, 1);
+const pythonDependency = pythonDeps[0];
+assert.equal(pythonDependency.currentValue, "3.15.1");
+for (const [pythonType, uvType, expected] of [
+    ["patch", "patch", true],
+    ["patch", "minor", false],
+    ["minor", "patch", false],
+    ["major", "patch", false],
+    ["patch", "major", false],
+]) {
+    const selected = await Promise.all(
+        [
+            [pythonDependency, "pyenv", ".python-version", pythonType],
+            [uvDependency, "custom.regex", "pyproject.toml", uvType],
+        ].map(async ([dep, manager, packageFile, updateType]) => ({
+            ...getConfig(),
+            ...tooling,
+            ...(await policy({ ...dep, updateType }, manager, packageFile, tooling.packageRules)),
+            updateType,
+            newVersion: "4.0.0",
+            newValue: "4.0.0",
+            branchName: "renovate/python-toolchain",
+        })),
+    );
+    assert.ok(selected.every((dep) => dep.groupName === "Python toolchain"));
+    assert.ok(selected.every((dep) => dep.separateMajorMinor === false && dep.separateMinorPatch === false));
+    // Test both orders: a patch must not overwrite a grouped migration's review requirement.
+    for (const ordered of [selected, [...selected].reverse()]) {
+        assert.equal(generateBranchConfig(ordered).automerge, expected, `${pythonType}/${uvType}`);
+    }
+}
+const setupAction = await policy(
+    { depName: "astral-sh/setup-uv", updateType: "patch" },
+    "github-actions",
+    ".github/workflows/ci.yml",
+    tooling.packageRules,
+);
+assert.equal(setupAction.groupName, "Routine dependency updates");
+const toolkitConfig = JSON.parse(fs.readFileSync(root + "/renovate.json", "utf8"));
+assert.deepEqual(toolkitConfig.extends, ["github>rakuzen25/jellyfin-plugin-toolkit:tooling"]);
+assert.equal(toolkitConfig.automerge, undefined);
+assert.equal(toolkitConfig.packageRules, undefined);
+console.log("PASS: interpreter and uv extraction, toolchain grouping, and mixed-group review policy");
+
+// Optional mounted consumers exercise their real overrides against this candidate policy.
+for (const directory of process.argv.slice(2)) {
+    const consumer = JSON.parse(fs.readFileSync(path.join(directory, "renovate.json"), "utf8"));
+    assert.ok(consumer.extends.some((entry) => entry.includes("jellyfin-plugin-toolkit:tooling")));
+    assert.notEqual(consumer.automerge, false);
+    const rules = [...tooling.packageRules, ...(consumer.packageRules ?? [])];
+    for (const [depName, updateType, expected, group] of [
+        ["prettier", "minor", true, "Routine dependency updates"],
+        ["prettier", "major", false, null],
+        ["python", "patch", true, "Python toolchain"],
+        ["python", "minor", false, "Python toolchain"],
+        ["uv", "patch", true, "Python toolchain"],
+        ["uv", "minor", false, "Python toolchain"],
+    ]) {
+        const selected = await policy({ depName, updateType }, depName === "python" ? "pyenv" : "custom.regex", "pyproject.toml", rules);
+        assert.equal(selected.automerge, expected, `${directory}/${depName}/${updateType}`);
+        assert.equal(selected.groupName, group);
+    }
+    const project = fs.readFileSync(path.join(directory, "pyproject.toml"), "utf8");
+    const uvPins = [];
+    for (const manager of [...tooling.customManagers, ...(consumer.customManagers ?? [])]) {
+        if (manager.managerFilePatterns.some((pattern) => pattern.includes("pyproject"))) {
+            const result = await extractPackageFile(project, "pyproject.toml", manager);
+            uvPins.push(...(result?.deps ?? []).filter((dep) => dep.depName === "uv"));
+        }
+    }
+    assert.equal(uvPins.length, 1, directory);
+    const python = await extractPyenv(fs.readFileSync(path.join(directory, ".python-version"), "utf8"), ".python-version", {});
+    assert.equal(python.deps.length, 1);
+    for (const rule of consumer.packageRules ?? []) {
+        if (
+            rule.automerge !== false ||
+            !rule.matchPackageNames ||
+            !rule.matchUpdateTypes ||
+            rule.matchPackageNames.some((name) => name.includes("*"))
+        )
+            continue;
+        for (const depName of rule.matchPackageNames) {
+            for (const updateType of rule.matchUpdateTypes)
+                assert.equal((await policy({ depName, updateType }, "npm", "package.json", rules)).automerge, false);
+        }
+    }
+    console.log(`PASS: ${directory} effective grouping, automerge, single pin extraction and package-specific review restrictions`);
+}
