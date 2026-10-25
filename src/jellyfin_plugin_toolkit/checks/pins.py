@@ -6,7 +6,11 @@ from importlib.metadata import distribution
 from pathlib import Path
 from typing import Any
 
-from jellyfin_plugin_toolkit.bindings import reference_tag, workflow_references
+from jellyfin_plugin_toolkit.bindings import (
+    reference_tag,
+    released_actions,
+    workflow_references,
+)
 from jellyfin_plugin_toolkit.provenance import REPOSITORY, package_version, record
 
 
@@ -23,6 +27,7 @@ def check_pins(root: Path, release: bool = False) -> dict[str, Any]:
                 "Installed toolkit differs from uv.lock; run uv sync --locked"
             )
     pins: set[str] = set()
+    components: set[str] = set()
     for workflow in (root / ".github/workflows").glob("*.y*ml"):
         for match in workflow_references(workflow.read_text(), REPOSITORY):
             tag = reference_tag(match)
@@ -36,6 +41,7 @@ def check_pins(root: Path, release: bool = False) -> dict[str, Any]:
                     + str(workflow)
                 )
             pins.add(match["revision"])
+            components.add(match["component"])
     if len(pins) > 1:
         raise ValueError("Toolkit workflows disagree about the source revision")
     if release and pins:
@@ -43,6 +49,7 @@ def check_pins(root: Path, release: bool = False) -> dict[str, Any]:
 
         if pins != {tag_commit(REPOSITORY, "v" + selected["version"])}:
             raise ValueError("Workflow revision differs from the released toolkit tag")
+        released_actions(REPOSITORY, next(iter(pins)), components)
     preset = root / "renovate.json"
     if preset.exists():
         for name in json.loads(preset.read_text()).get("extends", []):

@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from jellyfin_plugin_toolkit.common.json_shapes import is_json_object
+from jellyfin_plugin_toolkit.common.json_shapes import is_json_array, is_json_object
 
 
 def resolve_bot(slug: str) -> dict[str, str]:
@@ -78,16 +78,63 @@ def identity_record(identity: dict[str, str]) -> dict[str, Any]:
     return {"schema_version": 1, "app_slug": match[2], "bot_id": int(match[1])}
 
 
-def check_renovate(root: Path, identity: dict[str, str]) -> None:
+def setup_guidance() -> str:
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    location = ".github/workflows/app-setup.yml"
+    if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        location = (
+            "https://github.com/" + repository + "/actions/workflows/app-setup.yml"
+        )
+    return (
+        "Run Set up connected GitHub App ("
+        + location
+        + ") on the default branch and merge its configuration PR."
+    )
+
+
+def check_configuration(root: Path, identity: dict[str, str] | None = None) -> None:
+    """Validate tracked data offline; live identity is required only for App writes."""
     from jellyfin_plugin_toolkit.bindings import safe_path
 
-    message = "Merge the App setup PR, or run the App setup workflow to refresh the connected App identity"
     state = safe_path(root, STATE_PATH)
-    if (
-        not state.is_file()
-        or record_identity(json.loads(state.read_text())) != identity
-    ):
-        raise ValueError(message)
-    configuration = json.loads(safe_path(root, "renovate.json").read_text())
-    if identity["email"] not in configuration.get("gitIgnoredAuthors", []):
-        raise ValueError(message)
+    if not state.exists():
+        message = "App setup is pending. " + setup_guidance()
+        if identity is not None:
+            raise ValueError(message)
+        if safe_path(root, ".github/workflows/app-setup.yml").is_file():
+            print("NOTICE: " + message)
+        return
+    try:
+        recorded = record_identity(json.loads(state.read_text()))
+    except (ValueError, OSError) as error:
+        raise ValueError(
+            "Invalid tracked App ownership record ("
+            + STATE_PATH
+            + "). Repair or restore the last valid record before running App setup."
+        ) from error
+    if identity is not None and recorded != identity:
+        raise ValueError(
+            "App setup required: Connected App identity differs from its tracked record. "
+            + setup_guidance()
+        )
+    try:
+        configuration = json.loads(safe_path(root, "renovate.json").read_text())
+        if not is_json_object(configuration):
+            raise ValueError("Expected a Renovate object")
+        authors = configuration.get("gitIgnoredAuthors", [])
+        if not is_json_array(authors) or any(
+            not isinstance(item, str) for item in authors
+        ):
+            raise ValueError("Expected gitIgnoredAuthors to contain strings")
+    except (ValueError, OSError) as error:
+        raise ValueError(
+            "Invalid tracked Renovate configuration; repair renovate.json before running App setup."
+        ) from error
+    if recorded["email"] not in authors:
+        raise ValueError(
+            "Renovate is missing the managed App identity. " + setup_guidance()
+        )
+
+
+def check_renovate(root: Path, identity: dict[str, str]) -> None:
+    check_configuration(root, identity)

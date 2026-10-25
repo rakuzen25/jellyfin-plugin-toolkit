@@ -189,8 +189,10 @@ class QualityTests(unittest.TestCase):
             patch.object(quality, "javascript") as javascript,
             patch.object(quality, "automation") as automation,
             patch.object(quality, "run"),
+            patch("jellyfin_plugin_toolkit.automation.check_configuration") as identity,
         ):
             quality.main(self.root, target="automation")
+        identity.assert_called_once_with(self.root)
         python.assert_not_called()
         javascript.assert_not_called()
         self.assertEqual(

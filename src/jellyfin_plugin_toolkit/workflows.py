@@ -94,12 +94,6 @@ jobs:
 """
     setup = """name: Set up connected GitHub App
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/app-setup.yml
-      - renovate.json
-      - .github/jpt-automation.json
   workflow_dispatch:
 permissions:
   contents: read
@@ -109,7 +103,7 @@ jobs:
     uses: PREFIXsetup-automation.yml@REVISION # TOOLKIT_TAG
     with:
       app_client_id: ${{ vars.PLUGIN_APP_CLIENT_ID }}
-      retry_closed: ${{ github.event_name == 'workflow_dispatch' }}
+      retry_closed: true
     secrets:
       PLUGIN_APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
 """

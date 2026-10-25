@@ -227,6 +227,12 @@ def main(root: Path, *, fix: bool = False, target: str | None = None) -> None:
     formatting(root, settings.checks, fix, target)
     if fix:
         return
+    if target not in {"docs", "tooling"} and {"workflows", "renovate"}.intersection(
+        settings.checks
+    ):
+        from jellyfin_plugin_toolkit.automation import check_configuration
+
+        check_configuration(root)
     for check in settings.checks:
         if (
             target == "docs"

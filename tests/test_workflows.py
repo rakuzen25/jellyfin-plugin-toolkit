@@ -117,21 +117,28 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("uv run --no-sync jpt test browser -- --project", command)
             self.assertIn("--workers=", command)
 
-    def test_app_setup_caller_is_always_generated_and_default_branch_only(self) -> None:
+    def test_app_setup_caller_is_manual_only_and_default_branch_only(self) -> None:
         caller = render("example/toolkit", "a" * 40, version="v1.0.0")["app-setup.yml"]
-        self.assertIn("push:\n    branches: [main]\n    paths:", caller)
-        for path in [
-            "renovate.json",
-            ".github/jpt-automation.json",
-            ".github/workflows/app-setup.yml",
-        ]:
-            self.assertIn("      - " + path, caller)
+        self.assertNotIn("push:", caller)
+        self.assertNotIn("schedule:", caller)
         self.assertIn("workflow_dispatch:", caller)
         self.assertIn("github.event.repository.default_branch", caller)
         self.assertIn("setup-automation.yml@" + "a" * 40, caller)
-        self.assertIn("retry_closed:", caller)
+        self.assertIn("retry_closed: true", caller)
         self.assertNotIn("app_slug", caller)
         self.assertNotIn("contents: write", caller)
+
+    def test_shared_setup_authenticates_before_project_setup(self) -> None:
+        root = Path(__file__).resolve().parents[1] / ".github/workflows"
+        caller = (root / "app-setup.yml").read_text()
+        self.assertNotIn("push:", caller)
+        workflow = (root / "setup-automation.yml").read_text()
+        self.assertLess(
+            workflow.index("/.github/actions/app-token@"),
+            workflow.index("actions/checkout@"),
+        )
+        self.assertIn("group: app-setup-${{ github.repository }}", workflow)
+        self.assertIn("github.event.repository.default_branch", workflow)
 
     def test_mutable_revision_and_invalid_catalog_rejected(self) -> None:
         with self.assertRaises(ValueError):

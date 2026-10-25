@@ -298,3 +298,77 @@ class ReleaseBindingPlanTests(unittest.TestCase):
             ["jellyfin-plugin-toolkit"], metadata["dependency-groups"]["dev"]
         )
         self.assertTrue(metadata["tool"]["mypy"]["strict"])
+
+
+class NativeActionBindingTests(unittest.TestCase):
+    def test_released_action_inventory_is_verified_as_data(self) -> None:
+        component = ".github/actions/app-token"
+        for entries, truncated, valid in [
+            (
+                [{"path": component + "/action.yml", "type": "blob", "mode": "100644"}],
+                False,
+                True,
+            ),
+            (
+                [{"path": component + "/failure.sh", "type": "blob", "mode": "100644"}],
+                False,
+                False,
+            ),
+            (
+                [{"path": component + "/action.yml", "type": "blob", "mode": "120000"}],
+                False,
+                False,
+            ),
+            (
+                [{"path": component + "/action.yml", "type": "blob", "mode": "100644"}],
+                True,
+                False,
+            ),
+        ]:
+            with (
+                self.subTest(entries=entries, truncated=truncated),
+                patch(
+                    "jellyfin_plugin_toolkit.release.service.github_json",
+                    return_value={"tree": entries, "truncated": truncated},
+                ) as request,
+            ):
+                if valid:
+                    files = bindings.released_actions(
+                        "example/toolkit", "b" * 40, {component}
+                    )
+                    self.assertIn(component + "/action.yml", files)
+                else:
+                    with self.assertRaises(ValueError):
+                        bindings.released_actions(
+                            "example/toolkit", "b" * 40, {component}
+                        )
+                request.assert_called_once_with(
+                    "example/toolkit", "/git/trees/" + "b" * 40 + "?recursive=1"
+                )
+
+    def test_native_action_rewrite_preserves_options_and_rejects_missing_metadata(
+        self,
+    ) -> None:
+        old = {
+            "repository": "example/toolkit",
+            "revision": "a" * 40,
+            "version": "v1.0.0",
+        }
+        new = dict(old, revision="b" * 40, version="v1.0.1")
+        source = (
+            "      - uses: example/toolkit/.github/actions/app-token@"
+            + "a" * 40
+            + " # v1.0.0\n        continue-on-error: true\n        with:\n          permission-contents: read\n"
+        )
+        files = {
+            "toolkit-release.json": json.dumps({"revision": "b" * 40}).encode(),
+            ".github/actions/app-token/action.yml": b"data, not executable",
+        }
+        result = bindings.rewrite_workflow(source, old, new, files)
+        self.assertEqual(
+            source.replace("a" * 40, "b" * 40).replace("v1.0.0", "v1.0.1"), result
+        )
+        del files[".github/actions/app-token/action.yml"]
+        files[".github/actions/app-token/failure.sh"] = b"still not executable"
+        with self.assertRaisesRegex(ValueError, "component was removed"):
+            bindings.rewrite_workflow(source, old, new, files)
