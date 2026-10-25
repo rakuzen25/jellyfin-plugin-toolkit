@@ -38,6 +38,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
+    def test_final_toolkit_gate_runs_even_after_a_dependency_fails(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+        ).read_text()
+        final = workflow.split("  validation-evidence:\n", 1)[1]
+        self.assertIn("if: always() &&", final)
+        self.assertIn("needs: [candidate, toolkit, starter, advisories]", final)
+        self.assertIn("needs.starter.result", final)
+
     def test_advisory_job_is_fresh_even_when_artifacts_are_not_selected(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
