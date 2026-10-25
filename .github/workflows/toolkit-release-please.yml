@@ -10,6 +10,7 @@ on:
         default: ""
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: toolkit-release-${{ github.repository }}
   cancel-in-progress: false
@@ -25,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
@@ -55,17 +57,6 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      - name: Refresh the release PR's native uv lockfile
-        if: steps.release.outputs.pr != ''
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          RELEASE_PR: ${{ steps.release.outputs.pr }}
-          JPT_APP_SLUG: ${{ steps.app.outputs.app-slug }}
-          RELEASE_BOT: ${{ steps.app.outputs.app-slug }}[bot]
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          number=$(jq -r '.number' <<< "$RELEASE_PR")
-          uv run --no-sync jpt internal release-lock --repository "$REPOSITORY" --pr "$number" --bot "$RELEASE_BOT"
       - name: Resolve the matching unpublished draft
         id: draft
         if: inputs.tag != '' || steps.release.outputs.release_created == 'true'
@@ -76,22 +67,54 @@ jobs:
         run: >-
           uv run --no-sync jpt internal toolkit-release resolve
           --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --output "$GITHUB_OUTPUT"
-  validate:
+  select-validation:
     needs: prepare
     if: needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      needs_validation: ${{ steps.select.outputs.needs_validation }}
+      run_id: ${{ steps.select.outputs.run_id }}
+      artifact_id: ${{ steps.select.outputs.artifact_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked
+      - name: Select regular CI's exact tested artifact
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REVISION: ${{ needs.prepare.outputs.sha }}
+          IS_RETRY: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
+        run: |
+          args=()
+          if [ "$IS_RETRY" = true ]; then args+=(--retry); fi
+          uv run --no-sync jpt internal toolkit-release select-validation --sha "$SOURCE_REVISION" --output "$GITHUB_OUTPUT" "${args[@]}"
+  validate:
+    needs: [prepare, select-validation]
+    if: needs.select-validation.outputs.needs_validation == 'true'
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.prepare.outputs.sha }}
   attach:
-    needs: [prepare, validate]
+    needs: [prepare, select-validation, validate]
+    if: always() && needs.prepare.result == 'success' && needs.select-validation.result == 'success' && (needs.validate.result == 'success' || (needs.validate.result == 'skipped' && needs.select-validation.outputs.artifact_id != ''))
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      actions: read
       id-token: write
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
@@ -102,7 +125,9 @@ jobs:
       - run: uv sync --locked
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          artifact-ids: ${{ needs.validate.outputs.artifact_id }}
+          artifact-ids: ${{ needs.select-validation.outputs.artifact_id || needs.validate.outputs.artifact_id }}
+          run-id: ${{ needs.select-validation.outputs.run_id || github.run_id }}
+          github-token: ${{ github.token }}
           path: dist
           merge-multiple: true
       - name: Attest the validated distributions

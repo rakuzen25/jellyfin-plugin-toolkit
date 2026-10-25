@@ -17,6 +17,31 @@ from jellyfin_plugin_toolkit.context import Context
 
 
 class CommandTests(ConsumerTestCase):
+    def test_frontend_tests_run_only_tests(self) -> None:
+        with (
+            patch.object(tasks, "format_target") as formatting,
+            patch.object(tasks, "run") as run,
+        ):
+            tasks.test_default(self.ctx, "frontend", ["--test-name-pattern=business"])
+        formatting.assert_not_called()
+        self.assertEqual(1, run.call_count)
+        self.assertEqual("node", run.call_args.args[0])
+        self.assertIn("--test", run.call_args.args)
+        self.assertNotIn("eslint", run.call_args.args)
+
+    def test_javascript_targets_do_not_overlap(self) -> None:
+        from jellyfin_plugin_toolkit.quality import javascript
+
+        for path in ["frontend", "tests/browser", "scripts"]:
+            (self.root / path).mkdir(parents=True, exist_ok=True)
+        with patch("jellyfin_plugin_toolkit.quality.run") as run:
+            javascript(self.root, paths=["frontend", "tests/browser"])
+            javascript(self.root, excludes=["frontend", "tests/browser"])
+        self.assertIn("frontend", run.call_args_list[0].args)
+        self.assertIn("tests/browser", run.call_args_list[0].args)
+        self.assertIn("frontend/**", run.call_args_list[1].args)
+        self.assertIn("tests/browser/**", run.call_args_list[1].args)
+
     def test_advisories_use_shared_evaluator(self) -> None:
         with patch("jellyfin_plugin_toolkit.advisories.audit") as audit:
             tasks.test_default(self.ctx, "advisories", [])
@@ -214,19 +239,17 @@ class CommandTests(ConsumerTestCase):
                 build.assert_not_called()
 
     def test_common_tooling_checks_never_restore_dependencies(self) -> None:
-        from jellyfin_plugin_toolkit.checks import tooling
-
         with (
-            patch.object(tooling, "check_pins") as pins,
-            patch.object(tooling, "check_workflows") as workflows,
+            patch(
+                "jellyfin_plugin_toolkit.checks.workflows.check_workflows"
+            ) as workflows,
             patch(
                 "jellyfin_plugin_toolkit.checks.formatting.format_target"
             ) as formatting,
             patch("jellyfin_plugin_toolkit.quality.run") as run,
         ):
             tasks.check(self.ctx, "tooling")
-        pins.assert_called_once_with(self.root)
-        workflows.assert_called_once_with(self.root)
+        workflows.assert_not_called()
         formatting.assert_called_once_with(self.ctx, "tooling", False)
         self.assertTrue(
             any("eslint" in invocation.args for invocation in run.call_args_list)

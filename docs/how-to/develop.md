@@ -23,6 +23,8 @@ uv run jpt test
 uv run jpt validate
 ```
 
+`jpt check` owns formatting and static validation; `jpt test` owns tests. Frontend checks cover frontend and browser JavaScript, tooling checks cover the remaining tooling sources, and `jpt check automation` validates workflow syntax, immutable pins, Renovate configuration, and automation metadata. Running checks and tests together does not repeat linting. `jpt format` uses the same target ownership.
+
 Pass runner arguments after an explicit target and separator, for example `uv run jpt test browser -- --project workflow-chromium`. The first separator is consumed; the remaining arguments reach the runner unchanged.
 
 Use `uv run jpt --debug COMMAND` for failure tracebacks. Redirected output and CI help use plain formatting.

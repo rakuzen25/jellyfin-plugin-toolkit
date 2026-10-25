@@ -93,6 +93,7 @@ def snapshot(repository_root: Path, revision: str, destination: Path) -> None:
         "uv.lock",
         ".python-version",
         "renovate.json",
+        "plugin.toml",
         ".github/workflows",
     )
     for entry in data.split(b"\0"):

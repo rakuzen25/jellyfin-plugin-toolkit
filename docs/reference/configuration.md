@@ -116,3 +116,5 @@ Review waiver changes through ordinary PRs. Expired waivers cannot suppress find
 A published fix counts even when it is a major upgrade, prerelease, or requires a transitive override. Dependency release-age restrictions still apply when installing that fix. No-fix findings need no waiver; a subsequent fresh audit blocks once upstream reports a published fix only when `fail_on_findings` is enabled. The daily check evaluates expiry even without repository changes.
 
 The toolkit repository has no consumer `plugin.toml`; its own Node audit accepts `fail_on_findings` under `[tool.jpt.advisories]` and the same waiver fields under `[[tool.jpt.advisories.waivers]]` in `pyproject.toml`.
+
+The standard check and format targets are `backend`, `frontend`, `tooling`, `automation`, and `docs`. Include `automation` in the plugin validation check targets; the metadata CI job invokes it for workflow, pin, Renovate, and automation identity validation. Standalone repositories also accept `check automation` and `format automation`, using their configured applicable validators.

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.configuration import Configuration
 
-CHECK_TARGETS = frozenset({"backend", "docs", "frontend", "tooling"})
+CHECK_TARGETS = frozenset({"automation", "backend", "docs", "frontend", "tooling"})
 TEST_TARGETS = frozenset(
     {
         "backend",

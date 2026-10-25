@@ -7,7 +7,8 @@
     },
     "images": {
         "playwright": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf",
-        "actionlint": "rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667"
+        "actionlint": "rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667",
+        "renovate": "ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21"
     },
     "pins": {
         "global.json": "{\n    \"sdk\": {\n        \"version\": \"10.0.402\",\n        \"rollForward\": \"disable\"\n    },\n    \"test\": {\n        \"runner\": \"Microsoft.Testing.Platform\"\n    }\n}\n",

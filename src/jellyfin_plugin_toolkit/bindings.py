@@ -327,6 +327,29 @@ def plan(
             if entry.get("type") == "file":
                 files[entry["path"]] = b"workflow"
         changes: list[Change | None] = []
+        if ".github/workflows/pr-title.yml" in files:
+            from jellyfin_plugin_toolkit.workflows import render
+
+            title = ".github/workflows/pr-title.yml"
+            if not safe_path(root, title).exists():
+                changes.append(
+                    change_for(
+                        root,
+                        title,
+                        render(REPOSITORY, revision, version=tag)[
+                            "pr-title.yml"
+                        ].encode(),
+                    )
+                )
+            plugin = safe_path(root, "plugin.toml")
+            if plugin.is_file():
+                changes.append(
+                    change_for(
+                        root,
+                        "plugin.toml",
+                        automation_target(plugin.read_text()).encode(),
+                    )
+                )
         for name in ("pyproject.toml", "uv.lock"):
             changes.append(change_for(root, name, (staged / name).read_bytes()))
         for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
@@ -363,6 +386,43 @@ def released_policy(url: str, digest: str) -> bytes:
                 "Released wheel has no unambiguous supported typing policy"
             )
         return wheel.read(matches[0])
+
+
+def automation_target(text: str) -> str:
+    """Add the standard automation owner without replacing consumer settings."""
+    targets = tomllib.loads(text).get("validation", {}).get("check_targets", [])
+    if "automation" in targets:
+        return text
+    table = re.search(r"(?m)^\[validation\][ \t]*(?:#[^\n]*)?$", text)
+    if table is None:
+        raise ValueError(
+            "Declare a native [validation] table before synchronizing checks"
+        )
+    following = re.search(r"(?m)^\[", text[table.end() :])
+    end = table.end() + following.start() if following else len(text)
+    body = text[table.end() : end]
+    assignment = re.search(r"(?ms)^check_targets[ \t]*=[ \t]*\[(.*?)\]", body)
+    if assignment:
+        # Retain the array verbatim, including comments; a newline makes an
+        # existing trailing comment safe when appending the new member.
+        contents = assignment[1]
+        parsed = tomllib.loads("targets = [" + contents + "]")["targets"]
+        suffix = (
+            ""
+            if not parsed or re.sub(r"#[^\n]*", "", contents).rstrip().endswith(",")
+            else ","
+        )
+        replacement = "check_targets = [" + contents + suffix + '\n  "automation",\n]'
+        body = body[: assignment.start()] + replacement + body[assignment.end() :]
+    else:
+        body = '\ncheck_targets = ["backend", "tooling", "automation"]' + body
+    result = text[: table.end()] + body + text[end:]
+    if (
+        tomllib.loads(result)["validation"]["check_targets"] != [*targets, "automation"]
+        and targets
+    ):
+        raise ValueError("Ambiguous consumer check target declaration")
+    return result
 
 
 def transaction_path(root: Path) -> Path:

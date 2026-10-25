@@ -43,19 +43,6 @@ def package(
     assemble(consumer(ctx), release, prepared_web)
 
 
-@internal.command()
-def release_lock(
-    ctx: typer.Context,
-    repository: Annotated[str, typer.Option()],
-    pr: Annotated[int, typer.Option(min=1)],
-    bot: Annotated[str, typer.Option()],
-) -> None:
-    """Refresh the native lockfile on the configured release bot's PR."""
-    from jellyfin_plugin_toolkit.release_lock import refresh
-
-    refresh(state(ctx).root, repository, pr, bot)
-
-
 @sandbox.command()
 def deploy(
     ctx: typer.Context,
@@ -256,6 +243,49 @@ def toolkit_upload(
     from jellyfin_plugin_toolkit.toolkit_release import upload
 
     upload(state(ctx).root / directory, repository, tag, sha)
+
+
+@toolkit_release.command("select-validation")
+def toolkit_select_validation(
+    sha: Annotated[str, typer.Option()],
+    output: Annotated[Path, typer.Option()],
+    repository: Annotated[str, typer.Option(envvar="GITHUB_REPOSITORY")],
+    retry: Annotated[bool, typer.Option("--retry")] = False,
+) -> None:
+    """Wait for and authenticate the regular CI candidate for a release commit."""
+    from jellyfin_plugin_toolkit.toolkit_validation import select
+
+    selected = select(repository, sha, retry=retry)
+    with output.open("a") as stream:
+        stream.write(f"needs_validation={'false' if selected else 'true'}\n")
+        if selected:
+            stream.write(
+                f"run_id={selected.run_id}\nartifact_id={selected.artifact_id}\n"
+            )
+
+
+@toolkit_release.command("validation-receipt")
+def toolkit_validation_receipt(
+    sha: Annotated[str, typer.Option()],
+    artifact_id: Annotated[int, typer.Option(min=1)],
+    run_id: Annotated[int, typer.Option(envvar="GITHUB_RUN_ID", min=1)],
+    run_attempt: Annotated[int, typer.Option(envvar="GITHUB_RUN_ATTEMPT", min=1)],
+    repository: Annotated[str, typer.Option(envvar="GITHUB_REPOSITORY")],
+    results: Annotated[str, typer.Option(envvar="VALIDATION_RESULTS")],
+    directory: Path = Path(".build/validation"),
+) -> None:
+    """Bind successful validation to the exact candidate used by starter tests."""
+    from jellyfin_plugin_toolkit.toolkit_validation import record
+
+    record(
+        directory,
+        repository,
+        sha,
+        run_id,
+        run_attempt,
+        artifact_id,
+        json.loads(results),
+    )
 
 
 @internal.command()

@@ -18,7 +18,7 @@ from jellyfin_plugin_toolkit.common.artifacts import digest
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.provenance import identity
 
-SCHEMA = 7
+SCHEMA = 8
 POLICY = ("plugin.toml", "uv.lock", "version.txt")
 ARTIFACT_JOBS = ("package", "installation", "reproducibility", "advisories")
 
@@ -215,24 +215,9 @@ def metadata_check(ctx: Context) -> None:
         check_renovate,
         record_identity,
     )
-    from jellyfin_plugin_toolkit.checks.pins import check_pins
-    from jellyfin_plugin_toolkit.common.process import executable, run
 
     state = root / STATE_PATH
     if state.exists():
         check_renovate(root, record_identity(json.loads(state.read_text())))
 
-    check_pins(root)
-    run(
-        executable("pnpm"),
-        "exec",
-        "taplo",
-        "format",
-        "--check",
-        "plugin.toml",
-        cwd=root,
-    )
-    from jellyfin_plugin_toolkit.checks.workflows import check_workflows
-
-    check_workflows(root)
-    print("PASS: configured automation metadata syntax and workflow/toolkit pins")
+    print("PASS: configured automation metadata syntax and identity")

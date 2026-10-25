@@ -46,7 +46,6 @@ class CliTests(unittest.TestCase):
         for name in [
             "ci",
             "binding-pr",
-            "release-lock",
             "toolkit-release",
             "package",
             "sandbox",

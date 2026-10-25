@@ -99,7 +99,7 @@ def generate(
         },
         "validation": {
             "groups": groups,
-            "check_targets": ["backend", "tooling", "docs"]
+            "check_targets": ["backend", "tooling", "automation", "docs"]
             + (["frontend"] if admin else []),
             "unit_groups": ["backend"],
             "acceptance_groups": ["installation", "reproducibility"],

@@ -166,7 +166,9 @@ class BrowserInputs(Model):
 class Validation(Model):
     groups: list[Text]
     rules: list[Rule] = Field(default_factory=list)
-    check_targets: list[str] = Field(default_factory=lambda: ["backend", "tooling"])
+    check_targets: list[str] = Field(
+        default_factory=lambda: ["backend", "tooling", "automation"]
+    )
     unit_groups: list[str] = Field(default_factory=lambda: ["backend", "tooling"])
     acceptance_groups: list[str] = Field(default_factory=list)
     job_names: dict[str, list[Text]] = Field(default_factory=dict)
