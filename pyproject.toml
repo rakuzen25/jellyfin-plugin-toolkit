@@ -27,7 +27,7 @@ requires = ["uv_build==0.13.1"]
 build-backend = "uv_build"
 
 [tool.uv]
-required-version = "==0.13.1"
+required-version = "==0.13.5"
 python-preference = "only-managed"
 exclude-newer = "1 day"
 

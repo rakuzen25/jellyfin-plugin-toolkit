@@ -55,6 +55,27 @@ class BrowserInputTests(ConsumerTestCase):
     def key(self) -> str:
         return policy.fingerprints(self.ctx, browser.capture(self.ctx))["performance"]
 
+    def test_python_toolchain_changes_invalidate_all_groups_and_old_browser_evidence(
+        self,
+    ) -> None:
+        for name in (".python-version", "pyproject.toml"):
+            with self.subTest(name=name):
+                proof = browser.capture(self.ctx)
+                original = policy.fingerprints(self.ctx, proof)
+                path = self.root / name
+                before = path.read_text()
+                path.write_text(
+                    before.replace("3.15.0", "3.15.1").replace("0.13.1", "0.13.5")
+                )
+                with self.assertRaisesRegex(ValueError, "execution inputs changed"):
+                    browser.verify(self.ctx, proof)
+                updated = policy.fingerprints(self.ctx, browser.capture(self.ctx))
+                self.assertTrue(
+                    all(original[group] != updated[group] for group in self.ctx.groups)
+                )
+                self.assertEqual(set(self.ctx.groups), policy.impacts(self.ctx, name))
+                path.write_text(before)
+
     def test_backend_lint_and_unused_assets_do_not_invalidate_stress(self) -> None:
         original = self.key()
         before_policy = policy.policy_fingerprint(self.ctx)

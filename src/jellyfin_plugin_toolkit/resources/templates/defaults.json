@@ -13,7 +13,7 @@
     "pins": {
         "global.json": "{\n    \"sdk\": {\n        \"version\": \"10.0.402\",\n        \"rollForward\": \"disable\"\n    },\n    \"test\": {\n        \"runner\": \"Microsoft.Testing.Platform\"\n    }\n}\n",
         ".node-version": "26.12.0\n",
-        ".python-version": "3.15.0\n"
+        ".python-version": "3.15.1\n"
     },
     "package": {
         "private": true,
@@ -43,5 +43,10 @@
             "unist-util-visit": "5.1.0",
             "hast-util-from-html": "2.0.3"
         }
+    },
+    "uv": {
+        "required-version": "==0.13.5",
+        "python-preference": "only-managed",
+        "exclude-newer": "1 day"
     }
 }

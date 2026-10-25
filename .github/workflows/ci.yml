@@ -34,10 +34,11 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: |
+            .python-version
             pyproject.toml
             uv.lock
       - run: uv sync --locked
@@ -63,10 +64,11 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: |
+            .python-version
             pyproject.toml
             uv.lock
       - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
@@ -116,10 +118,11 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: |
+            .python-version
             pyproject.toml
             uv.lock
       - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
@@ -140,7 +143,7 @@ jobs:
         env:
           VARIANT: ${{ matrix.variant }}
         run: |
-          uv init --bare --no-package --no-workspace --managed-python --python 3.15.0 "$RUNNER_TEMP/generator"
+          uv init --bare --no-package --no-workspace --managed-python --python "$(cat .python-version)" "$RUNNER_TEMP/generator"
           uv add --managed-python --exclude-newer "1 day" --project "$RUNNER_TEMP/generator" "$GITHUB_WORKSPACE"/dist/jellyfin_plugin_toolkit-*.whl
           args=()
           if [ "$VARIANT" = admin-ui-custom-project-path ]; then
@@ -174,10 +177,11 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: |
+            .python-version
             pyproject.toml
             uv.lock
       - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
@@ -205,10 +209,13 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
-          cache-dependency-glob: uv.lock
+          cache-dependency-glob: |
+            .python-version
+            pyproject.toml
+            uv.lock
       - run: uv sync --locked
       - name: Bind successful validation to its tested candidate
         env:

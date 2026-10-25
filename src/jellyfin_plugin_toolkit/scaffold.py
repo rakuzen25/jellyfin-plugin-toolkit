@@ -304,16 +304,14 @@ def generate(
             "--name",
             identifier + "-tooling",
             "--python",
-            "3.15.0",
+            defaults["pins"][".python-version"].strip(),
             str(destination),
         ],
         check=True,
     )
     project = destination / "pyproject.toml"
     with project.open("a") as output:
-        output.write(
-            '\n[tool.uv]\nrequired-version = "==0.13.1"\npython-preference = "only-managed"\nexclude-newer = "1 day"\n'
-        )
+        output.write("\n" + tomli_w.dumps({"tool": {"uv": defaults["uv"]}}))
         output.write(
             '\n[tool.ruff]\nextend = ".build/jpt/configs/ruff.toml"\ntarget-version = "py315"\ninclude = ["scripts/**/*.py", "tests/**/*.py"]\n'
         )

@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import tomllib
 
 from jellyfin_plugin_toolkit.common.artifacts import digest
 from jellyfin_plugin_toolkit.common.source_inventory import (
@@ -47,6 +48,12 @@ def test_inputs(ctx: Context, spec: BrowserInputs, maintained: Sequence[Path]) -
 def settings(ctx: Context, group: str, spec: BrowserInputs) -> dict[str, Any]:
     return {
         "group": group,
+        "python_toolchain": {
+            "python": (ctx.root / ".python-version").read_text().strip(),
+            "uv": tomllib.loads((ctx.root / "pyproject.toml").read_text())["tool"][
+                "uv"
+            ]["required-version"],
+        },
         "projects": spec.projects,
         "workers": spec.workers,
         "runner": spec.runner,

@@ -74,6 +74,8 @@ config["validation"]["rules"] = [
         "patterns": [
             "plugin.toml",
             "uv.lock",
+            ".python-version",
+            "pyproject.toml",
             "version.txt",
             ".github/**",
             ".editorconfig",
@@ -95,6 +97,10 @@ def create_consumer(
     selected = copy.deepcopy(config if selected is None else selected)
     (root / "plugin.toml").write_text(toml(selected))
     (root / "version.txt").write_text("0.1.0\n")
+    (root / ".python-version").write_text("3.15.0\n")
+    (root / "pyproject.toml").write_text(
+        '[tool.uv]\nrequired-version = "==0.13.1"\npython-preference = "only-managed"\n'
+    )
     (root / "uv.lock").write_text(
         'version = 1\nrevision = 5\nrequires-python = ">=3.15,<3.16"\n[[package]]\nname = "jellyfin-plugin-toolkit"\nversion = "0.2.0"\nsource = { url = "https://github.com/rakuzen25/jellyfin-plugin-toolkit/releases/download/v0.2.0/jellyfin_plugin_toolkit-0.2.0-py3-none-any.whl" }\nwheels = [{ hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]\n'.replace(
             "0.2.0", package_version()
