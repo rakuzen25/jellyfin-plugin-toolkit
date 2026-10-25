@@ -179,6 +179,12 @@ class ReleaseBindingPlanTests(unittest.TestCase):
     ) -> None:
         from jellyfin_plugin_toolkit.checks.pins import check_pins
 
+        native = self.root / ".github/workflows/catalog.yml"
+        native.write_text(
+            "jobs:\n  publish:\n    steps:\n      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/app-token@"
+            + "a" * 40
+            + " # v0.2.0\n        with:\n          permission-contents: read\n"
+        )
         original = {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
 
         def resolve(command: list[str], *, cwd: Path, check: bool) -> None:
@@ -198,6 +204,20 @@ class ReleaseBindingPlanTests(unittest.TestCase):
         def mock_tag_commit(_: object, tag: str) -> Any:
             return ("b" if tag == "v0.3.0" else "a") * 40
 
+        def inventory(repository: str, endpoint: str) -> Any:
+            if "/git/trees/" in endpoint:
+                return {
+                    "truncated": False,
+                    "tree": [
+                        {
+                            "path": ".github/actions/app-token/action.yml",
+                            "type": "blob",
+                            "mode": "100644",
+                        },
+                    ],
+                }
+            return [{"type": "file", "path": ".github/workflows/validate.yml"}]
+
         with (
             patch(
                 "jellyfin_plugin_toolkit.release.service.release_for_tag",
@@ -209,9 +229,7 @@ class ReleaseBindingPlanTests(unittest.TestCase):
             ),
             patch(
                 "jellyfin_plugin_toolkit.release.service.github_json",
-                return_value=[
-                    {"type": "file", "path": ".github/workflows/validate.yml"}
-                ],
+                side_effect=inventory,
             ),
             patch.object(subprocess, "run", side_effect=resolve),
             patch.object(
@@ -226,10 +244,13 @@ class ReleaseBindingPlanTests(unittest.TestCase):
                 "uv.lock",
                 "renovate.json",
                 ".github/workflows/validate.yml",
+                ".github/workflows/catalog.yml",
             },
             {item.name for item in changes},
         )
         bindings.apply(self.root, changes)
+        self.assertIn("b" * 40, native.read_text())
+        self.assertIn("permission-contents: read", native.read_text())
         with patch(
             "jellyfin_plugin_toolkit.checks.pins.package_version", return_value="0.3.0"
         ):
