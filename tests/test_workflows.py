@@ -32,6 +32,36 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow)
 
+    def test_consumer_jobs_install_the_pinned_interpreter_before_uv_sync(self) -> None:
+        import re
+
+        root = Path(__file__).resolve().parents[1] / ".github/workflows"
+        for filename in [
+            "sync-bindings.yml",
+            "setup-automation.yml",
+            "prepare-release.yml",
+            "validate.yml",
+        ]:
+            workflow = (root / filename).read_text()
+            jobs = re.split(
+                r"(?m)^  ([a-z][a-z-]*):\n", workflow.split("jobs:\n", 1)[1]
+            )
+            for name, job in zip(jobs[1::2], jobs[2::2], strict=True):
+                if "uv sync --locked" not in job:
+                    continue
+                with self.subTest(workflow=filename, job=name):
+                    before_sync = job.split("uv sync --locked", 1)[0]
+                    self.assertRegex(
+                        before_sync, r"uses: actions/setup-python@[0-9a-f]{40}"
+                    )
+                    self.assertIn("python-version-file: .python-version", before_sync)
+                    # The interpreter belongs to the checked-out consumer, including
+                    # trusted default-branch checkouts in privileged automation.
+                    self.assertLess(
+                        before_sync.index("uses: actions/checkout@"),
+                        before_sync.index("uses: actions/setup-python@"),
+                    )
+
     def test_validation_has_no_publication_credentials(self) -> None:
         workflow = render("example/toolkit", "a" * 40, version="v1.0.0")["validate.yml"]
         self.assertNotIn("secrets:", workflow)
