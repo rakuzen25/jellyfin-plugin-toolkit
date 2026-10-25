@@ -8,7 +8,14 @@
     "bump-patch-for-minor-pre-major": true,
     "packages": {
         ".": {
-            "package-name": "jellyfin-plugin-toolkit"
+            "package-name": "jellyfin-plugin-toolkit",
+            "extra-files": [
+                {
+                    "type": "toml",
+                    "path": "uv.lock",
+                    "jsonpath": "$.package[?(@.name.value==\"jellyfin-plugin-toolkit\" && @.source.editable.value==\".\")].version"
+                }
+            ]
         }
     }
 }

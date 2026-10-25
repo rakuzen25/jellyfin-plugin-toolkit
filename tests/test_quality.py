@@ -171,3 +171,37 @@ class QualityTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             quality.selected(self.root)
+
+    def test_automation_target_runs_only_applicable_validators(self) -> None:
+        self.project.write_text(
+            self.project.read_text().replace(
+                'checks=["python"]',
+                'checks=["python", "javascript", "workflows", "renovate"]\n'
+                '[tool.jpt.quality.images]\nactionlint="fixture@sha256:'
+                + "a" * 64
+                + '"\nrenovate="fixture@sha256:'
+                + "b" * 64
+                + '"',
+            )
+        )
+        with (
+            patch.object(quality, "python") as python,
+            patch.object(quality, "javascript") as javascript,
+            patch.object(quality, "automation") as automation,
+            patch.object(quality, "run"),
+        ):
+            quality.main(self.root, target="automation")
+        python.assert_not_called()
+        javascript.assert_not_called()
+        self.assertEqual(
+            ["workflows", "renovate"],
+            [item.args[2] for item in automation.call_args_list],
+        )
+        with (
+            patch.object(quality, "python"),
+            patch.object(quality, "javascript"),
+            patch.object(quality, "automation") as automation,
+            patch.object(quality, "run"),
+        ):
+            quality.main(self.root, target="tooling")
+        automation.assert_not_called()

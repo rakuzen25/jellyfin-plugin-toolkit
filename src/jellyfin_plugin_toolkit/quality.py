@@ -3,13 +3,17 @@
 import json
 import sys
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+if TYPE_CHECKING:
+    from jellyfin_plugin_toolkit.context import Context
+
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from jellyfin_plugin_toolkit.common.process import executable, run
-from jellyfin_plugin_toolkit.resources_api import prepare
+from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT, prepare
 from jellyfin_plugin_toolkit.typing_policy import check_policy
 
 Check = Literal["python", "javascript", "typescript", "docs", "workflows", "renovate"]
@@ -82,8 +86,36 @@ def has_sources(root: Path, patterns: list[str]) -> bool:
     return False
 
 
-def javascript(root: Path) -> None:
-    run(executable("pnpm"), "exec", "eslint", ".", "--max-warnings", "0", cwd=root)
+def javascript(
+    root: Path, *, paths: list[str] | None = None, excludes: Sequence[str] = ()
+) -> None:
+    selected_paths = [path for path in paths or ["."] if (root / path).exists()]
+    if not selected_paths:
+        return
+    run(
+        executable("pnpm"),
+        "exec",
+        "eslint",
+        *selected_paths,
+        *[
+            argument
+            for path in excludes
+            for argument in ("--ignore-pattern", path + "/**")
+        ],
+        "--max-warnings",
+        "0",
+        cwd=root,
+    )
+
+
+def plugin_automation(ctx: Context) -> None:
+    from jellyfin_plugin_toolkit.ci.policy import metadata_check
+
+    metadata_check(ctx)
+    automation(ctx.root, ctx.images["actionlint"], "workflows")
+    defaults = json.loads((RESOURCE_ROOT / "templates/defaults.json").read_text())
+    images = TypeAdapter(dict[str, str]).validate_python(defaults["images"])
+    automation(ctx.root, ctx.images.get("renovate", images["renovate"]), "renovate")
 
 
 def typescript(root: Path, projects: list[str]) -> None:
@@ -147,14 +179,21 @@ def python_format(root: Path, fix: bool, roots: list[str] | None = None) -> None
 def formatting(
     root: Path, checks: list[Check], fix: bool, target: str | None = None
 ) -> None:
-    if target not in (None, "tooling", "docs"):
+    if target not in (None, "tooling", "docs", "automation"):
         raise ValueError("Unknown quality target: " + target)
-    if target != "docs" and "python" in checks:
+    if target in (None, "tooling") and "python" in checks:
         python_format(root, fix)
     patterns = (
         ["*.md", "docs/**/*.md"]
         if target == "docs"
+        else ["renovate.json", ".github/**/*.{json,yml,yaml}"]
+        if target == "automation"
         else ["**/*.{md,json,mjs,cjs,ts,css,html,yml,yaml}"]
+        + (
+            ["!*.md", "!docs/**/*.md", "!renovate.json", "!.github/**"]
+            if target == "tooling"
+            else []
+        )
     )
     prettier(root, patterns, fix)
 
@@ -193,7 +232,9 @@ def main(root: Path, *, fix: bool = False, target: str | None = None) -> None:
             target == "docs"
             and check != "docs"
             or target == "tooling"
-            and check == "docs"
+            and check in {"docs", "workflows", "renovate"}
+            or target == "automation"
+            and check not in {"workflows", "renovate"}
         ):
             continue
         if check == "python":

@@ -14,6 +14,7 @@ FRONTEND_FORMAT = [
     "tests/browser/**/*.{cjs,mjs,json}",
 ]
 DOCS_FORMAT = ["*.md", "docs/**/*.md"]
+AUTOMATION_FORMAT = ["renovate.json", ".github/**/*.{json,yml,yaml}"]
 
 
 def dotnet_format(ctx: Context, fix: bool = False) -> None:
@@ -44,13 +45,18 @@ def format_target(ctx: Context, target: str, fix: bool) -> None:
         patterns = (
             DOCS_FORMAT
             if target == "docs"
-            else FRONTEND_FORMAT
+            else [
+                ctx.config.frontend.directory + "/**/*.{ts,mjs,json,css,html}",
+                ctx.config.browser.directory + "/**/*.{cjs,mjs,json}",
+            ]
             if target == "frontend"
+            else AUTOMATION_FORMAT
+            if target == "automation"
             else [
                 "scripts/**/*.{mjs,json}",
                 "*.{json,mjs,yml,yaml}",
                 "tests/tooling/**/*.{mjs,cjs,json}",
-                ".github/**/*.{yml,yaml}",
+                "!renovate.json",
             ]
         )
         from jellyfin_plugin_toolkit.quality import prettier, python_format
@@ -62,6 +68,15 @@ def format_target(ctx: Context, target: str, fix: bool) -> None:
             ]
             if roots:
                 python_format(ctx.root, fix, roots)
+        if target in {"tooling", "automation"}:
+            files = [
+                p.name
+                for p in sorted(ctx.root.glob("*.toml"))
+                if p.name != "pyproject.toml"
+                and (p.name == "plugin.toml") == (target == "automation")
+            ]
+            if not files:
+                return
             run(
                 executable("pnpm"),
                 "exec",
@@ -69,10 +84,6 @@ def format_target(ctx: Context, target: str, fix: bool) -> None:
                 "format",
                 *([] if fix else ["--check"]),
                 # uv owns pyproject.toml, including its native dependency-edit format.
-                *[
-                    p.name
-                    for p in sorted(ctx.root.glob("*.toml"))
-                    if p.name != "pyproject.toml"
-                ],
+                *files,
                 cwd=ctx.root,
             )

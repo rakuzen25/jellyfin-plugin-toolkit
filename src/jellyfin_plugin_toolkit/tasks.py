@@ -163,13 +163,21 @@ def check_default(ctx: Context, target: str) -> None:
         format_target(ctx, "frontend", False)
         from jellyfin_plugin_toolkit.quality import javascript, typescript
 
-        javascript(ctx.root)
+        javascript(
+            ctx.root,
+            paths=[ctx.config.frontend.directory, ctx.config.browser.directory],
+        )
         typescript(ctx.root / ctx.config.frontend.directory, ["tsconfig.json"])
     elif target == "tooling":
         from jellyfin_plugin_toolkit.checks.tooling import main
 
         format_target(ctx, "tooling", False)
         main(ctx)
+    elif target == "automation":
+        from jellyfin_plugin_toolkit.quality import plugin_automation
+
+        format_target(ctx, "automation", False)
+        plugin_automation(ctx)
     else:
         raise ValueError("Unknown check target: " + target)
 
@@ -272,16 +280,6 @@ def test_default(ctx: Context, target: str, extra: Sequence[str]) -> None:
     if target == "backend":
         backend_tests(ctx, extra)
     elif target == "frontend":
-        format_target(ctx, "frontend", False)
-        run(
-            executable("pnpm"),
-            "exec",
-            "eslint",
-            ".",
-            "--max-warnings",
-            "0",
-            cwd=ctx.root,
-        )
         run(
             "node",
             "--experimental-strip-types",

@@ -14,6 +14,7 @@ def render(
     validate = """name: Validate release candidate
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
     inputs:
       full:
@@ -25,6 +26,8 @@ permissions:
   actions: read
 jobs:
   validation:
+    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event' || 'validation' }}
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     uses: PREFIXvalidate.yml@REVISION # TOOLKIT_TAG
     with:
       full: ${{ inputs.full || false }}
@@ -116,6 +119,16 @@ jobs:
         "safety.yml": safety,
         "release.yml": release,
         "release-please.yml": prepare,
+        "pr-title.yml": """name: Check PR title
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+jobs:
+  title:
+    uses: PREFIXpr-title.yml@REVISION # TOOLKIT_TAG
+""",
     }
     if catalog:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", catalog):

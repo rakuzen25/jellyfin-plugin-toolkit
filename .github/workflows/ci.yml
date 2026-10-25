@@ -1,6 +1,7 @@
 name: Toolkit validation
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
   workflow_dispatch:
@@ -18,9 +19,13 @@ on:
         value: ${{ jobs.candidate.outputs.artifact_id }}
 permissions:
   contents: read
+concurrency:
+  group: toolkit-validation-${{ github.repository }}-${{ github.event_name == 'pull_request' && (github.event.action != 'edited' || github.event.changes.base != null) && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && (github.event.action != 'edited' || github.event.changes.base != null) }}
 jobs:
   candidate:
-    if: github.event_name != 'schedule'
+    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-candidate' || 'candidate' }}
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
     runs-on: ubuntu-24.04
     outputs:
       artifact_id: ${{ steps.archive.outputs.artifact-id }}
@@ -50,7 +55,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   toolkit:
-    if: github.event_name != 'schedule'
+    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-toolkit' || 'toolkit' }}
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -93,13 +99,18 @@ jobs:
           ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21
           /toolkit/tests/renovate-attachments.mjs
   starter:
-    if: github.event_name != 'schedule'
+    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-starter' || format('starter ({0})', matrix.label) }}
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
     needs: candidate
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        variant: [backend-only, admin-ui-custom-project-path]
+        include:
+          - variant: backend-only
+            label: backend
+          - variant: admin-ui-custom-project-path
+            label: administrator-override
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -155,6 +166,8 @@ jobs:
           if [ "$VARIANT" = admin-ui-custom-project-path ]; then uv run --no-sync jpt test browser -- --project workflow-chromium; fi
 
   advisories:
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
+    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-advisories' || 'advisories' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -182,3 +195,30 @@ jobs:
           name: toolkit-advisories
           path: dist/evidence/advisories.json
           if-no-files-found: warn
+  validation-evidence:
+    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-evidence' || 'validation-evidence' }}
+    needs: [candidate, toolkit, starter, advisories]
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked
+      - name: Bind successful validation to its tested candidate
+        env:
+          SOURCE_REVISION: ${{ inputs.ref || github.sha }}
+          CANDIDATE_ARTIFACT_ID: ${{ needs.candidate.outputs.artifact_id }}
+          VALIDATION_RESULTS: '{"candidate":"${{ needs.candidate.result }}","toolkit":"${{ needs.toolkit.result }}","starter":"${{ needs.starter.result }}","advisories":"${{ needs.advisories.result }}"}'
+        run: uv run --no-sync jpt internal toolkit-release validation-receipt --sha "$SOURCE_REVISION" --artifact-id "$CANDIDATE_ARTIFACT_ID"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: toolkit-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .build/validation/validation.json
+          if-no-files-found: error
+          retention-days: 14

@@ -17,6 +17,22 @@ def required_change(root: Path, name: str, after: bytes) -> bindings.Change:
 
 
 class BindingTests(unittest.TestCase):
+    def test_automation_target_preserves_local_configuration_and_is_idempotent(
+        self,
+    ) -> None:
+        original = '# preserve\n[validation]\ncheck_targets = ["docs", "tooling"] # local\nunit_groups=["custom"]\n[operations.check-tooling]\nafter=[["architecture"]]\n'
+        updated = bindings.automation_target(original)
+        import tomllib
+
+        self.assertEqual(
+            ["docs", "tooling", "automation"],
+            tomllib.loads(updated)["validation"]["check_targets"],
+        )
+        self.assertIn("# preserve", updated)
+        self.assertIn('unit_groups=["custom"]', updated)
+        self.assertIn('after=[["architecture"]]', updated)
+        self.assertEqual(updated, bindings.automation_target(updated))
+
     def setUp(self) -> None:
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)

@@ -10,6 +10,28 @@ from jellyfin_plugin_toolkit.workflows import render
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_metadata_edits_do_not_emit_or_cancel_code_check_contexts(self) -> None:
+        caller = render("example/toolkit", "a" * 40, version="v1.0.0")["validate.yml"]
+        self.assertIn("types: [opened, synchronize, reopened, edited]", caller)
+        self.assertIn("'metadata-event' || 'validation'", caller)
+        self.assertIn("github.event.changes.base != null", caller)
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+        ).read_text()
+        self.assertIn("format('pr-{0}'", workflow)
+        self.assertIn("'metadata-event-toolkit' || 'toolkit'", workflow)
+        self.assertIn("label: administrator-override", workflow)
+
+    def test_title_policy_needs_no_checkout_dependencies_or_write_token(self) -> None:
+        caller = render("example/toolkit", "a" * 40, version="v1.0.0")["pr-title.yml"]
+        self.assertIn("pr-title.yml@" + "a" * 40, caller)
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/pr-title.yml"
+        ).read_text()
+        self.assertNotIn("checkout", workflow)
+        self.assertNotIn("write", workflow)
+        self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow)
+
     def test_validation_has_no_publication_credentials(self) -> None:
         workflow = render("example/toolkit", "a" * 40, version="v1.0.0")["validate.yml"]
         self.assertNotIn("secrets:", workflow)
