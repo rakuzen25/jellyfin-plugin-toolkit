@@ -1,0 +1,74 @@
+name: Scoped GitHub App token
+description: Create a scoped installation token with actionable authentication failures
+inputs:
+  client-id:
+    description: Connected GitHub App client ID
+    required: true
+  private-key:
+    description: Connected GitHub App private key
+    required: true
+  owner:
+    description: Installation owner for an explicit repository selection
+  repositories:
+    description: Comma or newline-separated repository names; required with owner
+  permission-contents:
+    description: Explicit contents permission (read or write)
+  permission-pull-requests:
+    description: Explicit pull requests permission (read or write)
+  permission-issues:
+    description: Explicit issues permission (read or write)
+  permission-actions:
+    description: Explicit Actions permission (read or write)
+  permission-attestations:
+    description: Explicit attestations permission (read or write)
+  permission-workflows:
+    description: Explicit workflows permission (write)
+outputs:
+  token:
+    description: GitHub App installation token
+    value: ${{ steps.mint.outputs.token }}
+  app-slug:
+    description: Authenticated GitHub App slug
+    value: ${{ steps.mint.outputs.app-slug }}
+  installation-id:
+    description: GitHub App installation ID
+    value: ${{ steps.mint.outputs.installation-id }}
+runs:
+  using: composite
+  steps:
+    - name: Validate credentials and token scope
+      shell: bash
+      env:
+        APP_ACTION_PATH: ${{ github.action_path }}
+        APP_CLIENT_ID: ${{ inputs.client-id }}
+        APP_PRIVATE_KEY: ${{ inputs.private-key }}
+        APP_OWNER: ${{ inputs.owner }}
+        APP_REPOSITORIES: ${{ inputs.repositories }}
+        APP_PERMISSION_CONTENTS: ${{ inputs.permission-contents }}
+        APP_PERMISSION_PULL_REQUESTS: ${{ inputs.permission-pull-requests }}
+        APP_PERMISSION_ISSUES: ${{ inputs.permission-issues }}
+        APP_PERMISSION_ACTIONS: ${{ inputs.permission-actions }}
+        APP_PERMISSION_ATTESTATIONS: ${{ inputs.permission-attestations }}
+        APP_PERMISSION_WORKFLOWS: ${{ inputs.permission-workflows }}
+      run: bash "$APP_ACTION_PATH/validate.sh"
+    - name: Create installation token
+      id: mint
+      continue-on-error: true
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repositories }}
+        permission-contents: ${{ inputs.permission-contents }}
+        permission-pull-requests: ${{ inputs.permission-pull-requests }}
+        permission-issues: ${{ inputs.permission-issues }}
+        permission-actions: ${{ inputs.permission-actions }}
+        permission-attestations: ${{ inputs.permission-attestations }}
+        permission-workflows: ${{ inputs.permission-workflows }}
+    - name: Explain token acquisition failure
+      if: ${{ !cancelled() && steps.mint.outcome == 'failure' }}
+      shell: bash
+      env:
+        APP_ACTION_PATH: ${{ github.action_path }}
+      run: bash "$APP_ACTION_PATH/failure.sh"
