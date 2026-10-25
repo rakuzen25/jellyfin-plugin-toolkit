@@ -207,17 +207,10 @@ def policy_fingerprint(ctx: Context) -> str:
 
 def metadata_check(ctx: Context) -> None:
     root = ctx.root
+    from jellyfin_plugin_toolkit.automation import check_configuration
+
+    check_configuration(root)
     for name in tracked_files(root):
         if metadata_path(name) and name.endswith(".json") and (root / name).exists():
             json.loads((root / name).read_text())
-    from jellyfin_plugin_toolkit.automation import (
-        STATE_PATH,
-        check_renovate,
-        record_identity,
-    )
-
-    state = root / STATE_PATH
-    if state.exists():
-        check_renovate(root, record_identity(json.loads(state.read_text())))
-
     print("PASS: configured automation metadata syntax and identity")

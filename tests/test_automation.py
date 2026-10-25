@@ -136,7 +136,7 @@ class WorkflowIdentityTests(unittest.TestCase):
         ]:
             text = (root / ".github/workflows" / filename).read_text()
             with self.subTest(workflow=filename):
-                self.assertIn("actions/create-github-app-token@", text)
+                self.assertIn("/.github/actions/app-token@", text)
                 self.assertNotIn("steps.app.outputs.token ||", text)
                 self.assertNotIn("if: inputs.app_client_id !=", text)
                 self.assertIn("${{ steps.app.outputs.token }}", text)
@@ -159,3 +159,90 @@ class WorkflowIdentityTests(unittest.TestCase):
             self.assertNotIn(
                 "gitIgnoredAuthors", json.loads((root / filename).read_text())
             )
+
+
+class TrackedConfigurationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.root = Path(self.folder.name)
+        self.state = self.root / automation.STATE_PATH
+        self.state.parent.mkdir()
+        (self.root / "renovate.json").write_text("{}")
+        (self.root / ".github/workflows").mkdir()
+        (self.root / ".github/workflows/app-setup.yml").write_text(
+            "on: workflow_dispatch\n"
+        )
+        self.identity = {
+            "name": "fixture-app[bot]",
+            "email": "123+fixture-app[bot]@users.noreply.github.com",
+        }
+
+    def record(self) -> None:
+        self.state.write_text(json.dumps(automation.identity_record(self.identity)))
+        (self.root / "renovate.json").write_text(
+            json.dumps({"gitIgnoredAuthors": [self.identity["email"]]})
+        )
+
+    def test_missing_record_is_offline_notice_but_blocks_app_writes(self) -> None:
+        with (
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/plugin"}, clear=True),
+            patch.object(urllib.request, "urlopen") as network,
+            patch("builtins.print") as output,
+        ):
+            automation.check_configuration(self.root)
+            self.assertIn("NOTICE:", output.call_args.args[0])
+            with self.assertRaisesRegex(
+                ValueError,
+                "https://github.com/example/plugin/actions/workflows/app-setup.yml",
+            ):
+                automation.check_renovate(self.root, self.identity)
+            network.assert_not_called()
+
+    def test_current_record_needs_no_credentials_or_network(self) -> None:
+        self.record()
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(urllib.request, "urlopen") as network,
+        ):
+            automation.check_configuration(self.root)
+            automation.check_renovate(self.root, self.identity)
+        network.assert_not_called()
+
+    def test_malformed_record_requires_tracked_repair_without_rewriting(self) -> None:
+        for value in [
+            "not json",
+            "[]",
+            '{"schema_version":1}',
+            '{"schema_version":true}',
+        ]:
+            with self.subTest(value=value):
+                self.state.write_text(value)
+                with self.assertRaisesRegex(ValueError, "Repair or restore"):
+                    automation.check_configuration(self.root)
+                self.assertEqual(value, self.state.read_text())
+
+    def test_stale_live_identity_requires_setup_but_static_checks_stay_offline(
+        self,
+    ) -> None:
+        self.record()
+        automation.check_configuration(self.root)
+        with self.assertRaisesRegex(ValueError, "Connected App identity differs"):
+            automation.check_renovate(
+                self.root,
+                {
+                    "name": "replacement[bot]",
+                    "email": "456+replacement[bot]@users.noreply.github.com",
+                },
+            )
+
+    def test_existing_renovate_drift_fails_static_checks(self) -> None:
+        self.record()
+        for configuration, message in [
+            ({}, "managed App identity"),
+            ({"gitIgnoredAuthors": "wrong shape"}, "repair renovate.json"),
+        ]:
+            with self.subTest(configuration=configuration):
+                (self.root / "renovate.json").write_text(json.dumps(configuration))
+                with self.assertRaisesRegex(ValueError, message):
+                    automation.check_configuration(self.root)

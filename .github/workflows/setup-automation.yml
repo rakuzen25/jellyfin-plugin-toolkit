@@ -21,6 +21,14 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     steps:
+      - name: Create repository-scoped setup token
+        uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/app-token@27f61490cc183093f30cbf1dba50bb299920b23c # shared App token action
+        id: app
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -39,20 +47,6 @@ jobs:
       - uses: ./.build/jpt/actions/setup
         with:
           node: "true"
-      - name: Require existing App credentials
-        env:
-          APP_CLIENT_ID: ${{ inputs.app_client_id }}
-          APP_PRIVATE_KEY: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
-        run: |
-          test -n "$APP_CLIENT_ID" && test -n "$APP_PRIVATE_KEY" || { echo 'Configure PLUGIN_APP_CLIENT_ID and PLUGIN_APP_PRIVATE_KEY for the existing GitHub App'; exit 1; }
-      - name: Create repository-scoped setup token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        id: app
-        with:
-          client-id: ${{ inputs.app_client_id }}
-          private-key: ${{ secrets.PLUGIN_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
       - name: Open or update the reviewed setup PR
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}

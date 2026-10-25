@@ -77,6 +77,46 @@ def workflow_references(text: str, repository: str) -> list[re.Match[str]]:
     return matches
 
 
+def released_actions(
+    repository: str, revision: str, components: set[str]
+) -> dict[str, bytes]:
+    """Inspect native action components as release data, never executable code."""
+    from jellyfin_plugin_toolkit.release.service import github_json
+
+    actions = {name for name in components if name.startswith(".github/actions/")}
+    if not actions:
+        return {}
+    for name in actions:
+        if ".." in Path(name).parts:
+            raise ValueError("Unsafe toolkit action component")
+    tree = github_json(repository, "/git/trees/" + revision + "?recursive=1")
+    if not is_json_object(tree) or tree.get("truncated") is not False:
+        raise ValueError("Cannot verify the complete released action inventory")
+    entries = tree.get("tree")
+    if not is_json_array(entries):
+        raise ValueError("Invalid released action inventory")
+    files: dict[str, bytes] = {}
+    for entry in entries:
+        if not is_json_object(entry) or not isinstance(entry.get("path"), str):
+            raise ValueError("Invalid released action inventory entry")
+        name = entry["path"]
+        if any(name.startswith(component + "/") for component in actions):
+            if entry.get("type") == "tree":
+                continue
+            if entry.get("type") != "blob" or entry.get("mode") not in {
+                "100644",
+                "100755",
+            }:
+                raise ValueError("Released action components must be regular files")
+            files[name] = b"verified release data"
+    for component in actions:
+        if not any(
+            component + "/action" + suffix in files for suffix in (".yml", ".yaml")
+        ):
+            raise ValueError("Referenced toolkit component was removed: " + component)
+    return files
+
+
 def reference_tag(match: re.Match[str]) -> re.Match[str] | None:
     return re.search(r"(?<!\S)v\d+\.\d+\.\d+(?:-[\w.]+)?(?!\S)", match["comment"] or "")
 
@@ -91,9 +131,12 @@ def rewrite_workflow(
     updates: list[tuple[int, int, str]] = []
     for match in workflow_references(text, new["repository"]):
         component = match["component"]
-        if component not in files and not any(
-            name.startswith(component + "/") for name in files
-        ):
+        available = (
+            component + "/action.yml" in files or component + "/action.yaml" in files
+            if component.startswith(".github/actions/")
+            else component in files
+        )
+        if not available:
             raise ValueError("Referenced toolkit component was removed: " + component)
         tag = reference_tag(match)
         if match["revision"] not in {old["revision"], revision} or (
@@ -326,6 +369,12 @@ def plan(
         ):
             if entry.get("type") == "file":
                 files[entry["path"]] = b"workflow"
+        components = {
+            match["component"]
+            for workflow in (root / ".github/workflows").glob("*.y*ml")
+            for match in workflow_references(workflow.read_text(), REPOSITORY)
+        }
+        files.update(released_actions(REPOSITORY, revision, components))
         changes: list[Change | None] = []
         if ".github/workflows/pr-title.yml" in files:
             from jellyfin_plugin_toolkit.workflows import render
