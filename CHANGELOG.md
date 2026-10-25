@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.1...v0.5.2) (2026-10-25)
+
+
+### Features
+
+* **ci:** add scoped GitHub App token action ([#21](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/21)) ([27f6149](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/27f61490cc183093f30cbf1dba50bb299920b23c))
+
+
+### Bug Fixes
+
+* **ci:** install consumer Python before locked setup ([#19](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/19)) ([445d739](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/445d739ad3015cf9ee5458cadc77317e7b4b10e0))
+* **ci:** standardize App setup and recovery guidance ([#22](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/22)) ([1db93b2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/1db93b238a9f5a792dc845b9c61135cb6e8001ba))
+
 ## [0.5.1](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.0...v0.5.1) (2026-10-25)
 
 
