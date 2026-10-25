@@ -15,6 +15,8 @@ Require the shared PR-title check and configure squash commit subjects to use th
 
 For upload failures, use **Re-run failed jobs** to reuse the retained candidate artifact. Candidates are retained for 14 days. Alternatively, manually run **Prepare toolkit release** on `main` with its existing draft `tag`; this reuses successful regular CI when its artifacts remain available. If eligible artifacts are absent or expired, the retry validates the immutable tagged source once before attachment. Failed validation must be fixed or rerun before retrying release preparation. Identical existing assets are retained, missing assets are uploaded, and conflicting assets or published releases are rejected. Never overwrite an asset or move a release tag to repair a tagged source change; prepare a new version.
 
+The native App-token action is maintained in the toolkit repository. When changing it, merge the action bootstrap first, then pin shared workflows to that reviewed main-branch commit before preparing the consumer release; both changes can ship in one release. Consumer workflow and action references use the immutable revision matching their published toolkit wheel.
+
 Consumers extend the shared `default.json` preset as `github>rakuzen25/jellyfin-plugin-toolkit#v0.1.0`. Renovate groups subsequent wheel URL, reusable workflow SHAs/version comments and preset tag changes into a manually reviewed PR. Tags and presets can be visible before draft attachments are public; partial updates fail pin validation and must not be merged. The preset uses GitHub release and Actions/config-preset managers. Trusted synchronization invokes uv to complete the dependency lockfile.
 
 ## Plugins
