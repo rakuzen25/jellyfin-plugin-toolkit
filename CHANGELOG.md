@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.2...v0.5.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* **tooling:** use one Python owner and shared dependency automation ([#23](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/23)) ([65acabc](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/65acabc66bb9d01e51543b76b369007be2d3ddd3))
+
 ## [0.5.2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.1...v0.5.2) (2026-10-25)
 
 
