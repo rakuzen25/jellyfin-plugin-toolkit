@@ -180,6 +180,15 @@ class ToolkitValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "successful suite"):
             self.select()
 
+    def test_older_success_without_a_receipt_can_be_revalidated_on_manual_retry(
+        self,
+    ) -> None:
+        self.jobs = {"total_count": 0, "jobs": []}
+        self.artifacts = {"total_count": 0, "artifacts": []}
+        self.assertIsNone(self.select(retry=True))
+        with self.assertRaisesRegex(ValueError, "missing or expired"):
+            self.select()
+
     def test_wrong_candidate_attempt_is_rejected(self) -> None:
         self.artifacts["artifacts"][1]["name"] = "toolkit-candidate-123-1"
         with self.assertRaisesRegex(ValueError, "tested artifact"):

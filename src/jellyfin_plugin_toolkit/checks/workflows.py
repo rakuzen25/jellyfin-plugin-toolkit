@@ -19,6 +19,13 @@ def check_workflows(
     )
     if not paths:
         raise ValueError("No maintained workflows found")
+    configurations = [
+        path
+        for path in (".github/actionlint.yaml", ".github/actionlint.yml")
+        if (root / path).is_file()
+    ]
+    if len(configurations) > 1:
+        raise ValueError("Declare one native actionlint configuration")
     # Explicit files do not require actionlint to discover a .git directory.
     run(
         "docker",
@@ -31,6 +38,7 @@ def check_workflows(
         "-w",
         "/work",
         image,
+        *[argument for path in configurations for argument in ("-config-file", path)],
         *[argument for pattern in ignores for argument in ("-ignore", pattern)],
         *paths,
         cwd=root,

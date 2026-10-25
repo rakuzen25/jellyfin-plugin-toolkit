@@ -125,6 +125,47 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn(str(root) + ":/work:ro", run.call_args.args)
             self.assertNotIn("install", run.call_args.args)
 
+    def test_native_actionlint_config_is_used_without_git_discovery(self) -> None:
+        from jellyfin_plugin_toolkit.checks.workflows import check_workflows
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / ".github/workflows/validate.yml").write_text("name: Fixture\n")
+            (root / ".github/actionlint.yaml").write_text(
+                "self-hosted-runner:\n  labels: [ubuntu-26.04]\n"
+            )
+            with patch("jellyfin_plugin_toolkit.checks.workflows.run") as run:
+                check_workflows(root, "fixture@sha256:" + "a" * 64)
+            self.assertIn("-config-file", run.call_args.args)
+            self.assertIn(".github/actionlint.yaml", run.call_args.args)
+
+    def test_title_policy_accepts_and_rejects_representative_titles(self) -> None:
+        import os
+        import subprocess
+        import textwrap
+
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/pr-title.yml"
+        ).read_text()
+        script = textwrap.dedent(workflow.split("        run: |\n", 1)[1])
+        for title, code in [
+            ("fix(ci): reuse validation", 0),
+            ("feat!: change commands", 0),
+            ("chore(deps): update dependencies", 0),
+            ("Update dependencies", 1),
+            ("fix: ", 1),
+            ("feat(scope):missing space", 1),
+        ]:
+            with self.subTest(title=title):
+                result = subprocess.run(
+                    ["bash", "-e", "-c", script],
+                    env={**os.environ, "PR_TITLE": title},
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(code, result.returncode)
+
 
 class OptionalSyncWorkflowTests(unittest.TestCase):
     def test_consumer_caller_is_opt_in_and_handles_failed_validation(self) -> None:

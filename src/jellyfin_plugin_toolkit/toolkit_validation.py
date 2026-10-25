@@ -127,6 +127,19 @@ def eligible(run: Run, repository: str, revision: str) -> bool:
 
 def candidate(run: Run, repository: str, revision: str) -> Selection | None:
     """Read a bounded receipt and match it to authenticated jobs and artifacts."""
+    artifacts = Artifacts.model_validate(
+        api(repository, f"/actions/runs/{run.id}/artifacts?per_page=100")
+    )
+    if artifacts.total_count != len(artifacts.artifacts):
+        raise ValueError("Incomplete toolkit artifact inventory")
+    receipts = [
+        item
+        for item in artifacts.artifacts
+        if item.name == f"toolkit-validation-{run.id}-{run.run_attempt}"
+        and not item.expired
+    ]
+    if not receipts:
+        return None
     jobs = Jobs.model_validate(
         api(repository, f"/actions/runs/{run.id}/jobs?filter=latest&per_page=100")
     )
@@ -143,19 +156,6 @@ def candidate(run: Run, repository: str, revision: str) -> Selection | None:
         raise ValueError(
             "Toolkit validation jobs do not match the required successful suite"
         )
-    artifacts = Artifacts.model_validate(
-        api(repository, f"/actions/runs/{run.id}/artifacts?per_page=100")
-    )
-    if artifacts.total_count != len(artifacts.artifacts):
-        raise ValueError("Incomplete toolkit artifact inventory")
-    receipts = [
-        item
-        for item in artifacts.artifacts
-        if item.name == f"toolkit-validation-{run.id}-{run.run_attempt}"
-        and not item.expired
-    ]
-    if not receipts:
-        return None
     if len(receipts) != 1:
         raise ValueError("Ambiguous toolkit validation receipt")
     payload = api(repository, f"/actions/artifacts/{receipts[0].id}/zip", binary=True)
