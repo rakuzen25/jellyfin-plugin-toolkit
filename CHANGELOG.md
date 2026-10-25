@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.0...v0.5.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ci:** reuse validated artifacts and separate shared checks ([#17](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/17)) ([d5e447b](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/d5e447b3d34c56bca867d3a9bef25ef7b9908904))
+
 ## [0.5.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.4.3...v0.5.0) (2026-10-24)
 
 
