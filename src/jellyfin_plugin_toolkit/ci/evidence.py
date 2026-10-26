@@ -357,6 +357,19 @@ def completed_group_origin(
         for job in matches
     ):
         return None
+    if group in {"metadata", "tooling"} and expected == frozenset({"quality"}):
+        checks = (
+            {"Check automation"}
+            if group == "metadata"
+            else {"Check tooling", "Test tooling"}
+        )
+        completed = {
+            step.get("name")
+            for step in matches[0].get("steps", [])
+            if step.get("conclusion") == "success"
+        }
+        if not checks <= completed:
+            return None
     return identifier
 
 
@@ -431,6 +444,28 @@ def evidence(
         if all(group in seen for group in validation.code):
             break
     return result
+
+
+def browser_inputs(ctx: Context, repository: str, policy: str) -> dict[str, Any]:
+    """Recover unchanged source provenance as data; never build during planning."""
+    from jellyfin_plugin_toolkit.ci import browser
+
+    runner = {
+        key: os.environ.get(key, "")
+        for key in ("ImageOS", "ImageVersion", "RUNNER_ARCH", "RUNNER_OS")
+    }
+    for run in recent_runs(repository):
+        receipt = read_receipt(repository, run)
+        if not receipt or receipt.get("policy") != policy:
+            continue
+        proof = receipt.get("browser", {})
+        try:
+            browser.verify(ctx, proof)
+        except ValueError:
+            continue
+        if all(item["runner_image"] == runner for item in proof.values()):
+            return dict(proof)
+    return {}
 
 
 def verify(ctx: Context, receipt: dict[str, Any], repository: str, run_id: str) -> None:

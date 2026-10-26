@@ -97,6 +97,35 @@ def plan(
 
 
 @ci.command()
+def refine(ctx: typer.Context) -> None:
+    """Resolve browser reuse after the selected frontend build."""
+    from jellyfin_plugin_toolkit.ci.execution import refine as resolve
+
+    resolve(consumer(ctx))
+
+
+@internal.command("renovate-test")
+def renovate_test(ctx: typer.Context, script: Path) -> None:
+    """Run repository assertions with the toolkit-owned Renovate test runtime."""
+    from jellyfin_plugin_toolkit.resources_api import prepare
+    from jellyfin_plugin_toolkit.validators import renovate_test as execute
+
+    root = state(ctx).root
+    prepare(root)
+    execute(root, script)
+
+
+@internal.command("audit-selection")
+def audit_selection(
+    ctx: typer.Context, fresh: Annotated[bool, typer.Option("--fresh")] = False
+) -> None:
+    """Select dependency-aware standalone audits from GitHub event data."""
+    from jellyfin_plugin_toolkit.audit_policy import select
+
+    select(state(ctx).root, fresh=fresh)
+
+
+@ci.command()
 def finish(ctx: typer.Context) -> None:
     """Write the aggregate validation receipt from completed job results."""
     from jellyfin_plugin_toolkit.ci.execution import finish as aggregate
@@ -347,16 +376,3 @@ def tooling(ctx: typer.Context) -> None:
     selected = consumer(ctx)
     format_target(selected, "tooling", False)
     inspect(selected)
-
-
-@internal.command("automation-check")
-def automation_check(ctx: typer.Context, kind: str, image: str) -> None:
-    """Run a pinned native validator without requiring plugin configuration."""
-    from jellyfin_plugin_toolkit.commands.runtime import state
-    from jellyfin_plugin_toolkit.quality import automation
-
-    if kind not in ("workflows", "renovate"):
-        raise typer.BadParameter("Choose workflows or renovate")
-    automation(
-        state(ctx).root, image, "workflows" if kind == "workflows" else "renovate"
-    )

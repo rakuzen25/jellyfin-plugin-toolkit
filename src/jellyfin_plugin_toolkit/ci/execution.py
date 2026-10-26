@@ -42,6 +42,7 @@ def plan(
                 f"{group}={str(group in result['execute']).lower()}\n"
                 for group in ctx.groups
             )
+            stream.write("audit=" + str(result["audit_required"]).lower() + "\n")
             stream.write(
                 "web="
                 + str(
@@ -97,9 +98,25 @@ def finish(ctx: Context) -> None:
     (root / "dist/validation.json").write_text(json.dumps(result, indent=2) + "\n")
     if (
         any(value != "success" for value in result["groups"].values())
-        or result["advisories"]["result"] != "success"
+        or result["advisories"]["result"] not in {"success", "not_required"}
+        or any(
+            value not in {"success", "not_required"}
+            for value in result["quality"].values()
+        )
     ):
         raise ValueError("Required validation groups failed")
+
+
+def refine(ctx: Context) -> None:
+    path = ctx.root / "dist/plan.json"
+    result = ci_planning.refine(ctx, json.loads(path.read_text()))
+    path.write_text(json.dumps(result, indent=2) + "\n")
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with open(output, "a") as stream:
+            stream.writelines(
+                f"{group}={str(group in result['execute']).lower()}\n"
+                for group in ("workflow", "rendering", "performance")
+            )
 
 
 def verify(ctx: Context, run_id: str) -> None:

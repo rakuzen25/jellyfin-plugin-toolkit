@@ -176,28 +176,25 @@ class QualityTests(unittest.TestCase):
         self.project.write_text(
             self.project.read_text().replace(
                 'checks=["python"]',
-                'checks=["python", "javascript", "workflows", "renovate"]\n'
-                '[tool.jpt.quality.images]\nactionlint="fixture@sha256:'
-                + "a" * 64
-                + '"\nrenovate="fixture@sha256:'
-                + "b" * 64
-                + '"',
+                'checks=["python", "javascript", "workflows", "renovate"]',
             )
         )
         with (
             patch.object(quality, "python") as python,
             patch.object(quality, "javascript") as javascript,
             patch.object(quality, "automation") as automation,
+            patch("jellyfin_plugin_toolkit.validators.renovate_test") as renovate_test,
             patch.object(quality, "run"),
             patch("jellyfin_plugin_toolkit.automation.check_configuration") as identity,
         ):
             quality.main(self.root, target="automation")
         identity.assert_called_once_with(self.root)
+        renovate_test.assert_called_once_with(self.root, None)
         python.assert_not_called()
         javascript.assert_not_called()
         self.assertEqual(
             ["workflows", "renovate"],
-            [item.args[2] for item in automation.call_args_list],
+            [item.args[1] for item in automation.call_args_list],
         )
         with (
             patch.object(quality, "python"),

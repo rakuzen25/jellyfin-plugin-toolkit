@@ -28,7 +28,7 @@ class NativeUvTests(unittest.TestCase):
             "ui/controls.ts",
             "msbuild/Plugin.props",
             "templates/defaults.json",
-            "actions/setup/action.yml",
+            "configs/validators.json",
         ):
             self.assertIn("jellyfin_plugin_toolkit/resources/" + name, names)
         self.assertIn("jellyfin_plugin_toolkit/py.typed", names)
@@ -303,7 +303,7 @@ class NativeUvTests(unittest.TestCase):
         for name in [
             "uv.lock",
             ".python-version",
-            "src/jellyfin_plugin_toolkit/resources/actions/setup/action.yml",
+            ".github/actions/setup-python/action.yml",
             "src/jellyfin_plugin_toolkit/cli.py",
         ]:
             self.assertIn(name, names)

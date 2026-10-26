@@ -28,14 +28,10 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: runtime
       - name: Create repository-scoped App token
         uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/app-token@27f61490cc183093f30cbf1dba50bb299920b23c # shared App token action
         id: app
@@ -76,14 +72,10 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: runtime
       - name: Select regular CI's exact tested artifact
         id: select
         env:
@@ -114,14 +106,10 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: runtime
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.select-validation.outputs.artifact_id || needs.validate.outputs.artifact_id }}

@@ -33,15 +33,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: runtime
       - run: uv build
       - run: uv run --no-sync jpt internal toolkit-release manifest --sha "$(git rev-parse HEAD)"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -63,21 +60,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+          project-directory: .
+          mode: development
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          install: false
-          node-version-file: .node-version
-      - run: uv sync --locked
-      - run: pnpm install --frozen-lockfile
+          project-directory: .
       - run: uv run --no-sync jpt prepare
+      - name: Select fresh advisory execution
+        id: audit
+        run: uv run --no-sync jpt internal audit-selection ${{ inputs.ref != '' && '--fresh' || '' }}
+      - name: Audit changed dependency inputs
+        if: steps.audit.outputs.required == 'true'
+        run: uv run --no-sync jpt test advisories
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always() && steps.audit.outputs.required == 'true'
+        with:
+          name: toolkit-advisories
+          path: dist/evidence/advisories.json
+          if-no-files-found: warn
       - run: uv run --no-sync jpt check
       - run: uv run --no-sync python -m unittest discover -s tests
       - run: node --test src/jellyfin_plugin_toolkit/resources/ui/lifecycle.test.ts tests/*.test.mjs
@@ -95,11 +99,6 @@ jobs:
         env:
           RELEASE_PLEASE_RUNTIME: .build/release-please-runtime
         run: node tests/release-please-updates.mjs
-      - name: Validate Renovate wheel updates
-        run: >-
-          docker run --rm --network none --entrypoint node -v "$PWD:/toolkit:ro"
-          ghcr.io/renovatebot/renovate:44.134.1@sha256:79138db6b794ea9e00b52f3012e3d3912653214f3166bea537689196e5e91e21
-          /toolkit/tests/renovate-attachments.mjs
   starter:
     name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-starter' || format('starter ({0})', matrix.label) }}
     if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
@@ -117,21 +116,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+          project-directory: .
+          mode: install-only
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          install: false
-          node-version-file: .node-version
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+          project-directory: .
+          install: "false"
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          global-json-file: global.json
+          project-directory: .
+          cache: "false"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -169,27 +167,23 @@ jobs:
           if [ "$VARIANT" = admin-ui-custom-project-path ]; then uv run --no-sync jpt test browser -- --project workflow-chromium; fi
 
   advisories:
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
+    if: github.event_name == 'schedule'
     name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-advisories' || 'advisories' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4
+          project-directory: .
+          mode: runtime
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          install: false
-          node-version-file: .node-version
-      - run: uv sync --locked
-      - run: pnpm install --frozen-lockfile
+          project-directory: .
+          install: "false"
       - env:
           GH_TOKEN: ${{ github.token }}
         run: uv run --no-sync jpt test advisories
@@ -201,7 +195,7 @@ jobs:
           if-no-files-found: warn
   validation-evidence:
     name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-evidence' || 'validation-evidence' }}
-    needs: [candidate, toolkit, starter, advisories]
+    needs: [candidate, toolkit, starter]
     if: always() && github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
     runs-on: ubuntu-24.04
     steps:
@@ -209,19 +203,15 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: runtime
       - name: Bind successful validation to its tested candidate
         env:
           SOURCE_REVISION: ${{ inputs.ref || github.sha }}
           CANDIDATE_ARTIFACT_ID: ${{ needs.candidate.outputs.artifact_id }}
-          VALIDATION_RESULTS: '{"candidate":"${{ needs.candidate.result }}","toolkit":"${{ needs.toolkit.result }}","starter":"${{ needs.starter.result }}","advisories":"${{ needs.advisories.result }}"}'
+          VALIDATION_RESULTS: '{"candidate":"${{ needs.candidate.result }}","toolkit":"${{ needs.toolkit.result }}","starter":"${{ needs.starter.result }}"}'
         run: uv run --no-sync jpt internal toolkit-release validation-receipt --sha "$SOURCE_REVISION" --artifact-id "$CANDIDATE_ARTIFACT_ID"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

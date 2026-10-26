@@ -25,7 +25,64 @@ concurrency:
   group: toolkit-sync-${{ github.repository }}
   cancel-in-progress: false
 jobs:
+  route:
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.select.outputs.ready }}
+      base: ${{ steps.select.outputs.base }}
+    steps:
+      - name: Select a current toolkit dependency update
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          BOT_LOGIN: ${{ inputs.bot_login }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync } from 'node:fs';
+          const { REPOSITORY: repository, RUN_ID: runId, PR_NUMBER: number, BOT_LOGIN: bot, DEFAULT_BRANCH: branch } = process.env;
+          const api = (path) => JSON.parse(execFileSync('gh', ['api', `repos/${repository}/${path}`], { encoding: 'utf8' }));
+          function select() {
+            let candidates, sha;
+            if (number) {
+              if (!/^[1-9][0-9]*$/.test(number)) throw new Error('Invalid PR number');
+              candidates = [api(`pulls/${number}`)];
+            } else {
+              if (!/^[1-9][0-9]*$/.test(runId)) throw new Error('Invalid run ID');
+              const run = api(`actions/runs/${runId}`);
+              if (run.event !== 'pull_request' || run.status !== 'completed' || run.path !== '.github/workflows/validate.yml' || run.head_repository?.full_name !== repository) return;
+              const jobs = api(`actions/runs/${runId}/jobs?filter=latest&per_page=100`);
+              if (jobs.total_count > 100) throw new Error('Validation job inventory exceeds the supported bound');
+              if (!jobs.jobs.some(job => ['validate', 'catalog-validate'].includes(job.name.split(' / ').at(-1)))) return;
+              sha = run.head_sha;
+              if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid source revision');
+              candidates = api(`commits/${sha}/pulls`);
+            }
+            const eligible = candidates.filter(pr => pr.state === 'open' && pr.user?.login === bot && pr.user?.type === 'Bot' && pr.base?.repo?.full_name === repository && pr.head?.repo?.full_name === repository && pr.base?.ref === branch && (!sha || pr.head.sha === sha));
+            if (eligible.length !== 1) return;
+            const pr = eligible[0];
+            for (const side of ['base', 'head']) if (!/^[a-f0-9]{40}$/.test(pr[side].sha)) throw new Error('Invalid PR revision');
+            const source = revision => {
+              const file = api(`contents/pyproject.toml?ref=${revision}`);
+              const matches = Buffer.from(file.content, 'base64').toString('utf8').match(/https:\/\/github\.com\/rakuzen25\/jellyfin-plugin-toolkit\/releases\/download\/v[0-9.]+\/jellyfin_plugin_toolkit-[0-9.]+-py3-none-any\.whl/g) ?? [];
+              return matches.length === 1 ? matches[0] : undefined;
+            };
+            const before = source(pr.base.sha), after = source(pr.head.sha);
+            if (!before || before === after) return;
+            return pr.base.sha;
+          }
+          const base = select();
+          appendFileSync(process.env.GITHUB_OUTPUT, `ready=${Boolean(base)}\nbase=${base ?? ''}\n`);
+          console.log(base ? 'Toolkit update selected; trusted-base verification follows.' : 'No current toolkit dependency update; no environment or App token needed.');
+          JS
   prepare:
+    needs: route
+    if: needs.route.outputs.ready == 'true'
     runs-on: ubuntu-24.04
     outputs:
       ready: ${{ steps.plan.outputs.ready }}
@@ -33,18 +90,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ needs.route.outputs.base }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - name: Install the verified base release
-        run: uv sync --locked
+          project-directory: .
+          mode: development
       - name: Prepare with trusted code and read-only credentials
         id: plan
         env:
@@ -74,14 +126,10 @@ jobs:
           ref: ${{ needs.prepare.outputs.base }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:

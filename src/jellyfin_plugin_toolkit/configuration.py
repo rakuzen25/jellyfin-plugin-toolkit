@@ -182,6 +182,7 @@ class Validation(Model):
         ]
     )
     browser_inputs: dict[str, BrowserInputs] = Field(default_factory=dict)
+    renovate_tests: str | None = None
 
     @model_validator(mode="after")
     def valid_groups(self) -> Self:
@@ -333,6 +334,10 @@ class Configuration(Model):
 
     @model_validator(mode="after")
     def hooks(self) -> Self:
+        if {"actionlint", "renovate"}.intersection(self.images):
+            raise ValueError(
+                "Automation validator pins are toolkit-owned; remove local overrides"
+            )
         for name, operation in self.operations.items():
             if operation.after is not None and not supports_default(name):
                 raise ValueError("After hook requires a standard operation: " + name)

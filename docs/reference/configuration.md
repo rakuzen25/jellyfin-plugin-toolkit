@@ -79,6 +79,8 @@ The toolkit dependency uses a canonical GitHub release wheel URL. uv verifies it
 
 Maintained source inputs cannot be symlinks, including links to files inside the checkout. Every explicit `source.files` entry must exist. Optional source directories may be absent. Frontend sources, build adapters, templates, styles, assets, and extra assets must belong to the maintained source inventory. Add external input directories to `source.roots`, or individual inputs to `source.files`; their bytes participate in frontend evidence fingerprints.
 
+Standard impact rules come from the toolkit and cover configured backend/frontend paths, native toolchains, documentation, automation and tooling. `validation.rules` adds repository-specific paths and obligations; it cannot remove standard obligations. Unclassified inputs fail validation. The shared quality job owns documentation plus selected automation and tooling checks, with separate step outcomes and authenticated evidence for each logical group.
+
 Optional `validation.job_names` and `validation.aggregate_jobs` map enabled groups to nonempty, unique job-name lists. `validation.artifact_jobs` is also a nonempty, unique list. Empty lists cannot disable a validation gate. Release evidence must identify the latest authenticated run attempt and a successful aggregate job from that attempt.
 
 ## Shared presets and synchronization
@@ -92,10 +94,9 @@ Repositories without `plugin.toml` use the same `jpt check [tooling|docs]` and `
 ```toml
 [tool.jpt.quality]
 checks = ["python", "javascript", "docs", "workflows", "renovate"]
-toolchain_file = "toolchain.json"
 ```
 
-Supported checks are `python`, `javascript`, `typescript`, `docs`, `workflows`, and `renovate`. TypeScript requires `typescript_projects`, a list of native tsconfig paths. Workflow and Renovate checks require digest-pinned `actionlint` and `renovate` entries, either in the existing JSON `toolchain_file` or `[tool.jpt.quality.images]`. Optional `workflow_ignores` contains narrowly scoped actionlint diagnostic patterns for syntax supported by GitHub but not the pinned validator. Formatting uses native presets and ignores; `format` does not run type checkers. `jpt test advisories` applies the same report-only default to standalone repositories.
+Supported checks are `python`, `javascript`, `typescript`, `docs`, `workflows`, and `renovate`. TypeScript requires `typescript_projects`, a list of native tsconfig paths. The toolkit owns the digest-pinned actionlint and Renovate runtimes; repository overrides are rejected. Optional `renovate_tests` names a repository assertion module run once by `check automation` through the shared offline harness. Import its Renovate helpers from `.build/jpt/node/renovate-api.mjs`, without relying on container installation paths. Optional `workflow_ignores` contains narrowly scoped actionlint diagnostic patterns for syntax supported by GitHub but not the pinned validator. Formatting uses native presets and ignores; `format` does not run type checkers. `jpt test advisories` applies the same report-only default to standalone repositories.
 
 Standalone consumers may install the canonical toolkit wheel in the `dev` dependency group. Synchronization preserves that placement and updates native typing policy, wheel locks, workflow references, and Renovate presets together. Resource preparation does not require plugin metadata or install packages.
 

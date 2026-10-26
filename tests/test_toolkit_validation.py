@@ -44,15 +44,13 @@ class ToolkitValidationTests(unittest.TestCase):
             ],
         }
         self.receipt: dict[str, Any] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "repository": self.repository,
             "revision": self.sha,
             "run_id": 123,
             "run_attempt": 2,
             "candidate_artifact_id": 40,
-            "results": dict.fromkeys(
-                ("candidate", "toolkit", "starter", "advisories"), "success"
-            ),
+            "results": dict.fromkeys(("candidate", "toolkit", "starter"), "success"),
         }
         self.pending = False
         self.extra_member = False
@@ -164,7 +162,7 @@ class ToolkitValidationTests(unittest.TestCase):
             "revision": "b" * 40,
             "run_attempt": 1,
             "run_id": 1,
-            "schema_version": 2,
+            "schema_version": 1,
             "results": {"candidate": "success"},
         }.items():
             original = copy.deepcopy(self.receipt)

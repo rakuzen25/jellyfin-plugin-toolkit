@@ -98,3 +98,11 @@ The versioned `tooling` Renovate preset supplies the shared maintenance policy. 
 Python and uv updates arrive together in a dedicated **Python toolchain** Renovate PR. Each repository owns its pins and lockfile; toolkit synchronization preserves them. All repositories share the tooling preset: routine patch/minor updates may automerge after required checks, while major updates and interpreter/package-manager minor upgrades require review. Package-specific review restrictions still apply. A mixed toolchain group requires review if any update does.
 
 If uv cannot install the pinned Python version, update the Python/uv pair to supported releases and retry `uv sync --locked`. Do not bypass managed-Python selection or upgrade uv implicitly in CI. CI uses the same native setup as local development: pinned `astral-sh/setup-uv`, then locked synchronization.
+
+## CI ownership
+
+CI uses the toolkit's immutable native setup actions for Python/uv, Node/pnpm and .NET. Each repository owns its exact native versions and lockfiles. Shared setup never acquires credentials or chooses a trusted checkout. Manifest runtime jobs use the Python action's runtime mode and do not install toolkit development dependencies.
+
+The toolkit owns automation validator versions, standard impact rules and common check implementations. Update the toolkit to adopt new actionlint or Renovate test runtimes. Consumers retain product dependencies, browser package/image pairs, source paths and repository-specific tests. Generated starters use these same boundaries without copied standard impact rules.
+
+Documentation runs in the quality job on every code validation; automation and tooling checks run when selected. Advisory audits run for dependency/toolchain input changes, scheduled safety checks and fresh release verification. A check that was not required is recorded separately from a successful execution. Findings remain report-only by default, while audit service and metadata failures fail the job.

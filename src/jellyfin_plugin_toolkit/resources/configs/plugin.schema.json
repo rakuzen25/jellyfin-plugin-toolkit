@@ -832,6 +832,18 @@
                     },
                     "title": "Browser Inputs",
                     "type": "object"
+                },
+                "renovate_tests": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Renovate Tests"
                 }
             },
             "required": ["groups"],

@@ -17,7 +17,6 @@ JOBS = {
     "toolkit",
     "starter (backend)",
     "starter (administrator-override)",
-    "advisories",
     "validation-evidence",
 }
 
@@ -97,12 +96,10 @@ def record(
     repository_name(repository)
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Validation receipt requires an immutable revision")
-    if results != dict.fromkeys(
-        ("candidate", "toolkit", "starter", "advisories"), "success"
-    ):
+    if results != dict.fromkeys(("candidate", "toolkit", "starter"), "success"):
         raise ValueError("Every toolkit validation job must succeed")
     receipt = Receipt(
-        schema_version=1,
+        schema_version=2,
         repository=repository,
         revision=revision,
         run_id=run_id,
@@ -169,13 +166,13 @@ def candidate(run: Run, repository: str, revision: str) -> Selection | None:
             raise ValueError("Invalid toolkit validation receipt archive")
         receipt = Receipt.model_validate_json(archive.read(entries[0]))
     if (
-        receipt.schema_version != 1
+        receipt.schema_version != 2
         or receipt.repository != repository
         or receipt.revision != revision
         or receipt.run_id != run.id
         or receipt.run_attempt != run.run_attempt
         or receipt.results
-        != dict.fromkeys(("candidate", "toolkit", "starter", "advisories"), "success")
+        != dict.fromkeys(("candidate", "toolkit", "starter"), "success")
     ):
         raise ValueError("Toolkit validation receipt identity differs")
     selected = [

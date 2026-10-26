@@ -22,6 +22,10 @@ class StarterTests(unittest.TestCase):
             self.assertEqual({"Host"}, set(context.config.backend.projects))
             self.assertFalse((root / "frontend").exists())
             self.assertFalse((root / "src/Core").exists())
+            from jellyfin_plugin_toolkit.ci.policy import check_classification
+
+            self.assertEqual([], context.config.validation.rules)
+            check_classification(context, [])
 
     def test_administrator_starter_and_project_override(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -45,6 +49,10 @@ class StarterTests(unittest.TestCase):
             self.assertTrue(context.config.frontend.enabled)
             self.assertTrue((root / "frontend/admin/config.ts").exists())
             self.assertFalse(context.config.distribution.web)
+            from jellyfin_plugin_toolkit.ci.policy import check_classification
+
+            self.assertEqual([], context.config.validation.rules)
+            check_classification(context, [])
 
     def test_both_variants_generate_without_github_identity_requests(self) -> None:
         with (
