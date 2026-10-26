@@ -3,6 +3,7 @@
 import copy
 import io
 import json
+import re
 import tempfile
 import unittest
 import zipfile
@@ -29,11 +30,26 @@ class ToolkitValidationTests(unittest.TestCase):
             "repository": {"full_name": self.repository},
             "head_repository": {"full_name": self.repository},
         }
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+        ).read_text()
+        names = set(
+            re.findall(
+                r"^  ([a-z][a-z-]*):$", workflow.split("jobs:\n", 1)[1], re.MULTILINE
+            )
+        )
+        names.remove("starter")
+        names.update(
+            "starter (" + label + ")"
+            for label in re.findall(
+                r"^            label: ([^\n]+)$", workflow, re.MULTILINE
+            )
+        )
         self.jobs: dict[str, Any] = {
-            "total_count": len(validation.JOBS),
+            "total_count": len(names),
             "jobs": [
                 {"name": name, "conclusion": "success", "run_attempt": 2}
-                for name in sorted(validation.JOBS)
+                for name in sorted(names)
             ],
         }
         self.artifacts: dict[str, Any] = {
