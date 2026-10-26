@@ -1,0 +1,17 @@
+name: Set up project .NET
+description: Install the native SDK pin and optionally cache locked NuGet dependencies
+inputs:
+  project-directory:
+    description: Directory containing global.json and maintained projects
+    required: true
+  cache:
+    description: Cache NuGet dependencies using native package lockfiles
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+      with:
+        global-json-file: ${{ inputs.project-directory }}/global.json
+        cache: ${{ inputs.cache == 'true' }}
+        cache-dependency-path: ${{ inputs.project-directory }}/**/packages.lock.json
