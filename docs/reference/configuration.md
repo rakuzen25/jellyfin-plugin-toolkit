@@ -118,4 +118,4 @@ A published fix counts even when it is a major upgrade, prerelease, or requires 
 
 The toolkit repository has no consumer `plugin.toml`; its own Node audit accepts `fail_on_findings` under `[tool.jpt.advisories]` and the same waiver fields under `[[tool.jpt.advisories.waivers]]` in `pyproject.toml`.
 
-The standard check and format targets are `backend`, `frontend`, `tooling`, `automation`, and `docs`. Include `automation` in the plugin validation check targets; the metadata CI job invokes it for workflow, pin, Renovate, and automation identity validation. Standalone repositories also accept `check automation` and `format automation`, using their configured applicable validators.
+The standard check and format targets are `backend`, `frontend`, `tooling`, `automation`, and `docs`. Include `automation` in the plugin validation check targets; the quality CI job invokes it when automation inputs change for workflow, pin, Renovate, and automation identity validation. Standalone repositories also accept `check automation` and `format automation`, using their configured applicable validators.
