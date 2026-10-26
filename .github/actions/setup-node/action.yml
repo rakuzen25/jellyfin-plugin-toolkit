@@ -1,0 +1,30 @@
+name: Set up project Node and pnpm
+description: Install native Node and pnpm pins and optionally restore frozen dependencies
+inputs:
+  project-directory:
+    description: Directory containing package.json, .node-version and pnpm-lock.yaml
+    required: true
+  install:
+    description: Install frozen workspace dependencies
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+      with:
+        working-directory: ${{ inputs.project-directory }}
+        install: false
+        node-version-file: .node-version
+        cache: ${{ inputs.install == 'true' }}
+        cache-dependency-path: ${{ inputs.project-directory }}/pnpm-lock.yaml
+    - name: Verify native toolchain pins
+      shell: bash
+      env:
+        JPT_ACTION_PATH: ${{ github.action_path }}
+        JPT_PROJECT: ${{ inputs.project-directory }}
+      run: node "$JPT_ACTION_PATH/../../../src/jellyfin_plugin_toolkit/resources/node/check-toolchain.mjs" --root "$JPT_PROJECT"
+    - name: Restore frozen workspace
+      if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.project-directory }}
+      run: pnpm install --frozen-lockfile

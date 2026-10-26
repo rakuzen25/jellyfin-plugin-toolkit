@@ -1,0 +1,39 @@
+name: Set up project Python
+description: Install the project-required uv and optionally synchronize its locked managed Python environment
+inputs:
+  project-directory:
+    description: Directory containing the trusted project's native uv and Python configuration
+    required: true
+  mode:
+    description: install-only, development, or runtime
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate setup selection
+      shell: bash
+      env:
+        JPT_PROJECT: ${{ inputs.project-directory }}
+        JPT_SETUP_MODE: ${{ inputs.mode }}
+      run: |
+        test -f "$JPT_PROJECT/pyproject.toml"
+        case "$JPT_SETUP_MODE" in
+          install-only|development|runtime) ;;
+          *) echo '::error::Python setup mode must be install-only, development, or runtime'; exit 1 ;;
+        esac
+    - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      with:
+        version-file: ${{ inputs.project-directory }}/pyproject.toml
+        enable-cache: true
+        cache-dependency-glob: |
+          ${{ inputs.project-directory }}/.python-version
+          ${{ inputs.project-directory }}/pyproject.toml
+          ${{ inputs.project-directory }}/uv.lock
+    - name: Synchronize locked project environment
+      if: inputs.mode != 'install-only'
+      shell: bash
+      env:
+        JPT_ACTION_PATH: ${{ github.action_path }}
+        JPT_PROJECT: ${{ inputs.project-directory }}
+        JPT_SETUP_MODE: ${{ inputs.mode }}
+      run: bash "$JPT_ACTION_PATH/sync.sh"

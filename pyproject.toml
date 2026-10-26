@@ -37,7 +37,7 @@ target-version = "py315"
 
 [tool.uv.build-backend]
 source-include = [
-  ".github/actions/app-token/**",
+  ".github/actions/**",
   "uv.lock",
   ".python-version",
   "GPL-3.0.txt",
