@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.3...v0.6.0) (2026-10-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ci:** remove validator overrides, copied standard impact policy, and the exported setup action; consumers upgrade native bindings directly.
+
+### Features
+
+* **ci:** add native project setup actions ([#25](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/25)) ([1c94000](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/1c940009ff2d1b9c13d40d90e024653e004dee79))
+* **ci:** centralize tooling ownership and simplify validation ([#27](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/27)) ([4e240f0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/4e240f0a317a4931f089b1d2fde47f294961586f))
+
 ## [0.5.3](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.2...v0.5.3) (2026-10-25)
 
 
