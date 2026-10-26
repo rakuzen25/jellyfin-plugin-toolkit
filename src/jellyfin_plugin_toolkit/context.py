@@ -75,6 +75,8 @@ def validate_paths(root: Path, config: Configuration) -> None:
     for project, dependencies in config.architecture.edges.items():
         paths.extend([project, *dependencies])
     paths.extend(config.architecture.forbidden)
+    if config.validation.renovate_tests:
+        paths.append(config.validation.renovate_tests)
     paths.extend(operation.cwd for operation in config.operations.values())
     base = relative(root, frontend.directory)
     for entry_path, output in frontend.entries.items():

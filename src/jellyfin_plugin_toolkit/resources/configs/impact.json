@@ -1,0 +1,52 @@
+[
+    {
+        "name": "docs",
+        "patterns": ["*.md", "docs/**"],
+        "groups": []
+    },
+    {
+        "name": "build-policy",
+        "patterns": [
+            "plugin.toml",
+            "uv.lock",
+            "pyproject.toml",
+            ".python-version",
+            ".node-version",
+            "global.json",
+            "version.txt",
+            "Directory.Build.*",
+            "package.json",
+            "pnpm-lock.yaml",
+            "pnpm-workspace.yaml",
+            ".github/**",
+            "eslint.config.mjs",
+            "knip.json",
+            ".prettier*",
+            ".editorconfig",
+            ".gitignore",
+            ".dockerignore",
+            "release-please-config.json",
+            ".release-please-manifest.json",
+            "LICENSE",
+            "NOTICE",
+            "GPL-3.0.txt",
+            "build-support/**"
+        ],
+        "groups": ["metadata", "frontend", "backend", "tooling", "workflow", "rendering", "performance", "artifacts"]
+    },
+    {
+        "name": "automation",
+        "patterns": ["renovate.json"],
+        "groups": ["metadata"]
+    },
+    {
+        "name": "tooling",
+        "patterns": ["scripts/**", "tests/tooling/**", "tests/installation/**", "tests/__init__.py"],
+        "groups": ["tooling", "artifacts"]
+    },
+    {
+        "name": "backend-dependencies",
+        "patterns": ["vendor/**"],
+        "groups": ["backend", "tooling", "workflow", "rendering", "performance", "artifacts"]
+    }
+]

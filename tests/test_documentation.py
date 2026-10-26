@@ -174,13 +174,15 @@ class DocumentationTests(unittest.TestCase):
             "README.md: missing documentation entrypoint", self.check(self.root)
         )
 
-    def test_ci_checks_docs_unconditionally_before_classification(self) -> None:
+    def test_ci_checks_docs_once_in_quality_without_node_in_planning(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         workflow = (repository / ".github/workflows/validate.yml").read_text()
-        impact = workflow.split("  impact:\n", 1)[1].split("  metadata:\n", 1)[0]
-        self.assertIn("      - run: pnpm check docs\n", impact)
-        self.assertIn('node: "true"', impact)
-        self.assertLess(impact.index("pnpm check docs"), impact.index("- id: plan"))
+        impact = workflow.split("  impact:\n", 1)[1].split("  quality:\n", 1)[0]
+        self.assertNotIn("setup-node", impact)
+        self.assertNotIn("check docs", impact)
+        quality = workflow.split("  quality:\n", 1)[1].split("  frontend:\n", 1)[0]
+        self.assertEqual(1, quality.count("jpt check docs"))
+        self.assertIn("Check documentation", quality)
 
 
 if __name__ == "__main__":

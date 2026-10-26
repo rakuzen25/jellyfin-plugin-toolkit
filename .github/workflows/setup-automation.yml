@@ -33,18 +33,14 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
+          project-directory: .
       - name: Open or update the reviewed setup PR
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}

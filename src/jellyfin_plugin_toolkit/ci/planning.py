@@ -10,6 +10,7 @@ from typing import Any
 
 import jellyfin_plugin_toolkit.ci.evidence as ci_evidence
 import jellyfin_plugin_toolkit.ci.policy as ci_policy
+from jellyfin_plugin_toolkit.audit_policy import required as audit_required
 from jellyfin_plugin_toolkit.common import artifacts
 from jellyfin_plugin_toolkit.context import Context
 from jellyfin_plugin_toolkit.provenance import record
@@ -22,17 +23,24 @@ def plan(
     validation = ci_policy.ValidationPolicy.from_context(ctx)
     ci_policy.browser_inventory(ctx)
     ci_policy.check_classification(ctx, [])
-    from jellyfin_plugin_toolkit.ci.browser import capture
-
-    if ctx.config.validation.browser_inputs:
-        from jellyfin_plugin_toolkit.tasks import frontend_build
-
-        frontend_build(ctx)
-    browser = capture(ctx)
-    inputs = ci_policy.fingerprints(ctx, browser)
     policy = ci_policy.policy_fingerprint(ctx)
     changed: list[str] = []
     repository = os.environ.get("GITHUB_REPOSITORY", "")
+    browser: dict[str, Any] = {}
+    if (
+        ctx.config.validation.browser_inputs
+        and reuse
+        and repository
+        and os.environ.get("GH_TOKEN")
+    ):
+        try:
+            browser = ci_evidence.browser_inputs(ctx, repository, policy)
+        except urllib.error.URLError, KeyError, ValueError, zipfile.BadZipFile, OSError:
+            print(
+                "Browser provenance unavailable; selected assets will be built",
+                file=sys.stderr,
+            )
+    inputs = ci_policy.fingerprints(ctx, browser or None)
     cumulative = (
         os.environ.get("GITHUB_EVENT_NAME") == "push" and not release and not scheduled
     )
@@ -140,6 +148,11 @@ def plan(
         "policy": policy,
         "inputs": inputs,
         "browser": browser,
+        "force_execution": full or release or scheduled and bool(required),
+        "reuse_allowed": reuse and not full and not release,
+        "audit_required": audit_required(
+            changed, fresh=release or scheduled, unknown=require_all or not base
+        ),
         "changed": changed,
         "classified_changes": classified_changes,
         "required": sorted(required),
@@ -158,11 +171,56 @@ def plan(
     }
 
 
+def refine(ctx: Context, selection: dict[str, Any]) -> dict[str, Any]:
+    """Resolve emitted-byte browser identity in the frontend job that owns the build."""
+    from jellyfin_plugin_toolkit.ci import browser
+
+    captured = browser.capture(ctx)
+    selection["browser"] = captured
+    selection["inputs"] = ci_policy.fingerprints(ctx, captured)
+    precise = set(ctx.config.validation.browser_inputs).intersection(
+        selection["required"]
+    )
+    if (
+        precise
+        and selection["reuse_allowed"]
+        and not selection["force_execution"]
+        and os.environ.get("GH_TOKEN")
+    ):
+        try:
+            proofs = ci_evidence.evidence(
+                ctx, selection["repository"], selection["inputs"], selection["policy"]
+            )
+            selection["reused"].update(
+                {group: proofs[group] for group in precise if group in proofs}
+            )
+        except urllib.error.URLError, KeyError, ValueError, zipfile.BadZipFile, OSError:
+            print(
+                "Refined evidence unavailable; selected browser tests will run",
+                file=sys.stderr,
+            )
+    selection["execute"] = sorted(
+        set(selection["required"]) - selection["reused"].keys()
+    )
+    return selection
+
+
 def finish(
     ctx: Context, selection: dict[str, Any], jobs: dict[str, Any]
 ) -> dict[str, Any]:
     root = ctx.root
     validation = ci_policy.ValidationPolicy.from_context(ctx)
+    quality = {
+        name: "not_required"
+        if name != "docs" and group not in selection["execute"]
+        else jobs.get("quality", {}).get("outputs", {}).get(name, "missing")
+        for name, group in [
+            ("docs", ""),
+            ("automation", "metadata"),
+            ("tooling", "tooling"),
+            ("tooling-tests", "tooling"),
+        ]
+    }
     results: dict[str, str] = {}
     for group in selection["required"]:
         if group in selection["reused"]:
@@ -173,13 +231,28 @@ def finish(
                 if all(
                     jobs.get(job, {}).get("result") == "success"
                     for job in validation.aggregate_jobs[group]
+                    if job != "advisories" or selection["audit_required"]
                 )
                 else "failure"
             )
+            checks = (
+                ["automation"]
+                if group == "metadata"
+                else ["tooling", "tooling-tests"]
+                if group == "tooling"
+                else []
+            )
+            if any(quality[check] != "success" for check in checks):
+                results[group] = "failure"
     receipt = dict(
         selection,
         groups=results,
-        advisories={"result": jobs.get("advisories", {}).get("result", "missing")},
+        advisories={
+            "result": jobs.get("advisories", {}).get("result", "missing")
+            if selection["audit_required"]
+            else "not_required"
+        },
+        quality=quality,
         validated_at=datetime.now(UTC).isoformat(),
         artifacts=artifacts.artifact_hashes(root)
         if results.get("artifacts") == "success"
@@ -187,7 +260,9 @@ def finish(
     )
     successful = (
         all(value == "success" for value in results.values())
-        and receipt["advisories"]["result"] == "success"
+        and receipt["advisories"]["result"] in {"success", "not_required"}
+        and jobs.get("quality", {}).get("result") == "success"
+        and all(value in {"success", "not_required"} for value in quality.values())
     )
     cumulative = selection.get("comparison", {}).get("mode") == "push-baseline"
     complete = successful and (

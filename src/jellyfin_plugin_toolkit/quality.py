@@ -1,6 +1,5 @@
 """Native development checks shared by plugins and standalone repositories."""
 
-import json
 import sys
 import tomllib
 from collections.abc import Sequence
@@ -10,11 +9,12 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from jellyfin_plugin_toolkit.context import Context
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field
 
 from jellyfin_plugin_toolkit.common.process import executable, run
-from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT, prepare
+from jellyfin_plugin_toolkit.resources_api import prepare
 from jellyfin_plugin_toolkit.typing_policy import check_policy
+from jellyfin_plugin_toolkit.validators import image, reject_overrides
 
 Check = Literal["python", "javascript", "typescript", "docs", "workflows", "renovate"]
 
@@ -23,9 +23,8 @@ class Quality(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     checks: list[Check]
     typescript_projects: list[str] = Field(default_factory=list)
-    images: dict[str, str] = Field(default_factory=dict)
-    toolchain_file: str | None = None
     workflow_ignores: list[str] = Field(default_factory=list)
+    renovate_tests: str | None = None
 
 
 def selected(root: Path) -> Quality:
@@ -35,15 +34,7 @@ def selected(root: Path) -> Quality:
     )
     if len(settings.checks) != len(set(settings.checks)):
         raise ValueError("Quality checks must not be repeated")
-    if settings.toolchain_file:
-        from jellyfin_plugin_toolkit.context import relative
-
-        values = json.loads(relative(root, settings.toolchain_file).read_text())
-        for name in ("actionlint", "renovate"):
-            value = values.get(name)
-            if not isinstance(value, str) or not value:
-                raise ValueError("Toolchain must declare " + name)
-            settings.images[name] = value
+    reject_overrides(root)
     return settings
 
 
@@ -112,10 +103,16 @@ def plugin_automation(ctx: Context) -> None:
     from jellyfin_plugin_toolkit.ci.policy import metadata_check
 
     metadata_check(ctx)
-    automation(ctx.root, ctx.images["actionlint"], "workflows")
-    defaults = json.loads((RESOURCE_ROOT / "templates/defaults.json").read_text())
-    images = TypeAdapter(dict[str, str]).validate_python(defaults["images"])
-    automation(ctx.root, ctx.images.get("renovate", images["renovate"]), "renovate")
+    automation(ctx.root, "workflows")
+    automation(ctx.root, "renovate")
+    from jellyfin_plugin_toolkit.validators import renovate_test
+
+    renovate_test(
+        ctx.root,
+        Path(ctx.config.validation.renovate_tests)
+        if ctx.config.validation.renovate_tests
+        else None,
+    )
 
 
 def typescript(root: Path, projects: list[str]) -> None:
@@ -136,16 +133,13 @@ def typescript(root: Path, projects: list[str]) -> None:
 
 def automation(
     root: Path,
-    image: str,
     kind: Literal["workflows", "renovate"],
     ignores: list[str] | None = None,
 ) -> None:
-    if not image or "@sha256:" not in image:
-        raise ValueError("Automation validators require a digest-pinned image")
     if kind == "workflows":
         from jellyfin_plugin_toolkit.checks.workflows import check_workflows
 
-        check_workflows(root, image, ignores or [])
+        check_workflows(root, ignores=ignores or [])
     else:
         run(
             "docker",
@@ -157,8 +151,9 @@ def automation(
             "renovate-config-validator",
             "-v",
             str(root) + ":/work:ro",
-            image,
+            image("renovate"),
             "--strict",
+            "--no-global",
             "/work/renovate.json",
             cwd=root,
         )
@@ -258,7 +253,11 @@ def main(root: Path, *, fix: bool = False, target: str | None = None) -> None:
             if errors:
                 raise ValueError("\n".join(errors))
         else:
-            image = settings.images.get(
-                "actionlint" if check == "workflows" else "renovate", ""
-            )
-            automation(root, image, check, settings.workflow_ignores)
+            automation(root, check, settings.workflow_ignores)
+            if check == "renovate":
+                from jellyfin_plugin_toolkit.validators import renovate_test
+
+                renovate_test(
+                    root,
+                    Path(settings.renovate_tests) if settings.renovate_tests else None,
+                )

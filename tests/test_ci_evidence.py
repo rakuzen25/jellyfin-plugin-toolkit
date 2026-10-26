@@ -229,9 +229,14 @@ class GroupReuseTests(IsolatedCiTestCase):
                 "status": "completed",
                 "conclusion": "success",
                 "run_attempt": 1,
+                "steps": [
+                    {"name": check, "conclusion": "success"}
+                    for check in ["Check automation", "Check tooling", "Test tooling"]
+                ],
             }
-            for names in self.validation.job_names.values()
-            for name in names
+            for name in sorted(
+                {name for names in self.validation.job_names.values() for name in names}
+            )
         ]
         return run, receipt, jobs
 
@@ -294,6 +299,39 @@ class GroupReuseTests(IsolatedCiTestCase):
                     "rendering",
                     {},
                 )
+            )
+
+    def test_skipped_quality_step_cannot_supply_successful_group_evidence(self) -> None:
+        run, receipt, jobs = self.fixture()
+        quality = next(job for job in jobs if job["name"] == "validate / quality")
+        next(step for step in quality["steps"] if step["name"] == "Check automation")[
+            "conclusion"
+        ] = "skipped"
+        with patch.object(ci_evidence, "api", return_value={"jobs": jobs}):
+            self.assertIsNone(
+                ci_evidence.completed_group_origin(
+                    self.ctx,
+                    "owner/repo",
+                    run,
+                    receipt,
+                    "metadata",
+                    "policy",
+                    "metadata",
+                    {},
+                )
+            )
+            self.assertEqual(
+                "100",
+                ci_evidence.completed_group_origin(
+                    self.ctx,
+                    "owner/repo",
+                    run,
+                    receipt,
+                    "tooling",
+                    "policy",
+                    "tooling",
+                    {},
+                ),
             )
 
     def test_direct_reference_resolves_to_original_job_and_rejects_cycles(self) -> None:
@@ -864,6 +902,7 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
 
     def test_advisory_result_is_required_independently_of_selected_groups(self) -> None:
         selection = self.selected(["README.md"])
+        selection["audit_required"] = True
         for status in ("failure", "skipped", "cancelled", "missing"):
             receipt = ci_planning.finish(
                 self.ctx, selection, {"advisories": {"result": status}}
@@ -875,12 +914,22 @@ class CumulativeCoverageTests(IsolatedCiTestCase):
         selection = self.selected(["README.md"])
         self.assertTrue(
             ci_planning.finish(
-                self.ctx, selection, {"advisories": {"result": "success"}}
+                self.ctx,
+                selection,
+                {
+                    "advisories": {"result": "success"},
+                    "quality": {"result": "success", "outputs": {"docs": "success"}},
+                },
             )["coverage"]["complete"]
         )
         selection = self.selected(["src/Core/Lyrics/Models.cs"])
         self.assertFalse(
             ci_planning.finish(
-                self.ctx, selection, {"advisories": {"result": "success"}}
+                self.ctx,
+                selection,
+                {
+                    "advisories": {"result": "success"},
+                    "quality": {"result": "success", "outputs": {"docs": "success"}},
+                },
             )["coverage"]["complete"]
         )

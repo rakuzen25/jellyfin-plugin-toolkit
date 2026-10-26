@@ -1,11 +1,22 @@
+import {
+    extractPackageFile,
+    applyPackageRules,
+    validateConfig,
+    extractConfig,
+    getConfig,
+    generateBranchConfig,
+    compile as render,
+    GlobalConfig,
+    extractPython,
+    extractActions,
+    gitApi,
+    extractPyenv,
+} from "../.build/jpt/node/renovate-api.mjs";
 // Run inside the pinned Renovate image. Exercise its shipped implementation.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { extractPackageFile } from "/usr/local/renovate/dist/modules/manager/custom/regex/index.js";
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-const { applyPackageRules } = await import("/usr/local/renovate/dist/util/package-rules/index.js");
-const { validateConfig } = await import("/usr/local/renovate/dist/config/validation.js");
 const tooling = JSON.parse(fs.readFileSync(root + "/tooling.json", "utf8"));
 assert.deepEqual(tooling, JSON.parse(fs.readFileSync(root + "/src/jellyfin_plugin_toolkit/resources/tooling.json", "utf8")));
 assert.deepEqual((await validateConfig("tooling", tooling)).errors, []);
@@ -25,7 +36,6 @@ const policy = (dep, manager, packageFile, packageRules = [...tooling.packageRul
         packageRules,
     });
 
-const { extractPackageFile: extractConfig } = await import("/usr/local/renovate/dist/modules/manager/renovate-config/index.js");
 const configured = await extractConfig(JSON.stringify({ extends: ["github>rakuzen25/jellyfin-plugin-toolkit#v0.2.0"] }), "renovate.json", {});
 const toolkitPreset = configured.deps.find((dependency) => dependency.depName === "rakuzen25/jellyfin-plugin-toolkit");
 assert.equal(toolkitPreset.currentValue, "v0.2.0");
@@ -41,8 +51,6 @@ const wheelPolicy = await policy(dependency, "regex", "pyproject.toml");
 assert.equal(wheelPolicy.enabled, true);
 assert.equal(wheelPolicy.minimumReleaseAge, null);
 assert.equal(wheelPolicy.minimumReleaseAgeBuffer, null);
-const { getConfig } = await import("/usr/local/renovate/dist/config/defaults.js");
-const { generateBranchConfig } = await import("/usr/local/renovate/dist/workers/repository/updates/generate.js");
 const title = (selected, updateType = "patch", newVersion = "0.3.1") =>
     generateBranchConfig([
         {
@@ -74,7 +82,6 @@ assert.equal(
 assert.equal((await policy({ ...dependency, datasource: "github-tags" }, "regex", "pyproject.toml")).enabled, false);
 assert.equal((await policy(dependency, "regex", "other.toml")).enabled, false);
 
-const { compile: render } = await import("/usr/local/renovate/dist/util/template/index.js");
 const replacement = render(preset.customManagers[0].autoReplaceStringTemplate, { ...dependency, newValue: after.tag_name });
 const updated = manifest.replace(dependency.replaceString, replacement);
 const next = (await extractPackageFile(updated, "pyproject.toml", preset.customManagers[0])).deps[0];
@@ -88,9 +95,7 @@ assert.ok(preset.packageRules.some((rule) => rule.matchUpdateTypes?.includes("ma
 console.log("PASS: only the canonical wheel selects a published release, without a release-age delay");
 
 // Reusable workflows need version comments: SHA-only references are disabled by Renovate.
-const { GlobalConfig } = await import("/usr/local/renovate/dist/config/global.js");
 GlobalConfig.set({ localDir: root });
-const { extractPackageFile: extractPython } = await import("/usr/local/renovate/dist/modules/manager/pep621/index.js");
 const nativePython = await extractPython(
     '[project]\nname="fixture-tooling"\nversion="0.1.0"\nrequires-python=">=3.15,<3.16"\ndependencies=["jellyfin-plugin-toolkit"]\n' + manifest,
     "pyproject.toml",
@@ -99,7 +104,6 @@ const nativePython = await extractPython(
 assert.equal(nativePython.deps.find((dep) => dep.depName === "jellyfin-plugin-toolkit").skipReason, "unsupported-url");
 console.log("PASS: native Python extraction leaves the GitHub wheel to the grouped release manager");
 
-const { extractPackageFile: extractActions } = await import("/usr/local/renovate/dist/modules/manager/github-actions/index.js");
 for (const name of ["validate", "release", "prepare-release", "catalog-notify"]) {
     const workflow =
         "name: Fixture\non: push\njobs:\n  call:\n    uses: rakuzen25/jellyfin-plugin-toolkit/.github/workflows/" +
@@ -169,7 +173,6 @@ for (const name of ["jellyfin-lyricbridge", "jellyfin-plugin-music-metadata-mana
 // Companion commits stay eligible for Renovate updates; human edits still stop them.
 const { execFileSync } = await import("node:child_process");
 const { tmpdir } = await import("node:os");
-const gitApi = await import("/usr/local/renovate/dist/util/git/index.js");
 const temporary = fs.mkdtempSync(path.join(tmpdir(), "jpt-app-identity-"));
 try {
     const source = path.join(temporary, "source"),
@@ -247,7 +250,6 @@ assert.equal(uvDependency.packageName, "astral-sh/uv");
 assert.equal(uvDependency.currentValue, "0.13.5");
 const uvReplacement = uvProject.replace(uvDependency.replaceString, uvDependency.replaceString.replace("0.13.5", "0.13.6"));
 assert.equal((await extractPackageFile(uvReplacement, "pyproject.toml", tooling.customManagers[0])).deps[0].currentValue, "0.13.6");
-const { extractPackageFile: extractPyenv } = await import("/usr/local/renovate/dist/modules/manager/pyenv/index.js");
 const pythonDeps = (await extractPyenv("3.15.1\n", ".python-version", {})).deps;
 assert.equal(pythonDeps.length, 1);
 const pythonDependency = pythonDeps[0];
@@ -293,47 +295,20 @@ assert.equal(toolkitConfig.automerge, undefined);
 assert.equal(toolkitConfig.packageRules, undefined);
 console.log("PASS: interpreter and uv extraction, toolchain grouping, and mixed-group review policy");
 
-// Optional mounted consumers exercise their real overrides against this candidate policy.
-for (const directory of process.argv.slice(2)) {
-    const consumer = JSON.parse(fs.readFileSync(path.join(directory, "renovate.json"), "utf8"));
-    assert.ok(consumer.extends.some((entry) => entry.includes("jellyfin-plugin-toolkit:tooling")));
-    assert.notEqual(consumer.automerge, false);
-    const rules = [...tooling.packageRules, ...(consumer.packageRules ?? [])];
-    for (const [depName, updateType, expected, group] of [
-        ["prettier", "minor", true, "Routine dependency updates"],
-        ["prettier", "major", false, null],
-        ["python", "patch", true, "Python toolchain"],
-        ["python", "minor", false, "Python toolchain"],
-        ["uv", "patch", true, "Python toolchain"],
-        ["uv", "minor", false, "Python toolchain"],
-    ]) {
-        const selected = await policy({ depName, updateType }, depName === "python" ? "pyenv" : "custom.regex", "pyproject.toml", rules);
-        assert.equal(selected.automerge, expected, `${directory}/${depName}/${updateType}`);
-        assert.equal(selected.groupName, group);
-    }
-    const project = fs.readFileSync(path.join(directory, "pyproject.toml"), "utf8");
-    const uvPins = [];
-    for (const manager of [...tooling.customManagers, ...(consumer.customManagers ?? [])]) {
-        if (manager.managerFilePatterns.some((pattern) => pattern.includes("pyproject"))) {
-            const result = await extractPackageFile(project, "pyproject.toml", manager);
-            uvPins.push(...(result?.deps ?? []).filter((dep) => dep.depName === "uv"));
-        }
-    }
-    assert.equal(uvPins.length, 1, directory);
-    const python = await extractPyenv(fs.readFileSync(path.join(directory, ".python-version"), "utf8"), ".python-version", {});
-    assert.equal(python.deps.length, 1);
-    for (const rule of consumer.packageRules ?? []) {
-        if (
-            rule.automerge !== false ||
-            !rule.matchPackageNames ||
-            !rule.matchUpdateTypes ||
-            rule.matchPackageNames.some((name) => name.includes("*"))
-        )
-            continue;
-        for (const depName of rule.matchPackageNames) {
-            for (const updateType of rule.matchUpdateTypes)
-                assert.equal((await policy({ depName, updateType }, "npm", "package.json", rules)).automerge, false);
-        }
-    }
-    console.log(`PASS: ${directory} effective grouping, automerge, single pin extraction and package-specific review restrictions`);
+// Only this repository tracks the exact shared validator runtimes.
+const validatorPins = JSON.parse(fs.readFileSync(root + "/src/jellyfin_plugin_toolkit/resources/configs/validators.json", "utf8"));
+const runtimeDependencies = (
+    await extractPackageFile(
+        JSON.stringify(validatorPins),
+        "src/jellyfin_plugin_toolkit/resources/configs/validators.json",
+        toolkitConfig.customManagers[0],
+    )
+).deps;
+assert.equal(runtimeDependencies.length, 2);
+for (const pin of Object.values(validatorPins)) {
+    const [, name, version, digest] = pin.match(/^(.*):([^@]+)@(sha256:.*)$/);
+    const dependency = runtimeDependencies.find((dep) => dep.depName === name);
+    assert.equal(dependency.currentValue, version);
+    assert.equal(dependency.currentDigest, digest);
 }
+console.log("PASS: one toolkit-owned source tracks both digest-pinned validator runtimes");

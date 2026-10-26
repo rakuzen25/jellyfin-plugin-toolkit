@@ -18,7 +18,7 @@ from jellyfin_plugin_toolkit.common.artifacts import digest
 from jellyfin_plugin_toolkit.common.source_inventory import source_files
 from jellyfin_plugin_toolkit.provenance import identity
 
-SCHEMA = 9
+SCHEMA = 10
 POLICY = ("plugin.toml", "uv.lock", "version.txt")
 ARTIFACT_JOBS = ("package", "installation", "reproducibility", "advisories")
 
@@ -42,14 +42,23 @@ class ValidationPolicy:
             code,
             tuple(g for g in code if g != "metadata"),
             MappingProxyType(
-                {g: frozenset(validation.job_names.get(g, [g])) for g in code}
+                {
+                    g: frozenset(
+                        validation.job_names.get(
+                            g, ["quality" if g in {"metadata", "tooling"} else g]
+                        )
+                    )
+                    for g in code
+                }
             ),
             MappingProxyType(
                 {
                     g: tuple(
                         validation.artifact_jobs
                         if g == "artifacts"
-                        else validation.aggregate_jobs.get(g, [g])
+                        else validation.aggregate_jobs.get(
+                            g, ["quality" if g in {"metadata", "tooling"} else g]
+                        )
                     )
                     for g in groups
                 }
@@ -72,7 +81,66 @@ def metadata_path(path: str) -> bool:
 
 
 def classification(ctx: Context, path: str) -> tuple[str, set[str]]:
-    rules = ctx.config.validation.rules
+    from jellyfin_plugin_toolkit.configuration import Rule
+    from jellyfin_plugin_toolkit.resources_api import RESOURCE_ROOT
+
+    standard = json.loads((RESOURCE_ROOT / "configs/impact.json").read_text())
+    rules = [Rule.model_validate(rule) for rule in standard]
+    rules.extend(
+        Rule(
+            name="backend-source",
+            patterns=[name.rstrip("/") + "/**"],
+            groups=[
+                g
+                for g in (
+                    "backend",
+                    "tooling",
+                    "workflow",
+                    "rendering",
+                    "performance",
+                    "artifacts",
+                )
+                if g in ctx.groups
+            ],
+        )
+        for name in ctx.config.backend.source_roots
+    )
+    if ctx.config.frontend.enabled:
+        rules.append(
+            Rule(
+                name="frontend-source",
+                patterns=[
+                    ctx.config.frontend.directory.rstrip("/") + "/**",
+                    ctx.config.browser.directory.rstrip("/") + "/**",
+                ],
+                groups=[
+                    g
+                    for g in (
+                        "frontend",
+                        "workflow",
+                        "rendering",
+                        "performance",
+                        "artifacts",
+                    )
+                    if g in ctx.groups
+                ],
+            )
+        )
+    rules = [
+        rule.model_copy(
+            update={"groups": [group for group in rule.groups if group in ctx.groups]}
+        )
+        for rule in rules
+    ]
+    rules.extend(ctx.config.validation.rules)
+    if ctx.config.validation.renovate_tests:
+        rules.append(
+            Rule(
+                name="renovate-tests",
+                patterns=[ctx.config.validation.renovate_tests],
+                groups=["metadata"],
+            )
+        )
     selected: set[str] = set()
     matched: list[str] = []
     for rule in rules:
@@ -169,13 +237,9 @@ def fingerprints(
         )
         for g in ctx.groups
     }
-    if ctx.config.validation.browser_inputs:
+    if ctx.config.validation.browser_inputs and browser is not None:
         from jellyfin_plugin_toolkit.ci.browser import verify
 
-        if browser is None:
-            raise ValueError(
-                "Precise browser fingerprints require built-asset evidence"
-            )
         result.update(verify(ctx, browser))
     return result
 

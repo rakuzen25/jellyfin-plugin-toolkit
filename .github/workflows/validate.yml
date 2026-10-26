@@ -47,25 +47,18 @@ jobs:
       performance: ${{ steps.plan.outputs.performance }}
       artifacts: ${{ steps.plan.outputs.artifacts }}
       web: ${{ steps.plan.outputs.web }}
+      audit: ${{ steps.plan.outputs.audit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
-        with:
-          node: "true"
-      - run: pnpm check docs
       - run: uv run --no-sync jpt release prepare --repository "$REPOSITORY" --tag "$RELEASE_TAG" --environment "$GITHUB_ENV"
       - id: plan
         env:
@@ -92,37 +85,57 @@ jobs:
           name: validation-plan
           path: dist/plan.json
           if-no-files-found: error
-  metadata:
+  quality:
     needs: impact
-    if: needs.impact.outputs.metadata == 'true'
+    if: needs.impact.result == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
+    outputs:
+      docs: ${{ steps.docs.outcome }}
+      automation: ${{ steps.automation.outcome }}
+      tooling: ${{ steps.tooling.outcome }}
+      tooling-tests: ${{ steps.tooling-tests.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
+          project-directory: .
       - run: mkdir -p dist/evidence
-      - run: uv run --no-sync jpt check automation 2>&1 | tee dist/evidence/metadata.log
+      - name: Check documentation
+        id: docs
+        if: ${{ !cancelled() }}
+        run: uv run --no-sync jpt check docs 2>&1 | tee dist/evidence/docs.log
+      - name: Check automation
+        id: automation
+        if: ${{ !cancelled() && needs.impact.outputs.metadata == 'true' }}
+        run: uv run --no-sync jpt check automation 2>&1 | tee dist/evidence/automation.log
+      - name: Check tooling
+        id: tooling
+        if: ${{ !cancelled() && needs.impact.outputs.tooling == 'true' }}
+        run: uv run --no-sync jpt check tooling 2>&1 | tee dist/evidence/tooling.log
+      - name: Test tooling
+        id: tooling-tests
+        if: ${{ !cancelled() && needs.impact.outputs.tooling == 'true' }}
+        run: uv run --no-sync jpt test tooling 2>&1 | tee -a dist/evidence/tooling.log
       - uses: ./.build/jpt/actions/evidence
         if: always()
         with:
-          name: evidence-metadata
+          name: evidence-quality
   frontend:
     needs: impact
     if: needs.impact.outputs.web == 'true'
+    outputs:
+      workflow: ${{ steps.refine.outputs.workflow }}
+      rendering: ${{ steps.refine.outputs.rendering }}
+      performance: ${{ steps.refine.outputs.performance }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -130,24 +143,34 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
+          project-directory: .
       - run: mkdir -p dist/evidence
       - name: Check affected frontend inputs
         if: needs.impact.outputs.frontend == 'true'
         run: (pnpm check frontend && pnpm test frontend) 2>&1 | tee dist/evidence/frontend-checks.log
       - run: (uv run --no-sync jpt build frontend && uv run --no-sync jpt internal ci web-record) 2>&1 | tee dist/evidence/frontend-build.log
       - run: uv run --no-sync jpt test web-installation -- --assets dist/web
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: validation-plan
+          path: dist
+      - name: Resolve emitted browser identity and reuse
+        id: refine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-sync jpt internal ci refine
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: validation-plan-web
+          path: dist/plan.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: browser-assets
@@ -171,19 +194,20 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          dotnet: "true"
-          references: "true"
+          project-directory: .
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .build/jellyfin
+          key: official-jellyfin-linux-amd64-${{ hashFiles('plugin.toml', 'uv.lock') }}
+      - run: uv run --no-sync jpt internal references
+      - run: uv run --no-sync jpt internal restore-backend
       - run: mkdir -p dist/evidence
       - name: Check .NET formatting
         run: uv run --no-sync jpt check backend 2>&1 | tee dist/evidence/dotnet-format.log
@@ -199,38 +223,9 @@ jobs:
         if: always()
         with:
           name: evidence-backend
-  tooling:
-    needs: impact
-    if: needs.impact.outputs.tooling == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
-      - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
-        with:
-          node: "true"
-      - run: mkdir -p dist/evidence
-      - run: uv run --no-sync jpt check tooling 2>&1 | tee dist/evidence/tooling.log
-      - run: uv run --no-sync jpt test tooling 2>&1 | tee -a dist/evidence/tooling.log
-      - uses: ./.build/jpt/actions/evidence
-        if: always()
-        with:
-          name: evidence-tooling
   workflow:
     needs: [impact, frontend]
-    if: needs.impact.outputs.workflow == 'true'
+    if: needs.frontend.outputs.workflow == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -238,18 +233,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
+          project-directory: .
       - run: mkdir -p dist/evidence
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.impact.outputs.web == 'true'
@@ -260,7 +251,7 @@ jobs:
         run: uv run --no-sync jpt internal ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: validation-plan
+          name: validation-plan-web
           path: dist
       - run: uv run --no-sync jpt internal ci browser-verify --group workflow --project "workflow-chromium" --workers 2
       - run: CI_BROWSER_GROUP=workflow uv run --no-sync jpt test browser -- --project workflow-chromium --workers=2 2>&1 | tee dist/evidence/browser.log
@@ -270,7 +261,7 @@ jobs:
           name: evidence-workflow
   rendering:
     needs: [impact, frontend]
-    if: needs.impact.outputs.rendering == 'true'
+    if: needs.frontend.outputs.rendering == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -282,18 +273,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
+          project-directory: .
       - run: mkdir -p dist/evidence
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.impact.outputs.web == 'true'
@@ -304,7 +291,7 @@ jobs:
         run: uv run --no-sync jpt internal ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: validation-plan
+          name: validation-plan-web
           path: dist
       - run: uv run --no-sync jpt internal ci browser-verify --group rendering --project "${{ matrix.project }}" --workers 2
       - run: CI_BROWSER_GROUP=rendering uv run --no-sync jpt test browser -- --project "${{ matrix.project }}" --workers=2 2>&1 | tee dist/evidence/browser.log
@@ -314,7 +301,7 @@ jobs:
           name: evidence-rendering${{ matrix.project }}
   performance:
     needs: [impact, frontend]
-    if: needs.impact.outputs.performance == 'true'
+    if: needs.frontend.outputs.performance == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -326,18 +313,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
+          project-directory: .
       - run: mkdir -p dist/evidence
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.impact.outputs.web == 'true'
@@ -348,7 +331,7 @@ jobs:
         run: uv run --no-sync jpt internal ci web-verify
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: validation-plan
+          name: validation-plan-web
           path: dist
       - run: uv run --no-sync jpt internal ci browser-verify --group performance --project "${{ matrix.project }}" --workers 1
       - run: CI_BROWSER_GROUP=performance uv run --no-sync jpt test browser -- --project "${{ matrix.project }}" --workers=1 2>&1 | tee dist/evidence/browser.log
@@ -366,20 +349,22 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
-          dotnet: "true"
-          references: "true"
+          project-directory: .
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+        with:
+          project-directory: .
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .build/jellyfin
+          key: official-jellyfin-linux-amd64-${{ hashFiles('plugin.toml', 'uv.lock') }}
+      - run: uv run --no-sync jpt internal references
       - run: mkdir -p dist/evidence
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.impact.outputs.web == 'true'
@@ -421,19 +406,19 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          dotnet: "true"
-          references: "true"
+          project-directory: .
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .build/jellyfin
+          key: official-jellyfin-linux-amd64-${{ hashFiles('plugin.toml', 'uv.lock') }}
+      - run: uv run --no-sync jpt internal references
       - run: mkdir -p dist/evidence
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -454,20 +439,22 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
-          dotnet: "true"
-          references: "true"
+          project-directory: .
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+        with:
+          project-directory: .
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .build/jellyfin
+          key: official-jellyfin-linux-amd64-${{ hashFiles('plugin.toml', 'uv.lock') }}
+      - run: uv run --no-sync jpt internal references
       - run: mkdir -p dist/evidence
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -481,7 +468,7 @@ jobs:
           name: evidence-reproducibility
   advisories:
     needs: impact
-    if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    if: always() && needs.impact.result == 'success' && needs.impact.outputs.audit == 'true' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -489,20 +476,22 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          node: "true"
-          dotnet: "true"
-          references: "true"
+          project-directory: .
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+        with:
+          project-directory: .
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .build/jellyfin
+          key: official-jellyfin-linux-amd64-${{ hashFiles('plugin.toml', 'uv.lock') }}
+      - run: uv run --no-sync jpt internal references
       - run: mkdir -p dist/evidence
       - env:
           GH_TOKEN: ${{ github.token }}
@@ -512,7 +501,7 @@ jobs:
         with:
           name: evidence-advisories
   validate:
-    needs: [impact, metadata, frontend, backend, tooling, workflow, rendering, performance, package, installation, reproducibility, advisories]
+    needs: [impact, quality, frontend, backend, workflow, rendering, performance, package, installation, reproducibility, advisories]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -525,19 +514,19 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          enable-cache: true
-          cache-dependency-glob: |
-            .python-version
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
+          project-directory: .
+          mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: ./.build/jpt/actions/setup
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: validation-plan
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.frontend.result == 'success'
+        with:
+          name: validation-plan-web
           path: dist
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.package.result == 'success'

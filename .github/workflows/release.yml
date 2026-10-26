@@ -74,15 +74,11 @@ jobs:
           verifier="$RUNNER_TEMP/jpt-release-verifier"
           cp -a .release-tools "$verifier"
           echo "JPT_VERIFIER_PROJECT=$verifier" >> "$GITHUB_ENV"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          version-file: .release-tools/pyproject.toml
-          enable-cache: true
-          cache-dependency-glob: |
-            .release-tools/.python-version
-            .release-tools/pyproject.toml
-            .release-tools/uv.lock
-      - run: uv sync --project "$JPT_VERIFIER_PROJECT" --locked
+          project-directory: .release-tools
+          mode: install-only
+      - run: uv sync --project "$JPT_VERIFIER_PROJECT" --locked --no-dev
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: plugin-candidate

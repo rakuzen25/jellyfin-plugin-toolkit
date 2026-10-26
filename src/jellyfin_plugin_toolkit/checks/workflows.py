@@ -4,14 +4,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from jellyfin_plugin_toolkit.common.process import run
-from jellyfin_plugin_toolkit.context import Context
+from jellyfin_plugin_toolkit.validators import image
 
 
-def check_workflows(
-    root: Path, image: str | None = None, ignores: Sequence[str] = ()
-) -> None:
-    if image is None:
-        image = Context.load(root).config.images["actionlint"]
+def check_workflows(root: Path, ignores: Sequence[str] = ()) -> None:
     paths = sorted(
         str(path.relative_to(root))
         for suffix in ["*.yml", "*.yaml"]
@@ -37,7 +33,7 @@ def check_workflows(
         str(root) + ":/work:ro",
         "-w",
         "/work",
-        image,
+        image("actionlint"),
         *[argument for path in configurations for argument in ("-config-file", path)],
         *[argument for pattern in ignores for argument in ("-ignore", pattern)],
         *paths,

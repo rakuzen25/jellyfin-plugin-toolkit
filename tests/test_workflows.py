@@ -32,31 +32,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow)
 
-    def test_native_uv_owns_python_and_cache_identity_in_every_python_job(self) -> None:
-        import re
-
-        root = Path(__file__).resolve().parents[1] / ".github/workflows"
-        for path in root.glob("*.yml"):
+    def test_native_setup_owns_python_and_cache_identity(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        for path in (root / ".github/workflows").glob("*.yml"):
             workflow = path.read_text()
-            self.assertNotIn("actions/setup-python@", workflow, path.name)
-            jobs = re.split(
-                r"(?m)^  ([a-z][a-z-]*):\n", workflow.split("jobs:\n", 1)[1]
-            )
-            for name, job in zip(jobs[1::2], jobs[2::2], strict=True):
-                if "uv sync" not in job:
-                    continue
-                with self.subTest(workflow=path.name, job=name):
-                    before_sync = job.split("uv sync", 1)[0]
-                    self.assertRegex(
-                        before_sync, r"uses: astral-sh/setup-uv@[0-9a-f]{40}"
-                    )
-                    self.assertNotIn("python-version:", before_sync)
-                    for pin in (".python-version", "pyproject.toml", "uv.lock"):
-                        self.assertIn(pin, before_sync)
-                    self.assertLess(
-                        before_sync.index("uses: actions/checkout@"),
-                        before_sync.index("uses: astral-sh/setup-uv@"),
-                    )
+            self.assertNotIn("uses: astral-sh/setup-uv@", workflow, path.name)
+            self.assertNotIn("uses: actions/setup-python@", workflow, path.name)
+            self.assertNotIn("./.build/jpt/actions/setup", workflow, path.name)
+        action = (root / ".github/actions/setup-python/action.yml").read_text()
+        for name in (".python-version", "pyproject.toml", "uv.lock"):
+            self.assertIn(name, action)
+        self.assertIn(
+            "version-file: ${{ inputs.project-directory }}/pyproject.toml", action
+        )
 
     def test_validation_has_no_publication_credentials(self) -> None:
         workflow = render("example/toolkit", "a" * 40, version="v1.0.0")["validate.yml"]
@@ -64,16 +52,46 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
+    def test_starters_install_their_own_toolchains_outside_the_toolkit_project(
+        self,
+    ) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/ci.yml").read_text()
+        starter = workflow.split("  starter:\n", 1)[1].split("  advisories:\n", 1)[0]
+        self.assertIn("path: toolkit", starter)
+        self.assertIn("working-directory: toolkit", starter)
+        generated = starter.split(
+            "      - name: Generate an independent consumer\n", 1
+        )[1]
+        self.assertEqual(
+            3, generated.count("project-directory: ${{ github.workspace }}/starter")
+        )
+        self.assertIn('"$GITHUB_WORKSPACE/starter"', generated)
+        self.assertNotIn("          uv sync --locked", starter)
+
+    def test_verifier_setup_caches_trusted_source_and_installs_the_isolated_copy(
+        self,
+    ) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
+        ).read_text()
+        self.assertIn(
+            "project-directory: .release-tools\n          mode: install-only", workflow
+        )
+        self.assertIn(
+            'uv sync --project "$JPT_VERIFIER_PROJECT" --locked --no-dev', workflow
+        )
+
     def test_final_toolkit_gate_runs_even_after_a_dependency_fails(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
         ).read_text()
         final = workflow.split("  validation-evidence:\n", 1)[1]
         self.assertIn("if: always() &&", final)
-        self.assertIn("needs: [candidate, toolkit, starter, advisories]", final)
+        self.assertIn("needs: [candidate, toolkit, starter]", final)
         self.assertIn("needs.starter.result", final)
 
-    def test_advisory_job_is_fresh_even_when_artifacts_are_not_selected(self) -> None:
+    def test_advisory_job_requires_explicit_fresh_selection(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
         ).read_text()
@@ -81,7 +99,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("outputs.artifacts", advisory)
         self.assertIn("GH_TOKEN: ${{ github.token }}", advisory)
         self.assertIn("jpt test advisories", advisory)
-        self.assertIn("if: always()", advisory)
+        self.assertIn("needs.impact.outputs.audit == 'true'", advisory)
         self.assertNotIn("reuse", advisory)
 
     def test_release_build_can_verify_the_toolkit_tag_with_read_only_token(
@@ -178,7 +196,7 @@ class WorkflowTests(unittest.TestCase):
                 "self-hosted-runner:\n  labels: [ubuntu-26.04]\n"
             )
             with patch("jellyfin_plugin_toolkit.checks.workflows.run") as run:
-                check_workflows(root, "fixture@sha256:" + "a" * 64)
+                check_workflows(root)
             self.assertIn("-config-file", run.call_args.args)
             self.assertIn(".github/actionlint.yaml", run.call_args.args)
 

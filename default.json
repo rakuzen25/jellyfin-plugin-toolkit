@@ -15,9 +15,7 @@
         {
             "customType": "regex",
             "managerFilePatterns": ["/^plugin\\.toml$/"],
-            "matchStrings": [
-                "\"(?<depName>mcr\\.microsoft\\.com/playwright|rhysd/actionlint):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
-            ],
+            "matchStrings": ["\"(?<depName>mcr\\.microsoft\\.com/playwright):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""],
             "datasourceTemplate": "docker",
             "versioningTemplate": "docker"
         }

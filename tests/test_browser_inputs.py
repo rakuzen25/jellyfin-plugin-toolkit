@@ -1,12 +1,13 @@
 """Expensive fixture-only checks reuse results for identical emitted behavior."""
 
 import os
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 from consumer_fixture import ConsumerTestCase
 
-from jellyfin_plugin_toolkit.ci import browser, evidence, policy
+from jellyfin_plugin_toolkit.ci import browser, evidence, planning, policy
 from jellyfin_plugin_toolkit.configuration import BrowserInputs, Rule
 
 
@@ -54,6 +55,137 @@ class BrowserInputTests(ConsumerTestCase):
 
     def key(self) -> str:
         return policy.fingerprints(self.ctx, browser.capture(self.ctx))["performance"]
+
+    def test_planning_needs_no_node_build_or_emitted_assets(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.root / "dist/web")
+
+        def git(_root: Path, *args: str) -> str:
+            return "frontend/input.ts" if args[0] == "diff" else "a" * 40
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "GITHUB_EVENT_NAME": "pull_request",
+                    "GITHUB_REPOSITORY": "",
+                    "GH_TOKEN": "",
+                },
+            ),
+            patch.object(
+                policy,
+                "git",
+                side_effect=git,
+            ),
+            patch(
+                "jellyfin_plugin_toolkit.tasks.frontend_build",
+                side_effect=AssertionError("Planning must remain Python-only"),
+            ),
+        ):
+            result = planning.plan(self.ctx, "previous", False, False, False, False)
+        self.assertEqual({}, result["browser"])
+        self.assertIn("performance", result["execute"])
+
+    def test_frontend_refinement_reuses_identical_emitted_bytes(self) -> None:
+        selection: dict[str, Any] = {
+            "required": ["performance"],
+            "execute": ["performance"],
+            "reuse_allowed": True,
+            "force_execution": False,
+            "reused": {},
+            "repository": "example/plugin",
+            "policy": "policy",
+        }
+        expected = self.key()
+        with (
+            patch.dict(os.environ, {"GH_TOKEN": "read-only-fixture"}),
+            patch.object(
+                evidence,
+                "evidence",
+                return_value={"performance": {"run_id": "123", "input": expected}},
+            ),
+        ):
+            result = planning.refine(self.ctx, selection)
+        self.assertEqual(expected, result["inputs"]["performance"])
+        self.assertEqual([], result["execute"])
+        self.assertEqual("123", result["reused"]["performance"]["run_id"])
+
+    def test_unavailable_refined_evidence_runs_the_browser_check(self) -> None:
+        selection: dict[str, Any] = {
+            "required": ["performance"],
+            "execute": ["performance"],
+            "reuse_allowed": True,
+            "force_execution": False,
+            "reused": {},
+            "repository": "example/plugin",
+            "policy": "policy",
+        }
+        with (
+            patch.dict(os.environ, {"GH_TOKEN": "read-only-fixture"}),
+            patch.object(evidence, "evidence", side_effect=OSError("unavailable")),
+        ):
+            result = planning.refine(self.ctx, selection)
+        self.assertEqual(["performance"], result["execute"])
+
+    def test_browser_source_snapshot_rejects_an_unrelated_workflow(self) -> None:
+        with (
+            patch.object(
+                evidence,
+                "recent_runs",
+                return_value=[{"path": ".github/workflows/unrelated.yml"}],
+            ),
+            patch.object(evidence, "read_receipt") as read,
+        ):
+            self.assertEqual(
+                {}, evidence.browser_inputs(self.ctx, "example/plugin", "policy")
+            )
+        read.assert_not_called()
+
+    def test_failed_unresolved_browser_identity_blocks_older_green_reuse(self) -> None:
+        inputs = policy.fingerprints(self.ctx, browser.capture(self.ctx))
+        runs = [
+            {
+                "id": 101,
+                "path": ".github/workflows/validate.yml",
+                "conclusion": "failure",
+            },
+            {
+                "id": 100,
+                "path": ".github/workflows/validate.yml",
+                "conclusion": "success",
+            },
+        ]
+        receipts = [
+            {
+                "policy": "policy",
+                "inputs": {group: "unresolved" for group in self.ctx.groups},
+                "groups": {"performance": "failure"},
+                "browser": {},
+            },
+            {
+                "policy": "policy",
+                "inputs": inputs,
+                "groups": {"performance": "success"},
+                "browser": browser.capture(self.ctx),
+            },
+        ]
+        jobs = [
+            {"name": name, "status": "completed", "conclusion": "success"}
+            for name in [
+                "performance (stress-chromium)",
+                "performance (stress-mobile-chromium)",
+            ]
+        ]
+        with (
+            patch.object(evidence, "recent_runs", return_value=runs),
+            patch.object(evidence, "read_receipt", side_effect=receipts),
+            patch.object(evidence, "api", return_value={"jobs": jobs}),
+        ):
+            self.assertNotIn(
+                "performance",
+                evidence.evidence(self.ctx, "example/plugin", inputs, "policy"),
+            )
 
     def test_python_toolchain_changes_invalidate_all_groups_and_old_browser_evidence(
         self,

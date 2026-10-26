@@ -151,10 +151,6 @@ def prepare(
             "Only configured bot-authored, same-repository open PRs are eligible"
         )
     base, head = pr["base"]["sha"], pr["head"]["sha"]
-    if bindings.git(root, "rev-parse", "HEAD").decode().strip() != base:
-        raise ValueError(
-            "Base branch moved; rerun synchronization against its current revision"
-        )
     token = os.environ.get("GH_TOKEN", "")
     environment = dict(os.environ)
     if token:
@@ -171,8 +167,22 @@ def prepare(
     )
     before = bindings.git(root, "show", base + ":pyproject.toml")
     after = bindings.git(root, "show", head + ":pyproject.toml")
-    if before == after:
+
+    def source(data: bytes) -> object:
+        return (
+            tomllib.loads(data.decode())
+            .get("tool", {})
+            .get("uv", {})
+            .get("sources", {})
+            .get("jellyfin-plugin-toolkit")
+        )
+
+    if source(before) == source(after):
         return None
+    if bindings.git(root, "rev-parse", "HEAD").decode().strip() != base:
+        raise ValueError(
+            "Base branch moved; rerun synchronization against its current revision"
+        )
     # A bot PR may request a release URL, but cannot introduce dependencies, indexes,
     # Python changes or build configuration into the privileged resolver environment.
     validate_project_update(before, after)
