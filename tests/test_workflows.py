@@ -57,7 +57,9 @@ class WorkflowTests(unittest.TestCase):
     ) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/ci.yml").read_text()
-        starter = workflow.split("  starter:\n", 1)[1].split("  advisories:\n", 1)[0]
+        starter = workflow.split("  starter:\n", 1)[1].split(
+            "  validation-evidence:\n", 1
+        )[0]
         self.assertIn("path: toolkit", starter)
         self.assertIn("working-directory: toolkit", starter)
         generated = starter.split(
@@ -90,6 +92,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("if: always() &&", final)
         self.assertIn("needs: [candidate, toolkit, starter]", final)
         self.assertIn("needs.starter.result", final)
+
+    def test_scheduled_audits_have_no_regular_code_validation_job(self) -> None:
+        root = Path(__file__).resolve().parents[1] / ".github/workflows"
+        code = (root / "ci.yml").read_text()
+        audit = (root / "advisories.yml").read_text()
+        self.assertNotIn("  schedule:", code)
+        self.assertNotIn("  advisories:", code)
+        self.assertIn('cron: "17 7 * * *"', audit)
+        self.assertEqual(1, audit.count("jpt test advisories"))
+        self.assertNotIn("  toolkit:", audit)
 
     def test_advisory_job_requires_explicit_fresh_selection(self) -> None:
         workflow = (
