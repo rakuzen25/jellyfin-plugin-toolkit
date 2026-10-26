@@ -128,6 +128,65 @@ class BrowserInputTests(ConsumerTestCase):
             result = planning.refine(self.ctx, selection)
         self.assertEqual(["performance"], result["execute"])
 
+    def test_browser_source_snapshot_rejects_an_unrelated_workflow(self) -> None:
+        with (
+            patch.object(
+                evidence,
+                "recent_runs",
+                return_value=[{"path": ".github/workflows/unrelated.yml"}],
+            ),
+            patch.object(evidence, "read_receipt") as read,
+        ):
+            self.assertEqual(
+                {}, evidence.browser_inputs(self.ctx, "example/plugin", "policy")
+            )
+        read.assert_not_called()
+
+    def test_failed_unresolved_browser_identity_blocks_older_green_reuse(self) -> None:
+        inputs = policy.fingerprints(self.ctx, browser.capture(self.ctx))
+        runs = [
+            {
+                "id": 101,
+                "path": ".github/workflows/validate.yml",
+                "conclusion": "failure",
+            },
+            {
+                "id": 100,
+                "path": ".github/workflows/validate.yml",
+                "conclusion": "success",
+            },
+        ]
+        receipts = [
+            {
+                "policy": "policy",
+                "inputs": {group: "unresolved" for group in self.ctx.groups},
+                "groups": {"performance": "failure"},
+                "browser": {},
+            },
+            {
+                "policy": "policy",
+                "inputs": inputs,
+                "groups": {"performance": "success"},
+                "browser": browser.capture(self.ctx),
+            },
+        ]
+        jobs = [
+            {"name": name, "status": "completed", "conclusion": "success"}
+            for name in [
+                "performance (stress-chromium)",
+                "performance (stress-mobile-chromium)",
+            ]
+        ]
+        with (
+            patch.object(evidence, "recent_runs", return_value=runs),
+            patch.object(evidence, "read_receipt", side_effect=receipts),
+            patch.object(evidence, "api", return_value={"jobs": jobs}),
+        ):
+            self.assertNotIn(
+                "performance",
+                evidence.evidence(self.ctx, "example/plugin", inputs, "policy"),
+            )
+
     def test_python_toolchain_changes_invalidate_all_groups_and_old_browser_evidence(
         self,
     ) -> None:

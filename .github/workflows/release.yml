@@ -76,8 +76,9 @@ jobs:
           echo "JPT_VERIFIER_PROJECT=$verifier" >> "$GITHUB_ENV"
       - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          project-directory: ${{ env.JPT_VERIFIER_PROJECT }}
-          mode: runtime
+          project-directory: .release-tools
+          mode: install-only
+      - run: uv sync --project "$JPT_VERIFIER_PROJECT" --locked --no-dev
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: plugin-candidate

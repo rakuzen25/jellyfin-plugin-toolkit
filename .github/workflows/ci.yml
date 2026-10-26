@@ -104,6 +104,9 @@ jobs:
     if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
     needs: candidate
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: toolkit
     strategy:
       fail-fast: false
       matrix:
@@ -118,22 +121,15 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
           persist-credentials: false
+          path: toolkit
       - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
-          project-directory: .
+          project-directory: ${{ github.workspace }}/toolkit
           mode: install-only
-      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
-        with:
-          project-directory: .
-          install: "false"
-      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
-        with:
-          project-directory: .
-          cache: "false"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
-          path: dist
+          path: toolkit/dist
           merge-multiple: true
       - name: Verify candidate distributions
         run: cd dist && sha256sum --strict -c SHA256SUMS
@@ -142,33 +138,44 @@ jobs:
           VARIANT: ${{ matrix.variant }}
         run: |
           uv init --bare --no-package --no-workspace --managed-python --python "$(cat .python-version)" "$RUNNER_TEMP/generator"
-          uv add --managed-python --exclude-newer "1 day" --project "$RUNNER_TEMP/generator" "$GITHUB_WORKSPACE"/dist/jellyfin_plugin_toolkit-*.whl
+          uv add --managed-python --exclude-newer "1 day" --project "$RUNNER_TEMP/generator" "$GITHUB_WORKSPACE"/toolkit/dist/jellyfin_plugin_toolkit-*.whl
           args=()
           if [ "$VARIANT" = admin-ui-custom-project-path ]; then
             args+=(--admin --host-project server/Entry.csproj)
           fi
-          uv run --project "$RUNNER_TEMP/generator" --no-sync jpt new "$RUNNER_TEMP/starter" --id fixture-third --name 'Fixture Third' --repository fixture/third "${args[@]}" --toolkit-wheel "$GITHUB_WORKSPACE"/dist/jellyfin_plugin_toolkit-*.whl --toolkit-revision "$(git rev-parse HEAD)"
+          uv run --project "$RUNNER_TEMP/generator" --no-sync jpt new "$GITHUB_WORKSPACE/starter" --id fixture-third --name 'Fixture Third' --repository fixture/third "${args[@]}" --toolkit-wheel "$GITHUB_WORKSPACE"/toolkit/dist/jellyfin_plugin_toolkit-*.whl --toolkit-revision "$(git rev-parse HEAD)"
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-python@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+        with:
+          project-directory: ${{ github.workspace }}/starter
+          mode: development
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+        with:
+          project-directory: ${{ github.workspace }}/starter
+          install: "false"
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+        with:
+          project-directory: ${{ github.workspace }}/starter
+          cache: "false"
       - name: Bootstrap and exercise the generated consumer
         env:
           GH_TOKEN: ${{ github.token }}
           VARIANT: ${{ matrix.variant }}
         run: |
-          cd "$RUNNER_TEMP/starter"
-          uv sync --locked
+          cd "$GITHUB_WORKSPACE/starter"
           uv run --no-sync jpt bootstrap
           uv run --no-sync jpt format
           uv run --no-sync jpt check
           uv run --no-sync jpt test
           uv run --no-sync jpt test advisories
           uv run --no-sync jpt build
-          uv run --no-sync python "$GITHUB_WORKSPACE/tests/dev_smoke.py" "$PWD" --edits
+          uv run --no-sync python "$GITHUB_WORKSPACE/toolkit/tests/dev_smoke.py" "$PWD" --edits
           uv run --no-sync jpt test installation
           uv run --no-sync jpt test reproducibility
           if [ "$VARIANT" = admin-ui-custom-project-path ]; then uv run --no-sync jpt test browser -- --project workflow-chromium; fi
 
   advisories:
     if: github.event_name == 'schedule'
-    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-advisories' || 'advisories' }}
+    name: advisories
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

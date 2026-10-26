@@ -24,6 +24,15 @@ import jellyfin_plugin_toolkit.ci.policy as ci_policy
 from jellyfin_plugin_toolkit.common import artifacts
 from jellyfin_plugin_toolkit.provenance import record
 
+WORKFLOWS = frozenset(
+    {
+        ".github/workflows/validate.yml",
+        ".github/workflows/release-please.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/safety.yml",
+    }
+)
+
 
 class SafeRedirect(urllib.request.HTTPRedirectHandler):
     """Never forward the Actions token to the signed artifact-storage origin."""
@@ -228,13 +237,7 @@ def validated_ancestor(
             run.get("head_branch") != branch
             or run.get("status", "completed") != "completed"
             or run.get("conclusion") != "success"
-            or run.get("path")
-            not in {
-                ".github/workflows/validate.yml",
-                ".github/workflows/release-please.yml",
-                ".github/workflows/release.yml",
-                ".github/workflows/safety.yml",
-            }
+            or run.get("path") not in WORKFLOWS
         ):
             continue
         receipt = read_receipt(repository, run)
@@ -311,12 +314,7 @@ def completed_group_origin(
         key = ("receipt", origin)
         if key not in cache:
             source = api(repository, f"/actions/runs/{origin}")
-            if source.get("path") not in {
-                ".github/workflows/validate.yml",
-                ".github/workflows/release-please.yml",
-                ".github/workflows/release.yml",
-                ".github/workflows/safety.yml",
-            }:
+            if source.get("path") not in WORKFLOWS:
                 return None
             cache[key] = (source, read_receipt(repository, source))
         source, proof = cache[key]
@@ -386,12 +384,7 @@ def evidence(
     cache: dict[tuple[str, str], Any] = {}
     runs = recent_runs(repository)
     for run in runs:  # newest first: a matching failure must block older green reuse
-        if run.get("path") not in {
-            ".github/workflows/validate.yml",
-            ".github/workflows/release-please.yml",
-            ".github/workflows/release.yml",
-            ".github/workflows/safety.yml",
-        }:
+        if run.get("path") not in WORKFLOWS:
             continue
         receipt = read_receipt(repository, run)
         if not receipt:
@@ -421,6 +414,14 @@ def evidence(
         if full_only and not receipt.get("full") and not carried_full:
             continue
         for group in validation.code:
+            browser = receipt.get("browser", {})
+            if (
+                group in ctx.config.validation.browser_inputs
+                and receipt.get("groups", {}).get(group) == "failure"
+                and (not is_json_object(browser) or group not in browser)
+            ):
+                seen.add(group)
+                continue
             if group in seen or receipt.get("inputs", {}).get(group) != inputs[group]:
                 continue
             status = receipt.get("groups", {}).get(group)
@@ -455,6 +456,8 @@ def browser_inputs(ctx: Context, repository: str, policy: str) -> dict[str, Any]
         for key in ("ImageOS", "ImageVersion", "RUNNER_ARCH", "RUNNER_OS")
     }
     for run in recent_runs(repository):
+        if run.get("path") not in WORKFLOWS:
+            continue
         receipt = read_receipt(repository, run)
         if not receipt or receipt.get("policy") != policy:
             continue
@@ -505,13 +508,7 @@ def verify_run(repository: str, run_id: str, receipt: dict[str, Any]) -> None:
     if (
         not trusted(run, repository)
         or run.get("event") == "pull_request"
-        or run.get("path")
-        not in {
-            ".github/workflows/validate.yml",
-            ".github/workflows/release.yml",
-            ".github/workflows/release-please.yml",
-            ".github/workflows/safety.yml",
-        }
+        or run.get("path") not in WORKFLOWS
         or (
             not current
             and (

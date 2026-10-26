@@ -52,6 +52,36 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("write", workflow)
         self.assertIn("@" + "a" * 40, workflow)
 
+    def test_starters_install_their_own_toolchains_outside_the_toolkit_project(
+        self,
+    ) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/ci.yml").read_text()
+        starter = workflow.split("  starter:\n", 1)[1].split("  advisories:\n", 1)[0]
+        self.assertIn("path: toolkit", starter)
+        self.assertIn("working-directory: toolkit", starter)
+        generated = starter.split(
+            "      - name: Generate an independent consumer\n", 1
+        )[1]
+        self.assertEqual(
+            3, generated.count("project-directory: ${{ github.workspace }}/starter")
+        )
+        self.assertIn('"$GITHUB_WORKSPACE/starter"', generated)
+        self.assertNotIn("          uv sync --locked", starter)
+
+    def test_verifier_setup_caches_trusted_source_and_installs_the_isolated_copy(
+        self,
+    ) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
+        ).read_text()
+        self.assertIn(
+            "project-directory: .release-tools\n          mode: install-only", workflow
+        )
+        self.assertIn(
+            'uv sync --project "$JPT_VERIFIER_PROJECT" --locked --no-dev', workflow
+        )
+
     def test_final_toolkit_gate_runs_even_after_a_dependency_fails(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
