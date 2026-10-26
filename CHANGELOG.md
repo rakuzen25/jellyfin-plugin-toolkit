@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.0...v0.6.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **ci:** separate scheduled audits from release validation ([#28](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/28)) ([6464f25](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/6464f25744840f66989fe96ae594820659136d7e))
+
 ## [0.6.0](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.5.3...v0.6.0) (2026-10-26)
 
 
