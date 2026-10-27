@@ -134,9 +134,11 @@ def finish(ctx: typer.Context) -> None:
 
 
 @ci.command()
-def verify(ctx: typer.Context, run_id: Annotated[int, typer.Option(min=1)]) -> None:
-    """Verify the source run and authenticated release receipt."""
-    from jellyfin_plugin_toolkit.ci.execution import verify as authenticate
+def release_receipt(
+    ctx: typer.Context, run_id: Annotated[int, typer.Option(min=1)]
+) -> None:
+    """Authenticate CI evidence and stage the public release receipt and assets."""
+    from jellyfin_plugin_toolkit.ci.execution import release_receipt as authenticate
 
     authenticate(consumer(ctx, release=True), str(run_id))
 

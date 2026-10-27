@@ -99,7 +99,7 @@ class CliTests(unittest.TestCase):
     def test_usage_errors_precede_work(self) -> None:
         invalid = [
             ["dev", "--port", "0"],
-            ["internal", "ci", "verify", "--run-id", "0"],
+            ["internal", "ci", "release-receipt", "--run-id", "0"],
             ["dev", "--port", "65536"],
             ["dev", "--media-mount", "/tmp", "--clear-media-mounts"],
             ["build", "unknown"],

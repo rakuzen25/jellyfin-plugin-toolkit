@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 
 import json
 import os
+import shutil
 
 import jellyfin_plugin_toolkit.ci.evidence as ci_evidence
 import jellyfin_plugin_toolkit.ci.planning as ci_planning
@@ -119,11 +120,30 @@ def refine(ctx: Context) -> None:
             )
 
 
-def verify(ctx: Context, run_id: str) -> None:
+def release_receipt(ctx: Context, run_id: str) -> None:
+    """Authenticate internal evidence and stage the public release independently."""
+    from jellyfin_plugin_toolkit.release.receipt import PublicReceipt
+
     root = ctx.root
     receipt = json.loads((root / "dist/validation.json").read_text())
     ci_evidence.verify_run(os.environ["GITHUB_REPOSITORY"], run_id, receipt)
     ci_evidence.verify(ctx, receipt, os.environ["GITHUB_REPOSITORY"], run_id)
+    public = PublicReceipt.model_validate(
+        {
+            name: receipt[name]
+            for name in PublicReceipt.model_fields
+            if name != "schema_version"
+        }
+    )
+    directory = root / "dist/release"
+    directory.mkdir()
+    for name in public.artifacts:
+        if name != os.path.basename(name) or name == "validation.json":
+            raise ValueError("Invalid public release artifact name")
+        shutil.copyfile(root / "dist" / name, directory / name)
+    (directory / "validation.json").write_text(
+        public.model_dump_json(indent=2, by_alias=True) + "\n"
+    )
 
 
 def web_record(ctx: Context) -> None:

@@ -85,14 +85,14 @@ jobs:
           path: dist
           github-token: ${{ github.token }}
           run-id: ${{ inputs.validated_run_id || github.run_id }}
-      - name: Verify complete release receipt from the authenticated source run
+      - name: Authenticate internal evidence and prepare the public release receipt
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: uv run --project "$JPT_VERIFIER_PROJECT" --no-sync --no-env-file python -I -m jellyfin_plugin_toolkit --root "$PWD" internal ci verify --run-id "${VALIDATED_RUN_ID:-${{ github.run_id }}}"
+        run: uv run --project "$JPT_VERIFIER_PROJECT" --no-sync --no-env-file python -I -m jellyfin_plugin_toolkit --root "$PWD" internal ci release-receipt --run-id "${VALIDATED_RUN_ID:-${{ github.run_id }}}"
       - name: Attest the verified validation receipt
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/validation.json
+          subject-path: dist/release/validation.json
       - name: Create repository-scoped App token
         uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/app-token@27f61490cc183093f30cbf1dba50bb299920b23c # shared App token action
         id: app
@@ -104,7 +104,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
-          uv run --project "$JPT_VERIFIER_PROJECT" --no-sync --no-env-file python -I -m jellyfin_plugin_toolkit --root "$PWD" release upload --repository "$REPOSITORY" --tag "$RELEASE_TAG"
+          uv run --project "$JPT_VERIFIER_PROJECT" --no-sync --no-env-file python -I -m jellyfin_plugin_toolkit --root "$PWD" release upload --directory dist/release --repository "$REPOSITORY" --tag "$RELEASE_TAG"
       - name: Write handoff
         run: |
           echo "Draft artifacts verified. Review the green validation jobs, then publish the draft in GitHub Releases." >> "$GITHUB_STEP_SUMMARY"

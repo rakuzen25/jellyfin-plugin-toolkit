@@ -20,6 +20,8 @@ Receipts point directly to original successful jobs. Fixture-only browser groups
 
 Catalog policy independently specifies required checks, artifact profiles, plugin identities and approved signers. A release receipt cannot relax those requirements. Receipts must use the supported schema and satisfy catalog policy.
 
+Internal CI evidence and public release receipts have independent contracts. The protected attachment job authenticates current internal evidence, then exports the schema-7 public receipt and exact tested artifacts into a separate upload directory. Internal evidence remains unchanged for reuse. The signed public receipt contains release identity, successful gates, artifact hashes and toolkit provenance; private selection and reuse policy stay internal. Upload rejects internal evidence as a public receipt.
+
 Lifecycle disposal releases all resources before raising an `AggregateError` for cleanup failures. Repeat disposal remains harmless. Aborting a listener releases its lifecycle ownership, and an already-aborted signal creates no registration.
 
 Shared scripts, actions, configuration presets, and UI components form the common plugin framework. Prefer a toolkit change when an improvement should become standard for plugins using that capability. Plugin-specific application behavior, runtime pins, dependency updates, repository policy, and extensions remain consumer-owned. Changes to reusable optional components justify foundation releases; compatible consumer tool updates do not require one. Toolkit tests use independent synthetic consumers rather than named downstream repositories.

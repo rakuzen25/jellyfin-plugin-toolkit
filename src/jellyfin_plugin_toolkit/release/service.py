@@ -193,10 +193,14 @@ def upload(root: Path, directory: Path, repository: str, tag: str) -> None:
         raise ValueError("A release tag is required for artifact upload")
     check_identity(root, tag)
     hashes = artifact_hashes(root, directory, repository, tag)
-    # The authenticated receipt is verified by ci.py before this command. It is
+    # Protected attachment exports the authenticated public receipt. It is
     # deliberately outside its own artifact hash set and SHA256SUMS.
     receipt = json.loads((directory / "validation.json").read_text())
-    if receipt.get("repository") != repository or receipt.get("artifacts") != hashes:
+    if (
+        receipt.get("schema") != 7
+        or receipt.get("repository") != repository
+        or receipt.get("artifacts") != hashes
+    ):
         raise ValueError("Public validation receipt does not match release artifacts")
     hashes["validation.json"] = hashlib.sha256(
         (directory / "validation.json").read_bytes()
