@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.2...v0.6.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* **release:** separate public receipts from internal CI evidence ([#35](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/35)) ([0466a00](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/0466a00bb10aa63d69ec4232dfad5fb4bb69cc79))
+
 ## [0.6.2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.1...v0.6.2) (2026-10-26)
 
 
