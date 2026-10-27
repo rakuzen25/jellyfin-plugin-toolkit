@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.4](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.3...v0.6.4) (2026-10-27)
+
+
+### Bug Fixes
+
+* pin native empty-cache setup ([#45](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/45)) ([8c9ff22](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/8c9ff2232c96ae6bd85a64a973be30f476f7a6de))
+* support empty native NuGet caches ([#39](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/39)) ([efb1f21](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/efb1f21818f7d62f31d16d37064ddf5368920a8e))
+
 ## [0.6.3](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.2...v0.6.3) (2026-10-27)
 
 
