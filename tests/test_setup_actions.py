@@ -3,6 +3,7 @@
 import os
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,34 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SetupActionsTests(unittest.TestCase):
+    def test_nuget_cache_supports_empty_and_populated_native_directories(self) -> None:
+        action = (ROOT / ".github/actions/setup-dotnet/action.yml").read_text()
+        script = textwrap.dedent(action.split("      run: |\n", 1)[1])
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            packages = root / "custom packages"
+            executable = root / "dotnet"
+            executable.write_text(
+                '#!/bin/sh\nprintf "global-packages: %s\\n" "$JPT_PACKAGES"\n'
+            )
+            executable.chmod(0o755)
+            environment = {
+                **os.environ,
+                "PATH": str(root) + os.pathsep + os.environ["PATH"],
+                "JPT_PACKAGES": str(packages),
+            }
+            subprocess.run(["bash", "-e", "-c", script], env=environment, check=True)
+            self.assertTrue(packages.is_dir())
+            package = packages / "existing.nupkg"
+            package.write_bytes(b"existing package")
+            subprocess.run(["bash", "-e", "-c", script], env=environment, check=True)
+            self.assertEqual(b"existing package", package.read_bytes())
+            executable.write_text("#!/bin/sh\nexit 42\n")
+            result = subprocess.run(
+                ["bash", "-e", "-c", script], env=environment, check=False
+            )
+            self.assertEqual(42, result.returncode)
+
     def test_locked_sync_modes_preserve_explicit_project_selection(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
