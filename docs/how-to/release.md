@@ -82,7 +82,7 @@ The release workflow validates the exact tagged source, runs fresh package insta
 
 Before manually publishing a plugin draft, verify the catalog accepts its configured signer, toolkit revision, identity, required checks and source inventory. Preserve configuration and state for rollback; installation into a production server is a separate explicit operation.
 
-The public `validation.json` uses schema 7 independently of the internal CI evidence version. Protected attachment authenticates the internal receipt before exporting and attesting the public contract. Never publish internal evidence directly. If an incompatible receipt has already been published, preserve its immutable assets, withdraw that version through catalog maintenance and publish a new plugin version using the corrected toolkit. A new valid version does not exempt older published releases from catalog reconciliation.
+The public `validation.json` uses schema 7 independently of the internal CI evidence version. Protected attachment authenticates the internal receipt before exporting and attesting the public contract. Never publish internal evidence directly. If an incompatible receipt has already been published, preserve its immutable assets and tag. Withdraw a catalogued version through catalog maintenance; mark a version that never entered the catalog as a prerelease to exclude it from stable reconciliation. Publish a new plugin version using the corrected toolkit. A new valid version does not exempt older published stable releases from catalog reconciliation.
 
 ## Optional Renovate binding completion
 
