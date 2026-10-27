@@ -15,3 +15,9 @@ runs:
         global-json-file: ${{ inputs.project-directory }}/global.json
         cache: ${{ inputs.cache == 'true' }}
         cache-dependency-path: ${{ inputs.project-directory }}/**/packages.lock.json
+    - name: Prepare the native NuGet cache directory
+      if: ${{ inputs.cache == 'true' }}
+      shell: bash
+      run: |
+        nuget_packages_output=$(dotnet nuget locals global-packages --list --force-english-output)
+        mkdir -p "${nuget_packages_output#global-packages: }"
