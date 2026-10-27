@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.1...v0.6.2) (2026-10-26)
+
+
+### Documentation
+
+* **ci:** clarify emitted-byte evidence ownership ([#30](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/30)) ([cbf07d7](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/cbf07d748bb7e94cfed537cc54e72cea94552c62))
+
 ## [0.6.1](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.0...v0.6.1) (2026-10-26)
 
 
