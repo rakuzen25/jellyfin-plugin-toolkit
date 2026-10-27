@@ -82,6 +82,8 @@ The release workflow validates the exact tagged source, runs fresh package insta
 
 Before manually publishing a plugin draft, verify the catalog accepts its configured signer, toolkit revision, identity, required checks and source inventory. Preserve configuration and state for rollback; installation into a production server is a separate explicit operation.
 
+The public `validation.json` uses schema 7 independently of the internal CI evidence version. Protected attachment authenticates the internal receipt before exporting and attesting the public contract. Never publish internal evidence directly. If an incompatible receipt has already been published, preserve its immutable assets, withdraw that version through catalog maintenance and publish a new plugin version using the corrected toolkit. A new valid version does not exempt older published releases from catalog reconciliation.
+
 ## Optional Renovate binding completion
 
 Consumers may opt into `.github/workflows/sync-bindings.yml` through an immutable reusable-workflow reference matching their locked toolkit release. Generate a new repository with `--sync-workflow` to include its caller, or use `jellyfin_plugin_toolkit.workflows.render_sync` from the selected toolkit to create the optional caller in an existing consumer. The consumer owns its validation workflow name, triggers, bot login, and permissions.

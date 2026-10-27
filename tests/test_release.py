@@ -97,6 +97,7 @@ class ReleaseTests(unittest.TestCase):
         (directory / "validation.json").write_text(
             json.dumps(
                 {
+                    "schema": 7,
                     "repository": REPOSITORY,
                     "artifacts": release.artifact_hashes(
                         root, directory, REPOSITORY, tag
@@ -282,6 +283,68 @@ class ReleaseTests(unittest.TestCase):
             ):
                 release.upload(root, directory, REPOSITORY, tag)
             remote.assert_not_called()
+
+    def test_internal_receipts_are_rejected_before_any_remote_write(self) -> None:
+        from jellyfin_plugin_toolkit.ci.policy import SCHEMA
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root)
+            directory, tag = self.artifacts(root)
+            path = directory / "validation.json"
+            receipt = json.loads(path.read_text())
+            receipt["schema"] = SCHEMA
+            path.write_text(json.dumps(receipt))
+            with (
+                patch.object(release, "github_json") as remote,
+                self.assertRaisesRegex(ValueError, "receipt"),
+            ):
+                release.upload(root, directory, REPOSITORY, tag)
+            remote.assert_not_called()
+
+    def test_exported_directory_satisfies_native_release_artifact_checks(self) -> None:
+        import os
+
+        from jellyfin_plugin_toolkit.ci import evidence, execution, policy
+        from jellyfin_plugin_toolkit.context import Context
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root)
+            directory, tag = self.artifacts(root)
+            private = json.loads((directory / "validation.json").read_text())
+            private.update(
+                schema=policy.SCHEMA,
+                commit="a" * 40,
+                run_id="42",
+                run_attempt=1,
+                run_head_sha="a" * 40,
+                release=True,
+                groups={"artifacts": "success"},
+                validated_at="2026-10-27T00:00:00+00:00",
+                toolkit={
+                    "distribution": "jellyfin-plugin-toolkit",
+                    "version": "0.6.2",
+                    "source": "https://example.invalid/toolkit.whl",
+                    "sha256": "b" * 64,
+                    "python_lock_sha256": "c" * 64,
+                },
+            )
+            (directory / "validation.json").write_text(json.dumps(private))
+            with (
+                patch.dict(os.environ, GITHUB_REPOSITORY=REPOSITORY),
+                patch.object(evidence, "verify_run"),
+                patch.object(evidence, "verify"),
+            ):
+                execution.release_receipt(Context.load(root), "42")
+            exported = directory / "release"
+            self.assertEqual(
+                private["artifacts"],
+                release.artifact_hashes(root, exported, REPOSITORY, tag),
+            )
+            self.assertEqual(
+                7, json.loads((exported / "validation.json").read_text())["schema"]
+            )
 
     def test_initial_upload_attaches_only_required_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
