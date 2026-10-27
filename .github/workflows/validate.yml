@@ -199,7 +199,7 @@ jobs:
           project-directory: .
           mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@efb1f21818f7d62f31d16d37064ddf5368920a8e # reviewed native NuGet cache setup
         with:
           project-directory: .
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -357,7 +357,7 @@ jobs:
       - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
           project-directory: .
-      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@efb1f21818f7d62f31d16d37064ddf5368920a8e # reviewed native NuGet cache setup
         with:
           project-directory: .
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -411,7 +411,7 @@ jobs:
           project-directory: .
           mode: development
       - run: uv run --no-sync jpt prepare
-      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@efb1f21818f7d62f31d16d37064ddf5368920a8e # reviewed native NuGet cache setup
         with:
           project-directory: .
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -447,7 +447,7 @@ jobs:
       - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
           project-directory: .
-      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@efb1f21818f7d62f31d16d37064ddf5368920a8e # reviewed native NuGet cache setup
         with:
           project-directory: .
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -484,7 +484,7 @@ jobs:
       - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-node@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
         with:
           project-directory: .
-      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@1c940009ff2d1b9c13d40d90e024653e004dee79 # reviewed native setup actions
+      - uses: rakuzen25/jellyfin-plugin-toolkit/.github/actions/setup-dotnet@efb1f21818f7d62f31d16d37064ddf5368920a8e # reviewed native NuGet cache setup
         with:
           project-directory: .
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
