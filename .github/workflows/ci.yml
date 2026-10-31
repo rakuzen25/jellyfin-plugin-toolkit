@@ -24,7 +24,7 @@ jobs:
   candidate:
     name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-candidate' || 'candidate' }}
     if: (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       artifact_id: ${{ steps.archive.outputs.artifact-id }}
     steps:
@@ -53,7 +53,7 @@ jobs:
   toolkit:
     name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-toolkit' || 'toolkit' }}
     if: (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -101,7 +101,7 @@ jobs:
     name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-starter' || format('starter ({0})', matrix.label) }}
     if: (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
     needs: candidate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: toolkit
@@ -175,7 +175,7 @@ jobs:
     name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata-event-evidence' || 'validation-evidence' }}
     needs: [candidate, toolkit, starter]
     if: always() && (github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
