@@ -29,7 +29,7 @@
         "remark-lint-no-undefined-references": "5.0.2",
         "remark-validate-links": "13.1.0",
         "typescript": "npm:@typescript/typescript6@6.0.2",
-        "typescript-eslint": "8.71.2",
+        "typescript-eslint": "8.72.1",
         "unist-util-visit": "5.2.0"
     },
     "type": "module"
