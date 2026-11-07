@@ -1,6 +1,6 @@
 packages: []
 overrides:
-  "@typescript/old": "npm:typescript@6.0.3"
+  "@typescript/old": "npm:typescript@7.0.2"
 allowBuilds:
   esbuild: true
 strictDepBuilds: true
