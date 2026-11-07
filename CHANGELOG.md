@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.4...v0.6.5) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency typer to &gt;=0.28,&lt;0.29 ([#78](https://github.com/rakuzen25/jellyfin-plugin-toolkit/issues/78)) ([08edef8](https://github.com/rakuzen25/jellyfin-plugin-toolkit/commit/08edef85fcce251f9446fc9201ca6f7928369a9c))
+
 ## [0.6.4](https://github.com/rakuzen25/jellyfin-plugin-toolkit/compare/v0.6.3...v0.6.4) (2026-10-27)
 
 
