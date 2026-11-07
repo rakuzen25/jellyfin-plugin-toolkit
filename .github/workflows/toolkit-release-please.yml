@@ -17,7 +17,7 @@ concurrency:
 jobs:
   prepare:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -61,7 +61,7 @@ jobs:
   select-validation:
     needs: prepare
     if: needs.prepare.outputs.tag != ''
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     outputs:
       needs_validation: ${{ steps.select.outputs.needs_validation }}
@@ -95,7 +95,7 @@ jobs:
   attach:
     needs: [prepare, select-validation, validate]
     if: always() && needs.prepare.result == 'success' && needs.select-validation.result == 'success' && (needs.validate.result == 'success' || (needs.validate.result == 'skipped' && needs.select-validation.outputs.artifact_id != ''))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       actions: read
