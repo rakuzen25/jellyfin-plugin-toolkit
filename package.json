@@ -19,7 +19,7 @@
         "eslint": "10.14.0",
         "eslint-config-prettier": "10.1.8",
         "globals": "17.14.0",
-        "hast-util-from-html": "2.0.3",
+        "hast-util-from-html": "2.1.0",
         "http-proxy-middleware": "4.2.1",
         "knip": "6.44.1",
         "prettier": "3.9.10",
