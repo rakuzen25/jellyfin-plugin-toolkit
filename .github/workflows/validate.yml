@@ -36,7 +36,7 @@ env:
   CI_RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 jobs:
   impact:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       metadata: ${{ steps.plan.outputs.metadata }}
       frontend: ${{ steps.plan.outputs.frontend }}
@@ -88,7 +88,7 @@ jobs:
   quality:
     needs: impact
     if: needs.impact.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     outputs:
       docs: ${{ steps.docs.outcome }}
@@ -136,7 +136,7 @@ jobs:
       workflow: ${{ steps.refine.outputs.workflow }}
       rendering: ${{ steps.refine.outputs.rendering }}
       performance: ${{ steps.refine.outputs.performance }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -187,7 +187,7 @@ jobs:
       TESTINGPLATFORM_TELEMETRY_OPTOUT: "1"
     needs: [impact, frontend]
     if: always() && needs.impact.result == 'success' && (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') && needs.impact.outputs.backend == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -226,7 +226,7 @@ jobs:
   workflow:
     needs: [impact, frontend]
     if: needs.frontend.outputs.workflow == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -262,7 +262,7 @@ jobs:
   rendering:
     needs: [impact, frontend]
     if: needs.frontend.outputs.rendering == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -302,7 +302,7 @@ jobs:
   performance:
     needs: [impact, frontend]
     if: needs.frontend.outputs.performance == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -342,7 +342,7 @@ jobs:
   package:
     needs: [impact, frontend]
     if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -399,7 +399,7 @@ jobs:
   installation:
     needs: [impact, package]
     if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -432,7 +432,7 @@ jobs:
   reproducibility:
     needs: [impact, package]
     if: always() && needs.impact.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.impact.outputs.artifacts == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -469,7 +469,7 @@ jobs:
   advisories:
     needs: impact
     if: always() && needs.impact.result == 'success' && needs.impact.outputs.audit == 'true' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -503,7 +503,7 @@ jobs:
   validate:
     needs: [impact, quality, frontend, backend, workflow, rendering, performance, package, installation, reproducibility, advisories]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Report selection failure
         if: needs.impact.result != 'success'
