@@ -1,4 +1,4 @@
 {
     "actionlint": "rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667",
-    "renovate": "ghcr.io/renovatebot/renovate:44.244.2@sha256:ba902e37c7c9663ca48f4bb6f85d04f1385dbfddad1faee70dc21c8b8917b7d8"
+    "renovate": "ghcr.io/renovatebot/renovate:44.257.8@sha256:68f58fa3b0e92875fa2f44c4ae02936186818b0170c2d39fe7261a2af5260f36"
 }
